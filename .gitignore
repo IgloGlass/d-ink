@@ -1,0 +1,8 @@
+node_modules/
+.wrangler/
+.vite/
+coverage/
+dist/
+.dev.vars
+pnpm-debug.log*
+.DS_Store

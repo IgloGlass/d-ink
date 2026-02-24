@@ -1,0 +1,83 @@
+# D.ink Project Memory
+
+Status: Living project memory for AI-assisted development  
+Last updated: 2026-02-24
+
+## Current Product Snapshot
+
+- Product: AI-assisted INK2 drafting and review for Swedish AB (K2/K3)
+- Audience: small accounting firms and non-tax specialists
+- Primary value: faster, more consistent draft returns with human review
+
+## Active Canonical Docs
+
+- `SINGLE_SOURCE_OF_TRUTH.md` (top priority for product/architecture decisions)
+- `AGENTS.md` (engineering constraints and coding workflow)
+- `V2_ROADMAP.md` (planned evolution beyond V1)
+
+## Confirmed Decisions
+
+1. V1 roles: `Admin`, `Editor`
+2. V1 stack: Cloudflare Pages + Workers + D1 (+ R2/Queues as needed)
+3. V1 AI integration: API key stored server-side; never client-exposed
+4. Azure + SSO deferred to V2
+5. V1 authentication: invite-based email magic-link sign-in (no passwords in V1)
+6. V1 annual report formats: PDF and DOCX
+7. Additional evidence uploads deferred to V2
+8. Workflow uses explicit persisted state machine
+9. `filed` status is locked/sealed; admin-only reopen with reason + audit
+
+## Guardrails That Must Not Drift
+
+- Human-in-the-loop by default
+- Deterministic calculations and final form population
+- AI outputs must be schema-validated structured data
+- Hard module boundaries and contract-first interfaces
+- Append-only audit trail and versioned artifacts
+
+## Outstanding Questions
+
+- Exact first set of adjustment submodules
+- V1 INK2 field coverage baseline
+- Tax rate configuration/versioning details per fiscal year
+- V1 auth UI: admin invite flow UX (generate/copy link action in admin area)
+
+## Suggested Next Build Order
+
+1. Establish monorepo/app skeleton with module boundaries
+2. Define shared schemas and runtime validation
+3. Implement workspace + auth + audit foundations
+4. Implement document/TB ingestion pipelines
+5. Implement reconciliation gate before mapping
+6. Add mapping and adjustment proposal flows
+7. Add deterministic summary and INK2 draft population
+8. Add export and sealed filing flow
+
+## Update Protocol
+
+When a major product or architecture decision changes:
+
+- update `SINGLE_SOURCE_OF_TRUTH.md`
+- append a short note in this file under "Memory Updates"
+- update `V2_ROADMAP.md` if roadmap impact exists
+
+## Documentation Sync Checklist (Required per decision change)
+
+1. Classify the change as one of:
+   - V1-only
+   - V1+V2-impact
+   - V2-only
+2. Update `SINGLE_SOURCE_OF_TRUTH.md` if V1 behavior/constraints changed.
+3. Perform a mandatory V2 impact check:
+   - If impact exists: update `V2_ROADMAP.md` in the relevant track + changelog.
+   - If no impact: record "No V2 roadmap impact" in the working summary.
+4. Append the decision to `MEMORY.md` under "Memory Updates".
+5. In delivery summary, explicitly include:
+   - `Roadmap update: yes` or
+   - `Roadmap update: no (reason)`
+
+## Memory Updates
+
+- 2026-02-24: Initial project memory created from current docs and resolved discrepancies.
+- 2026-02-24: V1 auth decision finalized as invite-based magic-link sign-in (no password flow in V1).
+- 2026-02-24: Added V1 backlog reminder for admin UI action to generate and copy invite links.
