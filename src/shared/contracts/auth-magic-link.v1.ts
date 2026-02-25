@@ -206,6 +206,71 @@ export const AuthPrincipalV1Schema = z
  */
 export type AuthPrincipalV1 = z.infer<typeof AuthPrincipalV1Schema>;
 
+
+/**
+ * HTTP success contract for reading the current authenticated session principal.
+ */
+export const CurrentSessionResponseV1Schema = z
+  .object({
+    ok: z.literal(true),
+    principal: AuthPrincipalV1Schema,
+  })
+  .strict();
+
+/**
+ * Inferred TypeScript type for current-session HTTP response payloads.
+ */
+export type CurrentSessionResponseV1 = z.infer<
+  typeof CurrentSessionResponseV1Schema
+>;
+
+/**
+ * HTTP invite entity contract for transport payloads.
+ *
+ * Note: nullable lifecycle timestamps reflect JSON serialization from persistence rows.
+ */
+export const AuthInviteHttpV1Schema = z
+  .object({
+    id: UuidV4Schema,
+    tenantId: UuidV4Schema,
+    emailNormalized: NormalizedEmailSchema,
+    role: AuthRoleV1Schema,
+    status: AuthInviteStatusV1Schema,
+    invitedByUserId: UuidV4Schema,
+    createdAt: IsoDateTimeSchema,
+    expiresAt: IsoDateTimeSchema,
+    acceptedAt: IsoDateTimeSchema.nullable(),
+    acceptedByUserId: UuidV4Schema.nullable(),
+    revokedAt: IsoDateTimeSchema.nullable(),
+  })
+  .strict();
+
+/**
+ * Inferred TypeScript type for invite transport payloads.
+ */
+export type AuthInviteHttpV1 = z.infer<typeof AuthInviteHttpV1Schema>;
+
+/**
+ * HTTP success contract for invite creation route responses.
+ *
+ * Note: transport uses `magicLinkUrl` so clients never receive raw token material.
+ */
+export const CreateMagicLinkInviteHttpResponseV1Schema = z
+  .object({
+    ok: z.literal(true),
+    invite: AuthInviteHttpV1Schema,
+    magicLinkExpiresAt: IsoDateTimeSchema,
+    magicLinkUrl: z.string().url(),
+  })
+  .strict();
+
+/**
+ * Inferred TypeScript type for create-invite HTTP response payloads.
+ */
+export type CreateMagicLinkInviteHttpResponseV1 = z.infer<
+  typeof CreateMagicLinkInviteHttpResponseV1Schema
+>;
+
 /**
  * Flexible context payload for structured auth errors.
  */
@@ -273,7 +338,7 @@ export type CreateMagicLinkInviteRequestV1 = z.infer<
 export const CreateMagicLinkInviteSuccessV1Schema = z
   .object({
     ok: z.literal(true),
-    invite: AuthInviteV1Schema,
+    invite: AuthInviteHttpV1Schema,
     magicLinkToken: AuthOpaqueTokenSchema,
     magicLinkExpiresAt: IsoDateTimeSchema,
   })
@@ -446,6 +511,42 @@ export const LogoutSessionResultV1Schema = z.discriminatedUnion("ok", [
  * Inferred TypeScript type for logout-session workflow results.
  */
 export type LogoutSessionResultV1 = z.infer<typeof LogoutSessionResultV1Schema>;
+
+/**
+ * Parses and validates unknown input into a current-session HTTP response payload.
+ */
+export function parseCurrentSessionResponseV1(
+  input: unknown,
+): CurrentSessionResponseV1 {
+  return CurrentSessionResponseV1Schema.parse(input);
+}
+
+/**
+ * Safely validates unknown input into a current-session HTTP response payload.
+ */
+export function safeParseCurrentSessionResponseV1(
+  input: unknown,
+): z.SafeParseReturnType<unknown, CurrentSessionResponseV1> {
+  return CurrentSessionResponseV1Schema.safeParse(input);
+}
+
+/**
+ * Parses and validates unknown input into a create-invite HTTP response payload.
+ */
+export function parseCreateMagicLinkInviteHttpResponseV1(
+  input: unknown,
+): CreateMagicLinkInviteHttpResponseV1 {
+  return CreateMagicLinkInviteHttpResponseV1Schema.parse(input);
+}
+
+/**
+ * Safely validates unknown input into a create-invite HTTP response payload.
+ */
+export function safeParseCreateMagicLinkInviteHttpResponseV1(
+  input: unknown,
+): z.SafeParseReturnType<unknown, CreateMagicLinkInviteHttpResponseV1> {
+  return CreateMagicLinkInviteHttpResponseV1Schema.safeParse(input);
+}
 
 /**
  * Parses and validates unknown input into a create-invite request payload.

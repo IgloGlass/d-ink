@@ -121,7 +121,15 @@ describe("WorkspaceListPage", () => {
             },
             auditEvent: {
               id: "88888888-8888-4888-8888-888888888888",
+              tenantId: sessionPrincipalMock.tenantId,
+              workspaceId: "66666666-6666-4666-8666-666666666666",
+              actorType: "user",
+              actorUserId: sessionPrincipalMock.userId,
               eventType: "workspace.created",
+              targetType: "workspace",
+              targetId: "66666666-6666-4666-8666-666666666666",
+              timestamp: "2026-02-24T10:00:00.000Z",
+              context: {},
             },
           },
         });

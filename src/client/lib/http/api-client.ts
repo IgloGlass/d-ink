@@ -30,6 +30,18 @@ export class ApiClientError extends Error {
   }
 }
 
+type SafeParseResult<TResponse> =
+  | {
+      success: true;
+      data: TResponse;
+    }
+  | {
+      success: false;
+      error: {
+        message: string;
+      };
+    };
+
 function isApiErrorPayload(value: unknown): value is ApiErrorPayload {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -68,6 +80,7 @@ export async function apiRequest<TResponse>(input: {
   body?: unknown;
   method?: "GET" | "POST";
   path: string;
+  safeParseResponse?: (payload: unknown) => SafeParseResult<TResponse>;
 }): Promise<TResponse> {
   const response = await fetch(input.path, {
     method: input.method ?? "GET",
@@ -101,6 +114,24 @@ export async function apiRequest<TResponse>(input: {
       message: "Unexpected API response.",
       userMessage: "Unexpected API response.",
     });
+  }
+
+  if (input.safeParseResponse) {
+    const parsedResult = input.safeParseResponse(parsedPayload);
+
+    if (!parsedResult.success) {
+      throw new ApiClientError({
+        status: response.status,
+        code: "INVALID_RESPONSE_SCHEMA",
+        message: "API response did not match the expected schema.",
+        userMessage: "Received an invalid response from the server.",
+        context: {
+          parseError: parsedResult.error.message,
+        },
+      });
+    }
+
+    return parsedResult.data;
   }
 
   return parsedPayload as TResponse;
