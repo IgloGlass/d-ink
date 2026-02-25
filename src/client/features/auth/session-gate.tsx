@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
 
+import { AppShell } from "../../components/app-shell";
 import {
   ApiClientError,
   toUserFacingErrorMessage,
@@ -40,7 +41,15 @@ export function SessionGate() {
   }
 
   if (sessionQuery.isSuccess) {
-    return <Navigate replace to="/app/workspaces" />;
+    if (location.pathname === "/") {
+      return <Navigate replace to="/app/workspaces" />;
+    }
+
+    return (
+      <AppShell principal={sessionQuery.data.principal}>
+        <Outlet context={sessionQuery.data.principal} />
+      </AppShell>
+    );
   }
 
   const authErrorHint = toAuthErrorHintV1(location.search);
