@@ -10,6 +10,7 @@ import {
   getWorkspaceByIdV1,
   listWorkspacesByTenantV1,
 } from "../workflow/workspace-lifecycle.v1";
+import { getAllowedNextWorkspaceStatusesV1 } from "../workflow/workspace-status-transition.v1";
 import {
   findActiveSessionPrincipalByTokenV1,
   parseCookiesV1,
@@ -421,12 +422,21 @@ async function handleGetWorkspaceRouteV1(
     });
   }
 
-  return Response.json(result, {
-    status: 200,
-    headers: {
-      "Cache-Control": "no-store",
+  return Response.json(
+    {
+      ...result,
+      allowedNextStatuses: getAllowedNextWorkspaceStatusesV1({
+        fromStatus: result.workspace.status,
+        actorRole: sessionLookupResult.principal.role,
+      }),
     },
-  });
+    {
+      status: 200,
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    },
+  );
 }
 
 async function handleListWorkspacesRouteV1(

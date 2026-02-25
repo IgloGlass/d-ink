@@ -5,11 +5,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppProviders } from "../../src/client/app/providers";
 
-const sessionPrincipalMock = {
+const sessionPrincipalMock: {
+  emailNormalized: string;
+  role: "Admin" | "Editor";
+  tenantId: string;
+  userId: string;
+} = {
   tenantId: "11111111-1111-4111-8111-111111111111",
   userId: "22222222-2222-4222-8222-222222222222",
   emailNormalized: "editor@example.com",
-  role: "Editor" as const,
+  role: "Editor",
 };
 
 vi.mock("../../src/client/app/router", () => ({
@@ -49,6 +54,7 @@ function renderWorkspaceDetailPageV1() {
 describe("WorkspaceDetailPage", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    sessionPrincipalMock.role = "Editor";
   });
 
   it("applies transition successfully and refreshes workspace status", async () => {
@@ -76,6 +82,10 @@ describe("WorkspaceDetailPage", () => {
               createdAt: "2026-02-24T10:00:00.000Z",
               updatedAt: "2026-02-24T10:00:00.000Z",
             },
+            allowedNextStatuses:
+              currentStatus === "draft"
+                ? ["in_review"]
+                : ["changes_requested", "ready_for_approval"],
           },
         });
       }
@@ -171,6 +181,7 @@ describe("WorkspaceDetailPage", () => {
               createdAt: "2026-02-24T10:00:00.000Z",
               updatedAt: "2026-02-24T10:00:00.000Z",
             },
+            allowedNextStatuses: ["in_review"],
           },
         });
       }
@@ -220,16 +231,167 @@ describe("WorkspaceDetailPage", () => {
       expect(screen.getByText("Draft")).toBeInTheDocument();
     });
 
-    await user.selectOptions(
-      screen.getByLabelText("Target status"),
-      "exported",
-    );
     await user.click(screen.getByRole("button", { name: "Apply transition" }));
 
     await waitFor(() => {
       expect(
         screen.getByText("This status change is not allowed."),
       ).toBeInTheDocument();
+    });
+  });
+
+  it("hides disallowed statuses and disables transition when no allowed statuses exist", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      mockJsonResponse({
+        status: 200,
+        body: {
+          ok: true,
+          workspace: {
+            id: "44444444-4444-4444-8444-444444444444",
+            tenantId: sessionPrincipalMock.tenantId,
+            companyId: "55555555-5555-4555-8555-555555555555",
+            fiscalYearStart: "2025-01-01",
+            fiscalYearEnd: "2025-12-31",
+            status: "filed",
+            createdAt: "2026-02-24T10:00:00.000Z",
+            updatedAt: "2026-02-24T10:00:00.000Z",
+          },
+          allowedNextStatuses: [],
+        },
+      }),
+    );
+
+    renderWorkspaceDetailPageV1();
+
+    await waitFor(() => {
+      expect(screen.getByText("Filed")).toBeInTheDocument();
+    });
+
+    const targetStatusSelect = screen.getByLabelText(
+      "Target status",
+    ) as HTMLSelectElement;
+    expect(targetStatusSelect).toBeDisabled();
+    expect(
+      screen.queryByRole("option", { name: "draft" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "You do not currently have permission to apply a status transition from this status.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Apply transition" }),
+    ).toBeDisabled();
+  });
+
+  it("keeps reason-required flow for filed to draft transitions", async () => {
+    sessionPrincipalMock.role = "Admin";
+    let transitionRequestBody: { reason?: string; toStatus?: string } | null =
+      null;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (
+        url.includes("/v1/workspaces/44444444-4444-4444-8444-444444444444?") &&
+        method === "GET"
+      ) {
+        return mockJsonResponse({
+          status: 200,
+          body: {
+            ok: true,
+            workspace: {
+              id: "44444444-4444-4444-8444-444444444444",
+              tenantId: sessionPrincipalMock.tenantId,
+              companyId: "55555555-5555-4555-8555-555555555555",
+              fiscalYearStart: "2025-01-01",
+              fiscalYearEnd: "2025-12-31",
+              status: "filed",
+              createdAt: "2026-02-24T10:00:00.000Z",
+              updatedAt: "2026-02-24T10:00:00.000Z",
+            },
+            allowedNextStatuses: ["draft"],
+          },
+        });
+      }
+
+      if (
+        url.endsWith(
+          "/v1/workspaces/44444444-4444-4444-8444-444444444444/transitions",
+        ) &&
+        method === "POST"
+      ) {
+        transitionRequestBody = JSON.parse(String(init?.body ?? "{}")) as {
+          reason?: string;
+          toStatus?: string;
+        };
+
+        return mockJsonResponse({
+          status: 200,
+          body: {
+            ok: true,
+            workspace: {
+              id: "44444444-4444-4444-8444-444444444444",
+              tenantId: sessionPrincipalMock.tenantId,
+              companyId: "55555555-5555-4555-8555-555555555555",
+              fiscalYearStart: "2025-01-01",
+              fiscalYearEnd: "2025-12-31",
+              status: "draft",
+              createdAt: "2026-02-24T10:00:00.000Z",
+              updatedAt: "2026-02-24T10:05:00.000Z",
+            },
+            auditEvent: {
+              id: "66666666-6666-4666-8666-666666666666",
+              eventType: "workspace.status_changed",
+            },
+          },
+        });
+      }
+
+      return mockJsonResponse({
+        status: 500,
+        body: {
+          ok: false,
+          error: {
+            code: "UNEXPECTED",
+            message: "Unexpected call",
+            user_message: "Unexpected call",
+            context: {},
+          },
+        },
+      });
+    });
+
+    renderWorkspaceDetailPageV1();
+
+    await waitFor(() => {
+      expect(screen.getByText("Filed")).toBeInTheDocument();
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Apply transition" }),
+    ).toBeDisabled();
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText("Reason"),
+      "Client requested correction",
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Apply transition" }),
+      ).toBeEnabled();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Apply transition" }));
+
+    await waitFor(() => {
+      expect(transitionRequestBody).toMatchObject({
+        toStatus: "draft",
+        reason: "Client requested correction",
+      });
     });
   });
 });

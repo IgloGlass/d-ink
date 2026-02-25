@@ -42,6 +42,7 @@ export type CreateWorkspaceResponseV1 = {
 export type GetWorkspaceResponseV1 = {
   ok: true;
   workspace: WorkspaceV1;
+  allowedNextStatuses: WorkspaceStatusV1[];
 };
 
 export type TransitionWorkspaceInputV1 = {

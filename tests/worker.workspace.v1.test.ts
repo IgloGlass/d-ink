@@ -345,6 +345,59 @@ describe("worker workspace routes v1", () => {
     expect(payload.workspace.tenantId).toBe(TENANT_A);
   });
 
+  it("GET /v1/workspaces/:id includes actor-specific allowedNextStatuses", async () => {
+    await seedSession({
+      tenantId: TENANT_A,
+      userId: EDITOR_USER_ID,
+      emailNormalized: "workspace-editor-get-allowed@example.com",
+      role: "Editor",
+      sessionToken: "workspace-editor-session-get-allowed",
+    });
+
+    const createResult = await createWorkspaceByRoute({
+      tenantId: TENANT_A,
+      sessionToken: "workspace-editor-session-get-allowed",
+      companyId: "71000000-0000-4000-8000-000000000160",
+    });
+    expect(createResult.response.status).toBe(201);
+
+    const transitionResponse = await worker.fetch(
+      buildJsonRequest({
+        method: "POST",
+        url: `${APP_BASE_URL}/v1/workspaces/${createResult.workspaceId}/transitions`,
+        cookie: buildSessionCookie("workspace-editor-session-get-allowed"),
+        origin: APP_BASE_URL,
+        body: {
+          tenantId: TENANT_A,
+          toStatus: "in_review",
+        },
+      }),
+      buildWorkerEnv(),
+    );
+    expect(transitionResponse.status).toBe(200);
+
+    const getResponse = await worker.fetch(
+      buildGetRequest({
+        url: `${APP_BASE_URL}/v1/workspaces/${createResult.workspaceId}?tenantId=${TENANT_A}`,
+        cookie: buildSessionCookie("workspace-editor-session-get-allowed"),
+      }),
+      buildWorkerEnv(),
+    );
+    const payload = (await getResponse.json()) as {
+      ok: true;
+      allowedNextStatuses: string[];
+      workspace: { status: string };
+    };
+
+    expect(getResponse.status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(payload.workspace.status).toBe("in_review");
+    expect(payload.allowedNextStatuses).toEqual([
+      "changes_requested",
+      "ready_for_approval",
+    ]);
+  });
+
   it("GET /v1/workspaces/:id returns 404 when workspace is missing", async () => {
     await seedSession({
       tenantId: TENANT_A,

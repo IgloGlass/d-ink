@@ -11,17 +11,6 @@ import {
   getWorkspaceByIdV1,
 } from "../../lib/http/workspace-api";
 
-const allStatusesV1: WorkspaceStatusV1[] = [
-  "draft",
-  "in_review",
-  "changes_requested",
-  "ready_for_approval",
-  "approved_for_export",
-  "exported",
-  "client_accepted",
-  "filed",
-];
-
 const workspaceDetailQueryKeyV1 = (tenantId: string, workspaceId: string) => [
   "workspace",
   tenantId,
@@ -35,7 +24,7 @@ export function WorkspaceDetailPage() {
   const principal = useRequiredSessionPrincipalV1();
   const queryClient = useQueryClient();
 
-  const [toStatus, setToStatus] = useState<WorkspaceStatusV1>("in_review");
+  const [toStatus, setToStatus] = useState<WorkspaceStatusV1 | null>(null);
   const [reason, setReason] = useState("");
 
   if (!workspaceId) {
@@ -56,20 +45,38 @@ export function WorkspaceDetailPage() {
       }),
   });
 
+  const allowedNextStatuses = workspaceQuery.data?.allowedNextStatuses ?? [];
+
   useEffect(() => {
-    if (workspaceQuery.data?.workspace.status) {
-      setToStatus(workspaceQuery.data.workspace.status);
+    if (allowedNextStatuses.length === 0) {
+      setToStatus(null);
+      return;
     }
-  }, [workspaceQuery.data?.workspace.status]);
+
+    setToStatus((previousStatus) => {
+      if (previousStatus && allowedNextStatuses.includes(previousStatus)) {
+        return previousStatus;
+      }
+
+      return allowedNextStatuses[0];
+    });
+  }, [allowedNextStatuses]);
 
   const transitionMutation = useMutation({
-    mutationFn: () =>
-      applyWorkspaceTransitionV1({
+    mutationFn: () => {
+      if (!toStatus) {
+        return Promise.reject(
+          new Error("No allowed status transition is currently available."),
+        );
+      }
+
+      return applyWorkspaceTransitionV1({
         tenantId: principal.tenantId,
         workspaceId,
         toStatus,
         reason: reason.trim().length === 0 ? undefined : reason.trim(),
-      }),
+      });
+    },
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({
@@ -135,18 +142,24 @@ export function WorkspaceDetailPage() {
             className="form-grid"
             onSubmit={(event) => {
               event.preventDefault();
-              transitionMutation.mutate();
+              if (toStatus) {
+                transitionMutation.mutate();
+              }
             }}
           >
             <label>
               Target status
               <select
-                value={toStatus}
+                value={toStatus ?? ""}
                 onChange={(event) =>
                   setToStatus(event.target.value as WorkspaceStatusV1)
                 }
+                disabled={allowedNextStatuses.length === 0}
               >
-                {allStatusesV1.map((status) => (
+                {allowedNextStatuses.length === 0 ? (
+                  <option value="">No transitions available</option>
+                ) : null}
+                {allowedNextStatuses.map((status) => (
                   <option key={status} value={status}>
                     {status}
                   </option>
@@ -173,6 +186,7 @@ export function WorkspaceDetailPage() {
               className="primary"
               disabled={
                 transitionMutation.isPending ||
+                !toStatus ||
                 (requiresReason && reason.trim().length === 0)
               }
             >
@@ -181,6 +195,13 @@ export function WorkspaceDetailPage() {
                 : "Apply transition"}
             </button>
           </form>
+
+          {allowedNextStatuses.length === 0 ? (
+            <p className="hint-text">
+              You do not currently have permission to apply a status transition
+              from this status.
+            </p>
+          ) : null}
 
           {requiresReason ? (
             <p className="hint-text">
