@@ -10,12 +10,13 @@ import {
   createMagicLinkInviteV1,
   logoutSessionV1,
 } from "../workflow/auth-magic-link.v1";
+import { parseCookiesV1 } from "./session-auth.v1";
 import {
-  findActiveSessionPrincipalByTokenV1,
-  parseCookiesV1,
-} from "./session-auth.v1";
+  HTTP_SESSION_OPERATION_LABELS_V1,
+  SESSION_COOKIE_NAME_V1,
+  resolveSessionGuardV1,
+} from "./session-guard.v1";
 
-const SESSION_COOKIE_NAME_V1 = "dink_session_v1";
 const SESSION_TENANT_COOKIE_NAME_V1 = "dink_tenant_v1";
 const SESSION_COOKIE_MAX_AGE_SECONDS_V1 = 24 * 60 * 60;
 
@@ -302,16 +303,6 @@ async function handleCreateInviteRouteV1(
     return originValidationError;
   }
 
-  const cookies = parseCookiesV1(request.headers.get("Cookie"));
-  const sessionToken = cookies[SESSION_COOKIE_NAME_V1];
-  if (!sessionToken) {
-    return createJsonErrorResponseV1({
-      status: 401,
-      code: "SESSION_MISSING",
-      message: "A valid authenticated session is required.",
-    });
-  }
-
   const parsedBody = InviteHttpRequestBodyV1Schema.safeParse(
     await readJsonBodyV1(request),
   );
@@ -323,42 +314,23 @@ async function handleCreateInviteRouteV1(
     });
   }
 
-  const sessionLookupResult = await findActiveSessionPrincipalByTokenV1({
+  const tenantSessionGuardResult = await resolveSessionGuardV1({
+    request,
     db: env.DB,
     hmacSecret: env.AUTH_TOKEN_HMAC_SECRET,
-    operation: "auth.findActiveSessionPrincipalByTokenV1",
-    sessionToken,
+    operation:
+      HTTP_SESSION_OPERATION_LABELS_V1.authFindActiveSessionPrincipalByToken,
+    requestTenantId: parsedBody.data.tenantId,
+    tenantMismatchUserMessage:
+      "You can only invite users in the active tenant.",
   });
-  if (!sessionLookupResult.ok) {
-    if (sessionLookupResult.code === "SESSION_INVALID_OR_EXPIRED") {
-      return createJsonErrorResponseV1({
-        status: 401,
-        code: sessionLookupResult.code,
-        message: sessionLookupResult.message,
-        userMessage: sessionLookupResult.userMessage,
-        context: sessionLookupResult.context,
-      });
-    }
-
+  if (!tenantSessionGuardResult.ok) {
     return createJsonErrorResponseV1({
-      status: 500,
-      code: sessionLookupResult.code,
-      message: sessionLookupResult.message,
-      userMessage: sessionLookupResult.userMessage,
-      context: sessionLookupResult.context,
-    });
-  }
-
-  if (sessionLookupResult.principal.tenantId !== parsedBody.data.tenantId) {
-    return createJsonErrorResponseV1({
-      status: 403,
-      code: "TENANT_MISMATCH",
-      message: "Session tenant does not match requested tenant.",
-      userMessage: "You can only invite users in the active tenant.",
-      context: {
-        requestTenantId: parsedBody.data.tenantId,
-        sessionTenantId: sessionLookupResult.principal.tenantId,
-      },
+      status: tenantSessionGuardResult.status,
+      code: tenantSessionGuardResult.error.code,
+      message: tenantSessionGuardResult.error.message,
+      userMessage: tenantSessionGuardResult.error.user_message,
+      context: tenantSessionGuardResult.error.context,
     });
   }
 
@@ -368,7 +340,7 @@ async function handleCreateInviteRouteV1(
       tenantId: parsedBody.data.tenantId,
       inviteeEmail: parsedBody.data.inviteeEmail,
       inviteeRole: parsedBody.data.inviteeRole,
-      actorUserId: sessionLookupResult.principal.userId,
+      actorUserId: tenantSessionGuardResult.principal.userId,
     },
     deps,
   );
@@ -576,37 +548,27 @@ async function handleCurrentSessionRouteV1(
   request: Request,
   env: Env,
 ): Promise<Response> {
-  const cookies = parseCookiesV1(request.headers.get("Cookie"));
-  const sessionToken = cookies[SESSION_COOKIE_NAME_V1];
-  if (!sessionToken) {
-    return createJsonErrorResponseV1({
-      status: 401,
-      code: "SESSION_MISSING",
-      message: "A valid authenticated session is required.",
-    });
-  }
-
-  const sessionLookupResult = await findActiveSessionPrincipalByTokenV1({
+  const sessionGuardResult = await resolveSessionGuardV1({
+    request,
     db: env.DB,
     hmacSecret: env.AUTH_TOKEN_HMAC_SECRET,
-    operation: "auth.findActiveSessionPrincipalByTokenV1",
-    sessionToken,
+    operation:
+      HTTP_SESSION_OPERATION_LABELS_V1.authFindActiveSessionPrincipalByToken,
   });
-  if (!sessionLookupResult.ok) {
+  if (!sessionGuardResult.ok) {
     return createJsonErrorResponseV1({
-      status:
-        sessionLookupResult.code === "SESSION_INVALID_OR_EXPIRED" ? 401 : 500,
-      code: sessionLookupResult.code,
-      message: sessionLookupResult.message,
-      userMessage: sessionLookupResult.userMessage,
-      context: sessionLookupResult.context,
+      status: sessionGuardResult.status,
+      code: sessionGuardResult.error.code,
+      message: sessionGuardResult.error.message,
+      userMessage: sessionGuardResult.error.user_message,
+      context: sessionGuardResult.error.context,
     });
   }
 
   return Response.json(
     {
       ok: true,
-      principal: sessionLookupResult.principal,
+      principal: sessionGuardResult.principal,
     },
     {
       status: 200,

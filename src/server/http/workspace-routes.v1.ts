@@ -11,11 +11,9 @@ import {
   listWorkspacesByTenantV1,
 } from "../workflow/workspace-lifecycle.v1";
 import {
-  findActiveSessionPrincipalByTokenV1,
-  parseCookiesV1,
-} from "./session-auth.v1";
-
-const SESSION_COOKIE_NAME_V1 = "dink_session_v1";
+  HTTP_SESSION_OPERATION_LABELS_V1,
+  resolveSessionGuardV1,
+} from "./session-guard.v1";
 const WORKSPACES_ROUTE_BASE_PATH_V1 = "/v1/workspaces";
 
 const CreateWorkspaceHttpRequestBodyV1Schema = z
@@ -259,16 +257,6 @@ async function handleCreateWorkspaceRouteV1(
     return originValidationError;
   }
 
-  const cookies = parseCookiesV1(request.headers.get("Cookie"));
-  const sessionToken = cookies[SESSION_COOKIE_NAME_V1];
-  if (!sessionToken) {
-    return createJsonErrorResponseV1({
-      status: 401,
-      code: "SESSION_MISSING",
-      message: "A valid authenticated session is required.",
-    });
-  }
-
   const parsedBody = CreateWorkspaceHttpRequestBodyV1Schema.safeParse(
     await readJsonBodyV1(request),
   );
@@ -280,34 +268,23 @@ async function handleCreateWorkspaceRouteV1(
     });
   }
 
-  const sessionLookupResult = await findActiveSessionPrincipalByTokenV1({
+  const tenantSessionGuardResult = await resolveSessionGuardV1({
+    request,
     db: env.DB,
     hmacSecret: env.AUTH_TOKEN_HMAC_SECRET,
-    operation: "workspace.findActiveSessionPrincipalByTokenV1",
-    sessionToken,
+    operation:
+      HTTP_SESSION_OPERATION_LABELS_V1.workspaceFindActiveSessionPrincipalByToken,
+    requestTenantId: parsedBody.data.tenantId,
+    tenantMismatchUserMessage:
+      "You can only access workspace resources in the active tenant.",
   });
-  if (!sessionLookupResult.ok) {
+  if (!tenantSessionGuardResult.ok) {
     return createJsonErrorResponseV1({
-      status:
-        sessionLookupResult.code === "SESSION_INVALID_OR_EXPIRED" ? 401 : 500,
-      code: sessionLookupResult.code,
-      message: sessionLookupResult.message,
-      userMessage: sessionLookupResult.userMessage,
-      context: sessionLookupResult.context,
-    });
-  }
-
-  if (sessionLookupResult.principal.tenantId !== parsedBody.data.tenantId) {
-    return createJsonErrorResponseV1({
-      status: 403,
-      code: "TENANT_MISMATCH",
-      message: "Session tenant does not match requested tenant.",
-      userMessage:
-        "You can only access workspace resources in the active tenant.",
-      context: {
-        requestTenantId: parsedBody.data.tenantId,
-        sessionTenantId: sessionLookupResult.principal.tenantId,
-      },
+      status: tenantSessionGuardResult.status,
+      code: tenantSessionGuardResult.error.code,
+      message: tenantSessionGuardResult.error.message,
+      userMessage: tenantSessionGuardResult.error.user_message,
+      context: tenantSessionGuardResult.error.context,
     });
   }
 
@@ -319,8 +296,8 @@ async function handleCreateWorkspaceRouteV1(
       fiscalYearEnd: parsedBody.data.fiscalYearEnd,
       actor: {
         actorType: "user",
-        actorRole: sessionLookupResult.principal.role,
-        actorUserId: sessionLookupResult.principal.userId,
+        actorRole: tenantSessionGuardResult.principal.role,
+        actorUserId: tenantSessionGuardResult.principal.userId,
       },
     },
     createWorkspaceLifecycleDepsV1(env),
@@ -343,16 +320,6 @@ async function handleGetWorkspaceRouteV1(
   env: Env,
   workspaceId: string,
 ): Promise<Response> {
-  const cookies = parseCookiesV1(request.headers.get("Cookie"));
-  const sessionToken = cookies[SESSION_COOKIE_NAME_V1];
-  if (!sessionToken) {
-    return createJsonErrorResponseV1({
-      status: 401,
-      code: "SESSION_MISSING",
-      message: "A valid authenticated session is required.",
-    });
-  }
-
   const requestUrl = new URL(request.url);
   const parsedQuery = WorkspaceGetQueryV1Schema.safeParse({
     tenantId: requestUrl.searchParams.get("tenantId"),
@@ -365,34 +332,23 @@ async function handleGetWorkspaceRouteV1(
     });
   }
 
-  const sessionLookupResult = await findActiveSessionPrincipalByTokenV1({
+  const tenantSessionGuardResult = await resolveSessionGuardV1({
+    request,
     db: env.DB,
     hmacSecret: env.AUTH_TOKEN_HMAC_SECRET,
-    operation: "workspace.findActiveSessionPrincipalByTokenV1",
-    sessionToken,
+    operation:
+      HTTP_SESSION_OPERATION_LABELS_V1.workspaceFindActiveSessionPrincipalByToken,
+    requestTenantId: parsedQuery.data.tenantId,
+    tenantMismatchUserMessage:
+      "You can only access workspace resources in the active tenant.",
   });
-  if (!sessionLookupResult.ok) {
+  if (!tenantSessionGuardResult.ok) {
     return createJsonErrorResponseV1({
-      status:
-        sessionLookupResult.code === "SESSION_INVALID_OR_EXPIRED" ? 401 : 500,
-      code: sessionLookupResult.code,
-      message: sessionLookupResult.message,
-      userMessage: sessionLookupResult.userMessage,
-      context: sessionLookupResult.context,
-    });
-  }
-
-  if (sessionLookupResult.principal.tenantId !== parsedQuery.data.tenantId) {
-    return createJsonErrorResponseV1({
-      status: 403,
-      code: "TENANT_MISMATCH",
-      message: "Session tenant does not match requested tenant.",
-      userMessage:
-        "You can only access workspace resources in the active tenant.",
-      context: {
-        requestTenantId: parsedQuery.data.tenantId,
-        sessionTenantId: sessionLookupResult.principal.tenantId,
-      },
+      status: tenantSessionGuardResult.status,
+      code: tenantSessionGuardResult.error.code,
+      message: tenantSessionGuardResult.error.message,
+      userMessage: tenantSessionGuardResult.error.user_message,
+      context: tenantSessionGuardResult.error.context,
     });
   }
 
@@ -433,16 +389,6 @@ async function handleListWorkspacesRouteV1(
   request: Request,
   env: Env,
 ): Promise<Response> {
-  const cookies = parseCookiesV1(request.headers.get("Cookie"));
-  const sessionToken = cookies[SESSION_COOKIE_NAME_V1];
-  if (!sessionToken) {
-    return createJsonErrorResponseV1({
-      status: 401,
-      code: "SESSION_MISSING",
-      message: "A valid authenticated session is required.",
-    });
-  }
-
   const requestUrl = new URL(request.url);
   const parsedQuery = WorkspaceGetQueryV1Schema.safeParse({
     tenantId: requestUrl.searchParams.get("tenantId"),
@@ -455,34 +401,23 @@ async function handleListWorkspacesRouteV1(
     });
   }
 
-  const sessionLookupResult = await findActiveSessionPrincipalByTokenV1({
+  const tenantSessionGuardResult = await resolveSessionGuardV1({
+    request,
     db: env.DB,
     hmacSecret: env.AUTH_TOKEN_HMAC_SECRET,
-    operation: "workspace.findActiveSessionPrincipalByTokenV1",
-    sessionToken,
+    operation:
+      HTTP_SESSION_OPERATION_LABELS_V1.workspaceFindActiveSessionPrincipalByToken,
+    requestTenantId: parsedQuery.data.tenantId,
+    tenantMismatchUserMessage:
+      "You can only access workspace resources in the active tenant.",
   });
-  if (!sessionLookupResult.ok) {
+  if (!tenantSessionGuardResult.ok) {
     return createJsonErrorResponseV1({
-      status:
-        sessionLookupResult.code === "SESSION_INVALID_OR_EXPIRED" ? 401 : 500,
-      code: sessionLookupResult.code,
-      message: sessionLookupResult.message,
-      userMessage: sessionLookupResult.userMessage,
-      context: sessionLookupResult.context,
-    });
-  }
-
-  if (sessionLookupResult.principal.tenantId !== parsedQuery.data.tenantId) {
-    return createJsonErrorResponseV1({
-      status: 403,
-      code: "TENANT_MISMATCH",
-      message: "Session tenant does not match requested tenant.",
-      userMessage:
-        "You can only access workspace resources in the active tenant.",
-      context: {
-        requestTenantId: parsedQuery.data.tenantId,
-        sessionTenantId: sessionLookupResult.principal.tenantId,
-      },
+      status: tenantSessionGuardResult.status,
+      code: tenantSessionGuardResult.error.code,
+      message: tenantSessionGuardResult.error.message,
+      userMessage: tenantSessionGuardResult.error.user_message,
+      context: tenantSessionGuardResult.error.context,
     });
   }
 
@@ -519,16 +454,6 @@ async function handleWorkspaceTransitionRouteV1(
     return originValidationError;
   }
 
-  const cookies = parseCookiesV1(request.headers.get("Cookie"));
-  const sessionToken = cookies[SESSION_COOKIE_NAME_V1];
-  if (!sessionToken) {
-    return createJsonErrorResponseV1({
-      status: 401,
-      code: "SESSION_MISSING",
-      message: "A valid authenticated session is required.",
-    });
-  }
-
   const parsedBody = WorkspaceTransitionHttpRequestBodyV1Schema.safeParse(
     await readJsonBodyV1(request),
   );
@@ -540,34 +465,23 @@ async function handleWorkspaceTransitionRouteV1(
     });
   }
 
-  const sessionLookupResult = await findActiveSessionPrincipalByTokenV1({
+  const tenantSessionGuardResult = await resolveSessionGuardV1({
+    request,
     db: env.DB,
     hmacSecret: env.AUTH_TOKEN_HMAC_SECRET,
-    operation: "workspace.findActiveSessionPrincipalByTokenV1",
-    sessionToken,
+    operation:
+      HTTP_SESSION_OPERATION_LABELS_V1.workspaceFindActiveSessionPrincipalByToken,
+    requestTenantId: parsedBody.data.tenantId,
+    tenantMismatchUserMessage:
+      "You can only access workspace resources in the active tenant.",
   });
-  if (!sessionLookupResult.ok) {
+  if (!tenantSessionGuardResult.ok) {
     return createJsonErrorResponseV1({
-      status:
-        sessionLookupResult.code === "SESSION_INVALID_OR_EXPIRED" ? 401 : 500,
-      code: sessionLookupResult.code,
-      message: sessionLookupResult.message,
-      userMessage: sessionLookupResult.userMessage,
-      context: sessionLookupResult.context,
-    });
-  }
-
-  if (sessionLookupResult.principal.tenantId !== parsedBody.data.tenantId) {
-    return createJsonErrorResponseV1({
-      status: 403,
-      code: "TENANT_MISMATCH",
-      message: "Session tenant does not match requested tenant.",
-      userMessage:
-        "You can only access workspace resources in the active tenant.",
-      context: {
-        requestTenantId: parsedBody.data.tenantId,
-        sessionTenantId: sessionLookupResult.principal.tenantId,
-      },
+      status: tenantSessionGuardResult.status,
+      code: tenantSessionGuardResult.error.code,
+      message: tenantSessionGuardResult.error.message,
+      userMessage: tenantSessionGuardResult.error.user_message,
+      context: tenantSessionGuardResult.error.context,
     });
   }
 
@@ -579,8 +493,8 @@ async function handleWorkspaceTransitionRouteV1(
       reason: parsedBody.data.reason,
       actor: {
         actorType: "user",
-        actorRole: sessionLookupResult.principal.role,
-        actorUserId: sessionLookupResult.principal.userId,
+        actorRole: tenantSessionGuardResult.principal.role,
+        actorUserId: tenantSessionGuardResult.principal.userId,
       },
     },
     createWorkspaceLifecycleDepsV1(env),
