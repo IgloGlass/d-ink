@@ -15,8 +15,9 @@
     "test:client": "vitest run --config vitest.client.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
     "lint": "biome check .",
+    "lint:boundaries": "depcruise --config .dependency-cruiser.cjs --output-type err-long src",
     "format": "biome format --write .",
-    "check": "corepack pnpm run lint && corepack pnpm run typecheck && corepack pnpm run test"
+    "check": "corepack pnpm run lint && corepack pnpm run lint:boundaries && corepack pnpm run typecheck && corepack pnpm run test"
   },
   "engines": {
     "node": ">=20"
@@ -29,19 +30,20 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@cloudflare/vitest-pool-workers": "^0.8.55",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
     "@types/react": "^18.3.20",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.3.4",
-    "@cloudflare/vitest-pool-workers": "^0.8.55",
-    "@biomejs/biome": "^1.9.4",
     "concurrently": "^9.1.2",
+    "dependency-cruiser": "^17.3.8",
     "jsdom": "^26.1.0",
     "typescript": "^5.7.3",
-    "vitest": "^2.1.8",
     "vite": "^5.4.21",
+    "vitest": "^2.1.8",
     "wrangler": "^4.0.0"
   }
 }

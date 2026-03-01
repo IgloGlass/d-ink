@@ -1,7 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { useRequiredSessionPrincipalV1 } from "../../app/router";
+import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
 import { toUserFacingErrorMessage } from "../../lib/http/api-client";
 import {
   type CreateInviteResponseV1,

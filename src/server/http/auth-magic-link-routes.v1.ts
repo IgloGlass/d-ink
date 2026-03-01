@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-import { createD1AuthRepositoryV1 } from "../../db/repositories/auth.repository.v1";
 import {
   type AuthPrincipalV1,
   AuthRoleV1Schema,
@@ -14,6 +13,10 @@ import {
   logoutSessionV1,
   resolveSessionPrincipalByTokenV1,
 } from "../workflow/auth-magic-link.v1";
+import {
+  createAuthMagicLinkDepsV1,
+  createResolveSessionPrincipalDepsV1,
+} from "../workflow/workflow-deps.v1";
 import {
   createJsonErrorResponseV1,
   createMethodNotAllowedResponseV1,
@@ -89,25 +92,6 @@ function createJsonSuccessResponseV1(input: {
   });
 }
 
-function toBase64UrlV1(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-
-  return btoa(binary)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
-}
-
-function generateTokenV1(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-
-  return toBase64UrlV1(bytes);
-}
-
 function serializeCookieV1(input: {
   httpOnly: boolean;
   maxAgeSeconds: number;
@@ -179,16 +163,6 @@ function buildMagicLinkUrlV1(input: {
   return magicLinkUrl.toString();
 }
 
-function createAuthDepsV1(env: Env) {
-  return {
-    authRepository: createD1AuthRepositoryV1(env.DB),
-    generateId: () => crypto.randomUUID(),
-    generateToken: () => generateTokenV1(),
-    nowIsoUtc: () => new Date().toISOString(),
-    hmacSecret: env.AUTH_TOKEN_HMAC_SECRET,
-  };
-}
-
 type SessionPrincipalGuardSuccessV1 = {
   ok: true;
   principal: AuthPrincipalV1;
@@ -221,11 +195,7 @@ async function requireSessionPrincipalV1(input: {
     {
       sessionToken,
     },
-    {
-      authRepository: createD1AuthRepositoryV1(input.env.DB),
-      hmacSecret: input.env.AUTH_TOKEN_HMAC_SECRET,
-      nowIsoUtc: () => new Date().toISOString(),
-    },
+    createResolveSessionPrincipalDepsV1(input.env),
   );
 
   if (!sessionLookupResult.ok) {
@@ -348,7 +318,7 @@ async function handleCreateInviteRouteV1(
     return sessionGuardResult.response;
   }
 
-  const deps = createAuthDepsV1(env);
+  const deps = createAuthMagicLinkDepsV1(env);
   const createInviteResult = await createMagicLinkInviteV1(
     {
       tenantId: parsedBody.data.tenantId,
@@ -431,7 +401,7 @@ async function handleConsumeRouteV1(
     });
   }
 
-  const deps = createAuthDepsV1(env);
+  const deps = createAuthMagicLinkDepsV1(env);
   const consumeResult = await consumeMagicLinkTokenV1(
     {
       tenantId: parsedQuery.data.tenantId,
@@ -499,7 +469,7 @@ async function handleAuthenticateSessionRouteV1(
     });
   }
 
-  const deps = createAuthDepsV1(env);
+  const deps = createAuthMagicLinkDepsV1(env);
   const authResult = await authenticateSessionV1(
     {
       tenantId: parsedBody.data.tenantId,
@@ -604,7 +574,7 @@ async function handleLogoutSessionRouteV1(
     });
   }
 
-  const deps = createAuthDepsV1(env);
+  const deps = createAuthMagicLinkDepsV1(env);
   const logoutResult = await logoutSessionV1(
     {
       sessionToken: sessionTokenResult.sessionToken,

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import { useRequiredSessionPrincipalV1 } from "../../app/router";
+import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
 import { StatusPill } from "../../components/status-pill";
 import { toUserFacingErrorMessage } from "../../lib/http/api-client";
 import {

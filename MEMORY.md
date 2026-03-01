@@ -1,7 +1,7 @@
 # D.ink Project Memory
 
 Status: Living project memory for AI-assisted development  
-Last updated: 2026-02-24
+Last updated: 2026-03-01
 
 ## Current Product Snapshot
 
@@ -81,3 +81,5 @@ When a major product or architecture decision changes:
 - 2026-02-24: Initial project memory created from current docs and resolved discrepancies.
 - 2026-02-24: V1 auth decision finalized as invite-based magic-link sign-in (no password flow in V1).
 - 2026-02-24: Added V1 backlog reminder for admin UI action to generate and copy invite links.
+- 2026-03-01: Completed architecture hardening pass to remove route-layer persistence coupling, enforce runtime API response contract parsing on the client, and centralize audit SQL helpers.
+- 2026-03-01: Added automated dependency boundary checks (`lint:boundaries`) to block circular dependencies and key layer violations as part of the required `check` pipeline.

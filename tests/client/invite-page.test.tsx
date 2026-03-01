@@ -16,7 +16,7 @@ const sessionPrincipalMock: {
   role: "Admin",
 };
 
-vi.mock("../../src/client/app/router", () => ({
+vi.mock("../../src/client/app/session-context", () => ({
   useRequiredSessionPrincipalV1: () => sessionPrincipalMock,
 }));
 

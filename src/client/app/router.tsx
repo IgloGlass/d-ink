@@ -4,7 +4,6 @@ import {
   Outlet,
   RouterProvider,
   createBrowserRouter,
-  useOutletContext,
 } from "react-router-dom";
 
 import { AppShell } from "../components/app-shell";
@@ -14,7 +13,6 @@ import { WorkspaceDetailPage } from "../features/workspaces/workspace-detail-pag
 import { WorkspaceListPage } from "../features/workspaces/workspace-list-page";
 import { toUserFacingErrorMessage } from "../lib/http/api-client";
 import {
-  type SessionPrincipalV1,
   currentSessionQueryKeyV1,
   fetchCurrentSessionV1,
 } from "../lib/http/auth-api";
@@ -90,8 +88,4 @@ const routerV1 = createBrowserRouter([
 
 export function AppRouter() {
   return <RouterProvider router={routerV1} />;
-}
-
-export function useRequiredSessionPrincipalV1(): SessionPrincipalV1 {
-  return useOutletContext<SessionPrincipalV1>();
 }

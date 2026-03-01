@@ -159,6 +159,20 @@ If a module output changes shape, you must:
 - keep V1 supported until all downstream modules are migrated
 - add migration/adapter code if needed
 
+### 5) Dependency boundary checks in CI (mandatory)
+Automated dependency checks must run in the main quality gate to prevent accidental cross-module coupling.
+
+At minimum, enforce:
+- no circular dependencies
+- no client imports from `server`/`db`
+- no `server`/`db` imports from `client`
+- no direct repository imports from HTTP route handlers
+
+If a rule must change:
+- update the dependency-check configuration in the same PR
+- document why the boundary change is required
+- add/adjust contract tests at the affected module boundary
+
 ---
 
 ## Coding pipeline impact (how we work day-to-day)

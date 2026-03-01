@@ -1,11 +1,13 @@
 import { z } from "zod";
 
-import { createD1AuthRepositoryV1 } from "../../db/repositories/auth.repository.v1";
-import { createD1WorkspaceRepositoryV1 } from "../../db/repositories/workspace.repository.v1";
 import { IsoDateSchema, UuidV4Schema } from "../../shared/contracts/common.v1";
 import { WorkspaceStatusV1Schema } from "../../shared/contracts/workspace.v1";
 import type { Env } from "../../shared/types/env";
 import { resolveSessionPrincipalByTokenV1 } from "../workflow/auth-magic-link.v1";
+import {
+  createResolveSessionPrincipalDepsV1,
+  createWorkspaceLifecycleDepsV1,
+} from "../workflow/workflow-deps.v1";
 import {
   applyWorkspaceTransitionV1,
   createWorkspaceV1,
@@ -46,14 +48,6 @@ const WorkspaceTransitionHttpRequestBodyV1Schema = z
   })
   .strict();
 
-function createWorkspaceLifecycleDepsV1(env: Env) {
-  return {
-    workspaceRepository: createD1WorkspaceRepositoryV1(env.DB),
-    generateId: () => crypto.randomUUID(),
-    nowIsoUtc: () => new Date().toISOString(),
-  };
-}
-
 async function requireTenantSessionPrincipalV1(input: {
   request: Request;
   env: Env;
@@ -90,11 +84,7 @@ async function requireTenantSessionPrincipalV1(input: {
     {
       sessionToken,
     },
-    {
-      authRepository: createD1AuthRepositoryV1(input.env.DB),
-      hmacSecret: input.env.AUTH_TOKEN_HMAC_SECRET,
-      nowIsoUtc: () => new Date().toISOString(),
-    },
+    createResolveSessionPrincipalDepsV1(input.env),
   );
 
   if (!sessionLookupResult.ok) {
