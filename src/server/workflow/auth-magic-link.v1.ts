@@ -15,18 +15,24 @@ import {
   type CreateMagicLinkInviteResultV1,
   LogoutSessionRequestV1Schema,
   type LogoutSessionResultV1,
+  ResolveSessionPrincipalByTokenRequestV1Schema,
+  type ResolveSessionPrincipalByTokenResultV1,
   normalizeEmailV1,
   parseAuthenticateSessionResultV1,
   parseConsumeMagicLinkTokenResultV1,
   parseCreateMagicLinkInviteResultV1,
   parseLogoutSessionResultV1,
+  parseResolveSessionPrincipalByTokenResultV1,
 } from "../../shared/contracts/auth-magic-link.v1";
 
 const MAGIC_LINK_TOKEN_TTL_MS = 15 * 60 * 1000;
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
-// Auth events are tenant-scoped and not tied to a workspace entity in V1.
-const AUTH_AUDIT_SCOPE_WORKSPACE_ID_V1 = "00000000-0000-4000-8000-000000000001";
+
+function resolveAuthAuditScopeWorkspaceIdV1(tenantId: string): string {
+  // Auth events are tenant-scoped in V1; use tenantId as the scope key.
+  return tenantId;
+}
 
 const hmacKeyCacheBySecret = new Map<string, Promise<CryptoKey>>();
 
@@ -37,6 +43,15 @@ export interface AuthMagicLinkDepsV1 {
   authRepository: AuthRepositoryV1;
   generateId: () => string;
   generateToken: () => string;
+  hmacSecret: string;
+  nowIsoUtc: () => string;
+}
+
+/**
+ * Minimal dependencies for principal lookup based on a raw session token.
+ */
+export interface ResolveSessionPrincipalDepsV1 {
+  authRepository: Pick<AuthRepositoryV1, "findActiveSessionByHashAnyTenant">;
   hmacSecret: string;
   nowIsoUtc: () => string;
 }
@@ -261,7 +276,7 @@ export async function createMagicLinkInviteV1(
     const inviteCreatedAuditEvent = parseAuditEventV2({
       id: deps.generateId(),
       tenantId: parsed.data.tenantId,
-      workspaceId: AUTH_AUDIT_SCOPE_WORKSPACE_ID_V1,
+      workspaceId: resolveAuthAuditScopeWorkspaceIdV1(parsed.data.tenantId),
       actorType: "user",
       actorUserId: parsed.data.actorUserId,
       eventType: "auth.invite_created",
@@ -281,7 +296,7 @@ export async function createMagicLinkInviteV1(
     const magicLinkIssuedAuditEvent = parseAuditEventV2({
       id: deps.generateId(),
       tenantId: parsed.data.tenantId,
-      workspaceId: AUTH_AUDIT_SCOPE_WORKSPACE_ID_V1,
+      workspaceId: resolveAuthAuditScopeWorkspaceIdV1(parsed.data.tenantId),
       actorType: "user",
       actorUserId: parsed.data.actorUserId,
       eventType: "auth.magic_link_issued",
@@ -465,7 +480,7 @@ export async function consumeMagicLinkTokenV1(
     const consumeAuditEvent = parseAuditEventV2({
       id: deps.generateId(),
       tenantId: parsed.data.tenantId,
-      workspaceId: AUTH_AUDIT_SCOPE_WORKSPACE_ID_V1,
+      workspaceId: resolveAuthAuditScopeWorkspaceIdV1(parsed.data.tenantId),
       actorType: "user",
       actorUserId: userId,
       eventType: "auth.magic_link_consumed",
@@ -486,7 +501,7 @@ export async function consumeMagicLinkTokenV1(
     const sessionCreatedAuditEvent = parseAuditEventV2({
       id: deps.generateId(),
       tenantId: parsed.data.tenantId,
-      workspaceId: AUTH_AUDIT_SCOPE_WORKSPACE_ID_V1,
+      workspaceId: resolveAuthAuditScopeWorkspaceIdV1(parsed.data.tenantId),
       actorType: "user",
       actorUserId: userId,
       eventType: "auth.session_created",
@@ -641,6 +656,80 @@ export async function authenticateSessionV1(
 }
 
 /**
+ * Resolves the active principal associated with a raw session token.
+ */
+export async function resolveSessionPrincipalByTokenV1(
+  input: unknown,
+  deps: ResolveSessionPrincipalDepsV1,
+): Promise<ResolveSessionPrincipalByTokenResultV1> {
+  const parsed = ResolveSessionPrincipalByTokenRequestV1Schema.safeParse(input);
+
+  if (!parsed.success) {
+    return parseResolveSessionPrincipalByTokenResultV1(
+      buildFailure(
+        "INPUT_INVALID",
+        "Resolve session principal payload is invalid.",
+        "The session token is invalid. Please sign in again.",
+        buildErrorContextFromZod(parsed.error),
+      ),
+    );
+  }
+
+  try {
+    const nowIsoUtc = deps.nowIsoUtc();
+    const sessionTokenHash = await hashTokenWithHmacV1(
+      deps.hmacSecret,
+      parsed.data.sessionToken,
+    );
+    const sessionLookupResult =
+      await deps.authRepository.findActiveSessionByHashAnyTenant({
+        tokenHash: sessionTokenHash,
+        nowIsoUtc,
+      });
+
+    if (!sessionLookupResult.ok) {
+      return parseResolveSessionPrincipalByTokenResultV1(
+        buildFailure(
+          "PERSISTENCE_ERROR",
+          sessionLookupResult.message,
+          "Session validation failed due to a storage error.",
+          {
+            operation: "auth.findActiveSessionByHashAnyTenant",
+          },
+        ),
+      );
+    }
+
+    if (!sessionLookupResult.sessionLookup) {
+      return parseResolveSessionPrincipalByTokenResultV1(
+        buildFailure(
+          "SESSION_INVALID_OR_EXPIRED",
+          "Session token is invalid, expired, or revoked.",
+          "Your session is no longer valid. Please sign in again.",
+          {},
+        ),
+      );
+    }
+
+    return parseResolveSessionPrincipalByTokenResultV1({
+      ok: true,
+      principal: sessionLookupResult.sessionLookup.principal,
+    });
+  } catch (error) {
+    return parseResolveSessionPrincipalByTokenResultV1(
+      buildFailure(
+        "PERSISTENCE_ERROR",
+        toUnknownErrorMessage(error),
+        "Session validation failed due to an unexpected error.",
+        {
+          operation: "auth.resolveSessionPrincipalByTokenV1",
+        },
+      ),
+    );
+  }
+}
+
+/**
  * Revokes the current active session token in an idempotent way.
  */
 export async function logoutSessionV1(
@@ -697,7 +786,7 @@ export async function logoutSessionV1(
     const sessionRevokedAuditEvent = parseAuditEventV2({
       id: deps.generateId(),
       tenantId: principal.tenantId,
-      workspaceId: AUTH_AUDIT_SCOPE_WORKSPACE_ID_V1,
+      workspaceId: resolveAuthAuditScopeWorkspaceIdV1(principal.tenantId),
       actorType: "user",
       actorUserId: principal.userId,
       eventType: "auth.session_revoked",

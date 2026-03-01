@@ -207,6 +207,25 @@ export const AuthPrincipalV1Schema = z
 export type AuthPrincipalV1 = z.infer<typeof AuthPrincipalV1Schema>;
 
 /**
+ * Request contract for resolving a principal from a raw session token.
+ *
+ * This is used by HTTP route guards that must validate session cookies before
+ * endpoint-specific tenant checks can run.
+ */
+export const ResolveSessionPrincipalByTokenRequestV1Schema = z
+  .object({
+    sessionToken: AuthOpaqueTokenSchema,
+  })
+  .strict();
+
+/**
+ * Inferred TypeScript type for principal-by-token request payloads.
+ */
+export type ResolveSessionPrincipalByTokenRequestV1 = z.infer<
+  typeof ResolveSessionPrincipalByTokenRequestV1Schema
+>;
+
+/**
  * Flexible context payload for structured auth errors.
  */
 export const AuthErrorContextV1Schema = z.record(z.string(), z.unknown());
@@ -247,6 +266,39 @@ export const AuthFailureV1Schema = z
  * Inferred TypeScript type for failed auth workflow results.
  */
 export type AuthFailureV1 = z.infer<typeof AuthFailureV1Schema>;
+
+/**
+ * Success contract for resolve-principal-by-token workflow calls.
+ */
+export const ResolveSessionPrincipalByTokenSuccessV1Schema = z
+  .object({
+    ok: z.literal(true),
+    principal: AuthPrincipalV1Schema,
+  })
+  .strict();
+
+/**
+ * Inferred TypeScript type for successful resolve-principal-by-token results.
+ */
+export type ResolveSessionPrincipalByTokenSuccessV1 = z.infer<
+  typeof ResolveSessionPrincipalByTokenSuccessV1Schema
+>;
+
+/**
+ * Discriminated result contract for resolve-principal-by-token workflow calls.
+ */
+export const ResolveSessionPrincipalByTokenResultV1Schema =
+  z.discriminatedUnion("ok", [
+    ResolveSessionPrincipalByTokenSuccessV1Schema,
+    AuthFailureV1Schema,
+  ]);
+
+/**
+ * Inferred TypeScript type for resolve-principal-by-token workflow results.
+ */
+export type ResolveSessionPrincipalByTokenResultV1 = z.infer<
+  typeof ResolveSessionPrincipalByTokenResultV1Schema
+>;
 
 /**
  * Request contract for creating a tenant invite and issuing a magic-link token.
@@ -481,6 +533,42 @@ export function safeParseCreateMagicLinkInviteResultV1(
   input: unknown,
 ): z.SafeParseReturnType<unknown, CreateMagicLinkInviteResultV1> {
   return CreateMagicLinkInviteResultV1Schema.safeParse(input);
+}
+
+/**
+ * Parses and validates unknown input into a resolve-principal-by-token request payload.
+ */
+export function parseResolveSessionPrincipalByTokenRequestV1(
+  input: unknown,
+): ResolveSessionPrincipalByTokenRequestV1 {
+  return ResolveSessionPrincipalByTokenRequestV1Schema.parse(input);
+}
+
+/**
+ * Safely validates unknown input into a resolve-principal-by-token request payload.
+ */
+export function safeParseResolveSessionPrincipalByTokenRequestV1(
+  input: unknown,
+): z.SafeParseReturnType<unknown, ResolveSessionPrincipalByTokenRequestV1> {
+  return ResolveSessionPrincipalByTokenRequestV1Schema.safeParse(input);
+}
+
+/**
+ * Parses and validates unknown input into a resolve-principal-by-token result payload.
+ */
+export function parseResolveSessionPrincipalByTokenResultV1(
+  input: unknown,
+): ResolveSessionPrincipalByTokenResultV1 {
+  return ResolveSessionPrincipalByTokenResultV1Schema.parse(input);
+}
+
+/**
+ * Safely validates unknown input into a resolve-principal-by-token result payload.
+ */
+export function safeParseResolveSessionPrincipalByTokenResultV1(
+  input: unknown,
+): z.SafeParseReturnType<unknown, ResolveSessionPrincipalByTokenResultV1> {
+  return ResolveSessionPrincipalByTokenResultV1Schema.safeParse(input);
 }
 
 /**

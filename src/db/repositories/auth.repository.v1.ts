@@ -17,6 +17,11 @@ import {
   TenantMembershipV1Schema,
 } from "../../shared/contracts/auth-magic-link.v1";
 import type { D1Database } from "../../shared/types/d1";
+import {
+  INSERT_AUDIT_EVENT_IF_PREVIOUS_WRITE_APPLIED_SQL_V1,
+  INSERT_AUDIT_EVENT_SQL_V1,
+  toAuditDbValuesV1,
+} from "./audit-sql.v1";
 
 type PersistenceFailureCodeV1 = "PERSISTENCE_ERROR";
 
@@ -341,26 +346,6 @@ INSERT INTO auth_magic_link_tokens (
 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
 `;
 
-const INSERT_AUDIT_EVENT_SQL = `
-INSERT INTO audit_events (
-  id,
-  tenant_id,
-  workspace_id,
-  actor_type,
-  actor_user_id,
-  event_type,
-  target_type,
-  target_id,
-  before_json,
-  after_json,
-  policy_run_id,
-  model_run_id,
-  timestamp,
-  context_json
-)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
-`;
-
 const INSERT_USER_IF_TOKEN_AND_INVITE_ACTIVE_SQL = `
 INSERT OR IGNORE INTO users (
   id,
@@ -525,28 +510,6 @@ WHERE id = ?3
   AND expires_at > ?1
 `;
 
-const INSERT_AUDIT_EVENT_IF_CONSUME_APPLIED_SQL = `
-INSERT INTO audit_events (
-  id,
-  tenant_id,
-  workspace_id,
-  actor_type,
-  actor_user_id,
-  event_type,
-  target_type,
-  target_id,
-  before_json,
-  after_json,
-  policy_run_id,
-  model_run_id,
-  timestamp,
-  context_json
-)
-SELECT
-  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14
-WHERE changes() = 1
-`;
-
 const SELECT_ACTIVE_TOKEN_WITH_INVITE_AND_IDENTITY_CONTEXT_SQL = `
 SELECT
   token.id AS token_id,
@@ -650,28 +613,6 @@ WHERE id = ?2
   AND expires_at > ?1
 `;
 
-const INSERT_AUDIT_EVENT_IF_SESSION_REVOKE_APPLIED_SQL = `
-INSERT INTO audit_events (
-  id,
-  tenant_id,
-  workspace_id,
-  actor_type,
-  actor_user_id,
-  event_type,
-  target_type,
-  target_id,
-  before_json,
-  after_json,
-  policy_run_id,
-  model_run_id,
-  timestamp,
-  context_json
-)
-SELECT
-  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14
-WHERE changes() = 1
-`;
-
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0) {
     return "Persistence operation failed.";
@@ -686,25 +627,6 @@ function toFailure(message: string): AuthRepositoryFailureV1 {
     code: "PERSISTENCE_ERROR",
     message,
   };
-}
-
-function toAuditDbValues(event: AuditEventV2): Array<string | null> {
-  return [
-    event.id,
-    event.tenantId,
-    event.workspaceId,
-    event.actorType,
-    event.actorUserId ?? null,
-    event.eventType,
-    event.targetType,
-    event.targetId,
-    event.before === undefined ? null : JSON.stringify(event.before),
-    event.after === undefined ? null : JSON.stringify(event.after),
-    event.policyRunId ?? null,
-    event.modelRunId ?? null,
-    event.timestamp,
-    JSON.stringify(event.context),
-  ];
 }
 
 function mapMembershipRow(row: MembershipRow): TenantMembershipV1 {
@@ -940,11 +862,11 @@ export function createD1AuthRepositoryV1(db: D1Database): AuthRepositoryV1 {
               token.revokedAt ?? null,
             ),
           db
-            .prepare(INSERT_AUDIT_EVENT_SQL)
-            .bind(...toAuditDbValues(inviteCreatedAuditEvent)),
+            .prepare(INSERT_AUDIT_EVENT_SQL_V1)
+            .bind(...toAuditDbValuesV1(inviteCreatedAuditEvent)),
           db
-            .prepare(INSERT_AUDIT_EVENT_SQL)
-            .bind(...toAuditDbValues(magicLinkIssuedAuditEvent)),
+            .prepare(INSERT_AUDIT_EVENT_SQL_V1)
+            .bind(...toAuditDbValuesV1(magicLinkIssuedAuditEvent)),
         ];
 
         const batchResult = await db.batch(statements);
@@ -1076,11 +998,11 @@ export function createD1AuthRepositoryV1(db: D1Database): AuthRepositoryV1 {
               input.tenantId,
             ),
           db
-            .prepare(INSERT_AUDIT_EVENT_IF_CONSUME_APPLIED_SQL)
-            .bind(...toAuditDbValues(consumeAuditEvent)),
+            .prepare(INSERT_AUDIT_EVENT_IF_PREVIOUS_WRITE_APPLIED_SQL_V1)
+            .bind(...toAuditDbValuesV1(consumeAuditEvent)),
           db
-            .prepare(INSERT_AUDIT_EVENT_IF_CONSUME_APPLIED_SQL)
-            .bind(...toAuditDbValues(sessionCreatedAuditEvent)),
+            .prepare(INSERT_AUDIT_EVENT_IF_PREVIOUS_WRITE_APPLIED_SQL_V1)
+            .bind(...toAuditDbValuesV1(sessionCreatedAuditEvent)),
         ]);
 
         const sessionInsertResult = batchResult[3];
@@ -1210,8 +1132,8 @@ export function createD1AuthRepositoryV1(db: D1Database): AuthRepositoryV1 {
             .prepare(UPDATE_ACTIVE_SESSION_TO_REVOKED_SQL)
             .bind(input.revokedAt, input.sessionId, input.tenantId),
           db
-            .prepare(INSERT_AUDIT_EVENT_IF_SESSION_REVOKE_APPLIED_SQL)
-            .bind(...toAuditDbValues(validatedAuditEvent)),
+            .prepare(INSERT_AUDIT_EVENT_IF_PREVIOUS_WRITE_APPLIED_SQL_V1)
+            .bind(...toAuditDbValuesV1(validatedAuditEvent)),
         ]);
 
         if (!revokeResult.success || !auditInsertResult.success) {

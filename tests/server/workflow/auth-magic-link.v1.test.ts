@@ -20,7 +20,7 @@ const ADMIN_USER_ID = "30000000-0000-4000-8000-000000000002";
 const EDITOR_USER_ID = "30000000-0000-4000-8000-000000000003";
 const INVITEE_EMAIL = "invitee@example.com";
 const HMAC_SECRET = "test-auth-token-secret";
-const AUTH_AUDIT_SCOPE_WORKSPACE_ID_V1 = "00000000-0000-4000-8000-000000000001";
+const AUTH_AUDIT_SCOPE_WORKSPACE_ID_V1 = TENANT_ID;
 
 function buildDepsForTest(input: {
   authRepository?: AuthRepositoryV1;

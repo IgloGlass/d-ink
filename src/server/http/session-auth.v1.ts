@@ -1,39 +1,16 @@
+import { createD1AuthRepositoryV1 } from "../../db/repositories/auth.repository.v1";
+import type { AuthPrincipalV1 } from "../../shared/contracts/auth-magic-link.v1";
 import type { D1Database } from "../../shared/types/d1";
-import { hashTokenWithHmacV1 } from "../workflow/auth-magic-link.v1";
-
-const SELECT_ACTIVE_SESSION_PRINCIPAL_BY_HASH_SQL = `
-SELECT
-  session.tenant_id AS tenant_id,
-  users.id AS user_id,
-  users.email_normalized AS user_email_normalized,
-  membership.role AS membership_role
-FROM auth_sessions session
-JOIN users
-  ON users.id = session.user_id
-JOIN tenant_memberships membership
-  ON membership.tenant_id = session.tenant_id
-  AND membership.user_id = session.user_id
-WHERE session.token_hash = ?1
-  AND session.revoked_at IS NULL
-  AND session.expires_at > ?2
-LIMIT 1
-`;
-
-type ActiveSessionPrincipalRowV1 = {
-  membership_role: "Admin" | "Editor";
-  tenant_id: string;
-  user_email_normalized: string;
-  user_id: string;
-};
+import { resolveSessionPrincipalByTokenV1 } from "../workflow/auth-magic-link.v1";
 
 /**
  * Tenant-scoped authenticated principal resolved from an active session token.
  */
 export type ActiveSessionPrincipalV1 = {
-  emailNormalized: string;
-  role: "Admin" | "Editor";
-  tenantId: string;
-  userId: string;
+  emailNormalized: AuthPrincipalV1["emailNormalized"];
+  role: AuthPrincipalV1["role"];
+  tenantId: AuthPrincipalV1["tenantId"];
+  userId: AuthPrincipalV1["userId"];
 };
 
 /**
@@ -100,45 +77,45 @@ export async function findActiveSessionPrincipalByTokenV1(input: {
   operation: string;
   sessionToken: string;
 }): Promise<ActiveSessionPrincipalLookupResultV1> {
-  try {
-    const nowIsoUtc = new Date().toISOString();
-    const tokenHash = await hashTokenWithHmacV1(
-      input.hmacSecret,
-      input.sessionToken,
-    );
-    const sessionRow = await input.db
-      .prepare(SELECT_ACTIVE_SESSION_PRINCIPAL_BY_HASH_SQL)
-      .bind(tokenHash, nowIsoUtc)
-      .first<ActiveSessionPrincipalRowV1>();
+  const lookupResult = await resolveSessionPrincipalByTokenV1(
+    {
+      sessionToken: input.sessionToken,
+    },
+    {
+      authRepository: createD1AuthRepositoryV1(input.db),
+      hmacSecret: input.hmacSecret,
+      nowIsoUtc: () => new Date().toISOString(),
+    },
+  );
 
-    if (!sessionRow) {
-      return {
-        ok: false,
-        code: "SESSION_INVALID_OR_EXPIRED",
-        message: "Session token is invalid, expired, or revoked.",
-        userMessage: "Your session is no longer valid. Please sign in again.",
-        context: {},
-      };
-    }
-
+  if (lookupResult.ok) {
     return {
       ok: true,
-      principal: {
-        tenantId: sessionRow.tenant_id,
-        userId: sessionRow.user_id,
-        emailNormalized: sessionRow.user_email_normalized,
-        role: sessionRow.membership_role,
-      },
-    };
-  } catch {
-    return {
-      ok: false,
-      code: "PERSISTENCE_ERROR",
-      message: "Session validation failed due to a storage error.",
-      userMessage: "Session validation failed due to a storage error.",
-      context: {
-        operation: input.operation,
-      },
+      principal: lookupResult.principal,
     };
   }
+
+  if (
+    lookupResult.error.code === "SESSION_INVALID_OR_EXPIRED" ||
+    lookupResult.error.code === "INPUT_INVALID"
+  ) {
+    return {
+      ok: false,
+      code: "SESSION_INVALID_OR_EXPIRED",
+      message: "Session token is invalid, expired, or revoked.",
+      userMessage: "Your session is no longer valid. Please sign in again.",
+      context: {},
+    };
+  }
+
+  return {
+    ok: false,
+    code: "PERSISTENCE_ERROR",
+    message: lookupResult.error.message,
+    userMessage: lookupResult.error.user_message,
+    context: {
+      ...lookupResult.error.context,
+      operation: input.operation,
+    },
+  };
 }

@@ -107,7 +107,24 @@ describe("WorkspaceDetailPage", () => {
             },
             auditEvent: {
               id: "66666666-6666-4666-8666-666666666666",
+              tenantId: sessionPrincipalMock.tenantId,
+              workspaceId: "44444444-4444-4444-8444-444444444444",
+              actorType: "user",
+              actorUserId: sessionPrincipalMock.userId,
               eventType: "workspace.status_changed",
+              targetType: "workspace",
+              targetId: "44444444-4444-4444-8444-444444444444",
+              before: {
+                status: "draft",
+              },
+              after: {
+                status: "in_review",
+              },
+              timestamp: "2026-02-24T10:05:01.000Z",
+              context: {
+                actorRole: sessionPrincipalMock.role,
+                reason: null,
+              },
             },
           },
         });

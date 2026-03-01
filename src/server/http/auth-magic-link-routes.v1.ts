@@ -1,7 +1,10 @@
 import { z } from "zod";
 
 import { createD1AuthRepositoryV1 } from "../../db/repositories/auth.repository.v1";
-import { AuthRoleV1Schema } from "../../shared/contracts/auth-magic-link.v1";
+import {
+  type AuthPrincipalV1,
+  AuthRoleV1Schema,
+} from "../../shared/contracts/auth-magic-link.v1";
 import { UuidV4Schema } from "../../shared/contracts/common.v1";
 import type { Env } from "../../shared/types/env";
 import {
@@ -9,11 +12,15 @@ import {
   consumeMagicLinkTokenV1,
   createMagicLinkInviteV1,
   logoutSessionV1,
+  resolveSessionPrincipalByTokenV1,
 } from "../workflow/auth-magic-link.v1";
 import {
-  findActiveSessionPrincipalByTokenV1,
-  parseCookiesV1,
-} from "./session-auth.v1";
+  createJsonErrorResponseV1,
+  createMethodNotAllowedResponseV1,
+  readJsonBodyV1,
+  validateOriginForPostV1,
+} from "./http-helpers.v1";
+import { parseCookiesV1 } from "./session-auth.v1";
 
 const SESSION_COOKIE_NAME_V1 = "dink_session_v1";
 const SESSION_TENANT_COOKIE_NAME_V1 = "dink_tenant_v1";
@@ -45,70 +52,6 @@ const ConsumeHttpQueryV1Schema = z
     token: z.string().trim().min(1).max(512),
   })
   .strict();
-
-type JsonErrorBodyV1 = {
-  error: {
-    code: string;
-    context: Record<string, unknown>;
-    message: string;
-    user_message: string;
-  };
-  ok: false;
-};
-
-function createJsonErrorResponseV1(input: {
-  code: string;
-  context?: Record<string, unknown>;
-  message: string;
-  status: number;
-  userMessage?: string;
-}): Response {
-  const isServerError = input.status >= 500;
-  const safeUserMessage = isServerError
-    ? (input.userMessage ?? "Internal server error.")
-    : (input.userMessage ?? input.message);
-  const safeMessage = isServerError ? safeUserMessage : input.message;
-
-  const responseBody: JsonErrorBodyV1 = {
-    ok: false,
-    error: {
-      code: input.code,
-      context: input.context ?? {},
-      message: safeMessage,
-      user_message: safeUserMessage,
-    },
-  };
-
-  return Response.json(responseBody, {
-    status: input.status,
-    headers: {
-      "Cache-Control": "no-store",
-    },
-  });
-}
-
-function createMethodNotAllowedResponseV1(allowedMethod: string): Response {
-  const headers = new Headers();
-  headers.set("Allow", allowedMethod);
-  headers.set("Cache-Control", "no-store");
-  headers.set("Content-Type", "application/json; charset=utf-8");
-
-  return new Response(
-    JSON.stringify({
-      ok: false,
-      error: {
-        code: "METHOD_NOT_ALLOWED",
-        context: {},
-        message: `Expected ${allowedMethod} for this route.`,
-        user_message: `Expected ${allowedMethod} for this route.`,
-      },
-    }),
-    {
-      status: 405,
-      headers,
-    },
-  );
-}
 
 function createNoStoreRedirectResponseV1(input: {
   location: string;
@@ -236,49 +179,6 @@ function buildMagicLinkUrlV1(input: {
   return magicLinkUrl.toString();
 }
 
-function validateOriginForPostV1(input: {
-  appBaseUrl: URL;
-  request: Request;
-}): Response | null {
-  if (input.request.method !== "POST") {
-    return null;
-  }
-
-  const originHeader = input.request.headers.get("Origin");
-  if (!originHeader) {
-    return null;
-  }
-
-  let requestOrigin: string;
-  try {
-    requestOrigin = new URL(originHeader).origin;
-  } catch {
-    return createJsonErrorResponseV1({
-      status: 403,
-      code: "ORIGIN_FORBIDDEN",
-      message: "Request origin is invalid.",
-    });
-  }
-
-  if (requestOrigin !== input.appBaseUrl.origin) {
-    return createJsonErrorResponseV1({
-      status: 403,
-      code: "ORIGIN_FORBIDDEN",
-      message: "Request origin is not allowed for this endpoint.",
-    });
-  }
-
-  return null;
-}
-
-async function readJsonBodyV1(request: Request): Promise<unknown> {
-  try {
-    return await request.json();
-  } catch {
-    return null;
-  }
-}
-
 function createAuthDepsV1(env: Env) {
   return {
     authRepository: createD1AuthRepositoryV1(env.DB),
@@ -286,6 +186,130 @@ function createAuthDepsV1(env: Env) {
     generateToken: () => generateTokenV1(),
     nowIsoUtc: () => new Date().toISOString(),
     hmacSecret: env.AUTH_TOKEN_HMAC_SECRET,
+  };
+}
+
+type SessionPrincipalGuardSuccessV1 = {
+  ok: true;
+  principal: AuthPrincipalV1;
+  sessionToken: string;
+};
+
+type SessionPrincipalGuardFailureV1 = {
+  ok: false;
+  response: Response;
+};
+
+async function requireSessionPrincipalV1(input: {
+  request: Request;
+  env: Env;
+}): Promise<SessionPrincipalGuardSuccessV1 | SessionPrincipalGuardFailureV1> {
+  const cookies = parseCookiesV1(input.request.headers.get("Cookie"));
+  const sessionToken = cookies[SESSION_COOKIE_NAME_V1];
+  if (!sessionToken) {
+    return {
+      ok: false,
+      response: createJsonErrorResponseV1({
+        status: 401,
+        code: "SESSION_MISSING",
+        message: "A valid authenticated session is required.",
+      }),
+    };
+  }
+
+  const sessionLookupResult = await resolveSessionPrincipalByTokenV1(
+    {
+      sessionToken,
+    },
+    {
+      authRepository: createD1AuthRepositoryV1(input.env.DB),
+      hmacSecret: input.env.AUTH_TOKEN_HMAC_SECRET,
+      nowIsoUtc: () => new Date().toISOString(),
+    },
+  );
+
+  if (!sessionLookupResult.ok) {
+    const status =
+      sessionLookupResult.error.code === "SESSION_INVALID_OR_EXPIRED" ||
+      sessionLookupResult.error.code === "INPUT_INVALID"
+        ? 401
+        : 500;
+    const code =
+      status === 401
+        ? "SESSION_INVALID_OR_EXPIRED"
+        : sessionLookupResult.error.code;
+
+    return {
+      ok: false,
+      response: createJsonErrorResponseV1({
+        status,
+        code,
+        message: sessionLookupResult.error.message,
+        userMessage: sessionLookupResult.error.user_message,
+        context: sessionLookupResult.error.context,
+      }),
+    };
+  }
+
+  return {
+    ok: true,
+    principal: sessionLookupResult.principal,
+    sessionToken,
+  };
+}
+
+async function requireTenantSessionPrincipalV1(input: {
+  request: Request;
+  env: Env;
+  tenantId: string;
+  tenantMismatchUserMessage: string;
+}): Promise<SessionPrincipalGuardSuccessV1 | SessionPrincipalGuardFailureV1> {
+  const sessionGuardResult = await requireSessionPrincipalV1({
+    request: input.request,
+    env: input.env,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult;
+  }
+
+  if (sessionGuardResult.principal.tenantId !== input.tenantId) {
+    return {
+      ok: false,
+      response: createJsonErrorResponseV1({
+        status: 403,
+        code: "TENANT_MISMATCH",
+        message: "Session tenant does not match requested tenant.",
+        userMessage: input.tenantMismatchUserMessage,
+        context: {
+          requestTenantId: input.tenantId,
+          sessionTenantId: sessionGuardResult.principal.tenantId,
+        },
+      }),
+    };
+  }
+
+  return sessionGuardResult;
+}
+
+function requireSessionTokenV1(input: {
+  request: Request;
+}): { ok: true; sessionToken: string } | { ok: false; response: Response } {
+  const cookies = parseCookiesV1(input.request.headers.get("Cookie"));
+  const sessionToken = cookies[SESSION_COOKIE_NAME_V1];
+  if (!sessionToken) {
+    return {
+      ok: false,
+      response: createJsonErrorResponseV1({
+        status: 401,
+        code: "SESSION_MISSING",
+        message: "A valid authenticated session is required.",
+      }),
+    };
+  }
+
+  return {
+    ok: true,
+    sessionToken,
   };
 }
 
@@ -302,16 +326,6 @@ async function handleCreateInviteRouteV1(
     return originValidationError;
   }
 
-  const cookies = parseCookiesV1(request.headers.get("Cookie"));
-  const sessionToken = cookies[SESSION_COOKIE_NAME_V1];
-  if (!sessionToken) {
-    return createJsonErrorResponseV1({
-      status: 401,
-      code: "SESSION_MISSING",
-      message: "A valid authenticated session is required.",
-    });
-  }
-
   const parsedBody = InviteHttpRequestBodyV1Schema.safeParse(
     await readJsonBodyV1(request),
   );
@@ -323,43 +337,15 @@ async function handleCreateInviteRouteV1(
     });
   }
 
-  const sessionLookupResult = await findActiveSessionPrincipalByTokenV1({
-    db: env.DB,
-    hmacSecret: env.AUTH_TOKEN_HMAC_SECRET,
-    operation: "auth.findActiveSessionPrincipalByTokenV1",
-    sessionToken,
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.data.tenantId,
+    tenantMismatchUserMessage:
+      "You can only invite users in the active tenant.",
   });
-  if (!sessionLookupResult.ok) {
-    if (sessionLookupResult.code === "SESSION_INVALID_OR_EXPIRED") {
-      return createJsonErrorResponseV1({
-        status: 401,
-        code: sessionLookupResult.code,
-        message: sessionLookupResult.message,
-        userMessage: sessionLookupResult.userMessage,
-        context: sessionLookupResult.context,
-      });
-    }
-
-    return createJsonErrorResponseV1({
-      status: 500,
-      code: sessionLookupResult.code,
-      message: sessionLookupResult.message,
-      userMessage: sessionLookupResult.userMessage,
-      context: sessionLookupResult.context,
-    });
-  }
-
-  if (sessionLookupResult.principal.tenantId !== parsedBody.data.tenantId) {
-    return createJsonErrorResponseV1({
-      status: 403,
-      code: "TENANT_MISMATCH",
-      message: "Session tenant does not match requested tenant.",
-      userMessage: "You can only invite users in the active tenant.",
-      context: {
-        requestTenantId: parsedBody.data.tenantId,
-        sessionTenantId: sessionLookupResult.principal.tenantId,
-      },
-    });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
   }
 
   const deps = createAuthDepsV1(env);
@@ -368,7 +354,7 @@ async function handleCreateInviteRouteV1(
       tenantId: parsedBody.data.tenantId,
       inviteeEmail: parsedBody.data.inviteeEmail,
       inviteeRole: parsedBody.data.inviteeRole,
-      actorUserId: sessionLookupResult.principal.userId,
+      actorUserId: sessionGuardResult.principal.userId,
     },
     deps,
   );
@@ -497,14 +483,9 @@ async function handleAuthenticateSessionRouteV1(
     return originValidationError;
   }
 
-  const cookies = parseCookiesV1(request.headers.get("Cookie"));
-  const sessionToken = cookies[SESSION_COOKIE_NAME_V1];
-  if (!sessionToken) {
-    return createJsonErrorResponseV1({
-      status: 401,
-      code: "SESSION_MISSING",
-      message: "A valid authenticated session is required.",
-    });
+  const sessionTokenResult = requireSessionTokenV1({ request });
+  if (!sessionTokenResult.ok) {
+    return sessionTokenResult.response;
   }
 
   const parsedBody = AuthenticateHttpRequestBodyV1Schema.safeParse(
@@ -522,7 +503,7 @@ async function handleAuthenticateSessionRouteV1(
   const authResult = await authenticateSessionV1(
     {
       tenantId: parsedBody.data.tenantId,
-      sessionToken,
+      sessionToken: sessionTokenResult.sessionToken,
     },
     deps,
   );
@@ -576,37 +557,18 @@ async function handleCurrentSessionRouteV1(
   request: Request,
   env: Env,
 ): Promise<Response> {
-  const cookies = parseCookiesV1(request.headers.get("Cookie"));
-  const sessionToken = cookies[SESSION_COOKIE_NAME_V1];
-  if (!sessionToken) {
-    return createJsonErrorResponseV1({
-      status: 401,
-      code: "SESSION_MISSING",
-      message: "A valid authenticated session is required.",
-    });
-  }
-
-  const sessionLookupResult = await findActiveSessionPrincipalByTokenV1({
-    db: env.DB,
-    hmacSecret: env.AUTH_TOKEN_HMAC_SECRET,
-    operation: "auth.findActiveSessionPrincipalByTokenV1",
-    sessionToken,
+  const sessionGuardResult = await requireSessionPrincipalV1({
+    request,
+    env,
   });
-  if (!sessionLookupResult.ok) {
-    return createJsonErrorResponseV1({
-      status:
-        sessionLookupResult.code === "SESSION_INVALID_OR_EXPIRED" ? 401 : 500,
-      code: sessionLookupResult.code,
-      message: sessionLookupResult.message,
-      userMessage: sessionLookupResult.userMessage,
-      context: sessionLookupResult.context,
-    });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
   }
 
   return Response.json(
     {
       ok: true,
-      principal: sessionLookupResult.principal,
+      principal: sessionGuardResult.principal,
     },
     {
       status: 200,
@@ -634,9 +596,8 @@ async function handleLogoutSessionRouteV1(
   const isSecureRequest = requestUrl.protocol === "https:";
   const clearCookies = buildClearedAuthCookiesV1(isSecureRequest);
 
-  const cookies = parseCookiesV1(request.headers.get("Cookie"));
-  const sessionToken = cookies[SESSION_COOKIE_NAME_V1];
-  if (!sessionToken) {
+  const sessionTokenResult = requireSessionTokenV1({ request });
+  if (!sessionTokenResult.ok) {
     return createJsonSuccessResponseV1({
       status: 200,
       setCookies: clearCookies,
@@ -646,7 +607,7 @@ async function handleLogoutSessionRouteV1(
   const deps = createAuthDepsV1(env);
   const logoutResult = await logoutSessionV1(
     {
-      sessionToken,
+      sessionToken: sessionTokenResult.sessionToken,
     },
     deps,
   );

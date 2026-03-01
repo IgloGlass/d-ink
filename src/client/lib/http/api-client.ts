@@ -67,6 +67,7 @@ async function safeParseJson(response: Response): Promise<unknown> {
 export async function apiRequest<TResponse>(input: {
   body?: unknown;
   method?: "GET" | "POST";
+  parseResponse: (payload: unknown) => TResponse;
   path: string;
 }): Promise<TResponse> {
   const response = await fetch(input.path, {
@@ -103,7 +104,20 @@ export async function apiRequest<TResponse>(input: {
     });
   }
 
-  return parsedPayload as TResponse;
+  try {
+    return input.parseResponse(parsedPayload);
+  } catch (error) {
+    throw new ApiClientError({
+      status: response.status,
+      code: "INVALID_RESPONSE",
+      message: "API response validation failed.",
+      userMessage: "Unexpected API response.",
+      context: {
+        path: input.path,
+        reason: error instanceof Error ? error.message : "Unknown parse error.",
+      },
+    });
+  }
 }
 
 export function toUserFacingErrorMessage(error: unknown): string {

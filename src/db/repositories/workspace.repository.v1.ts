@@ -8,6 +8,11 @@ import {
   parseWorkspaceV1,
 } from "../../shared/contracts/workspace.v1";
 import type { D1Database } from "../../shared/types/d1";
+import {
+  INSERT_AUDIT_EVENT_IF_PREVIOUS_WRITE_APPLIED_SQL_V1,
+  INSERT_AUDIT_EVENT_SQL_V1,
+  toAuditDbValuesV1,
+} from "./audit-sql.v1";
 
 /**
  * Failure codes emitted by `WorkspaceRepositoryV1#create` and `createWithAudit`.
@@ -179,48 +184,6 @@ SET
 WHERE tenant_id = ?3 AND id = ?4 AND status = ?5
 `;
 
-const INSERT_AUDIT_EVENT_SQL = `
-INSERT INTO audit_events (
-  id,
-  tenant_id,
-  workspace_id,
-  actor_type,
-  actor_user_id,
-  event_type,
-  target_type,
-  target_id,
-  before_json,
-  after_json,
-  policy_run_id,
-  model_run_id,
-  timestamp,
-  context_json
-)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
-`;
-
-const INSERT_AUDIT_EVENT_IF_STATUS_UPDATE_APPLIED_SQL = `
-INSERT INTO audit_events (
-  id,
-  tenant_id,
-  workspace_id,
-  actor_type,
-  actor_user_id,
-  event_type,
-  target_type,
-  target_id,
-  before_json,
-  after_json,
-  policy_run_id,
-  model_run_id,
-  timestamp,
-  context_json
-)
-SELECT
-  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14
-WHERE changes() = 1
-`;
-
 function isDuplicateWorkspaceError(error: unknown): boolean {
   return (
     error instanceof Error &&
@@ -244,25 +207,6 @@ function mapWorkspaceRowToContract(row: WorkspaceRow): WorkspaceV1 {
     tenantId: row.tenant_id,
     updatedAt: row.updated_at,
   });
-}
-
-function toAuditDbValues(event: AuditEventV2): Array<string | null> {
-  return [
-    event.id,
-    event.tenantId,
-    event.workspaceId,
-    event.actorType,
-    event.actorUserId ?? null,
-    event.eventType,
-    event.targetType,
-    event.targetId,
-    event.before === undefined ? null : JSON.stringify(event.before),
-    event.after === undefined ? null : JSON.stringify(event.after),
-    event.policyRunId ?? null,
-    event.modelRunId ?? null,
-    event.timestamp,
-    JSON.stringify(event.context),
-  ];
 }
 
 /**
@@ -387,8 +331,8 @@ export function createD1WorkspaceRepositoryV1(
               validatedWorkspace.updatedAt,
             ),
           db
-            .prepare(INSERT_AUDIT_EVENT_SQL)
-            .bind(...toAuditDbValues(validatedAuditEvent)),
+            .prepare(INSERT_AUDIT_EVENT_SQL_V1)
+            .bind(...toAuditDbValuesV1(validatedAuditEvent)),
         ]);
 
         if (!workspaceInsertResult.success || !auditInsertResult.success) {
@@ -532,8 +476,8 @@ export function createD1WorkspaceRepositoryV1(
               input.fromStatus,
             ),
           db
-            .prepare(INSERT_AUDIT_EVENT_IF_STATUS_UPDATE_APPLIED_SQL)
-            .bind(...toAuditDbValues(validatedAuditEvent)),
+            .prepare(INSERT_AUDIT_EVENT_IF_PREVIOUS_WRITE_APPLIED_SQL_V1)
+            .bind(...toAuditDbValuesV1(validatedAuditEvent)),
         ]);
 
         if (!workspaceUpdateResult.success || !auditInsertResult.success) {
