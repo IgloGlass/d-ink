@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "ai_policy_pack_v1",
+  "moduleId": "mapping",
+  "policyVersion": "mapping-bas.v1",
+  "description": "Base decision rules for mapping suggestions.",
+  "effectiveFrom": "2026-03-02",
+  "categoryCatalogRef": "SilverfinTaxCategoryCodeV1Schema",
+  "rules": [
+    {
+      "ruleId": "map.example.specific-rule.v1",
+      "priority": 100,
+      "when": {
+        "accountNumberPrefixes": ["6072"],
+        "nameIncludesAny": ["representation", "non deductible"],
+        "nameExcludesAny": []
+      },
+      "then": {
+        "proposedCategoryCode": "607200",
+        "confidenceBase": 0.9,
+        "reviewFlag": false
+      }
+    }
+  ],
+  "fallback": {
+    "balanceSheetCategoryCode": "100000",
+    "incomeStatementCategoryCode": "950000",
+    "confidence": 0.4,
+    "reviewFlag": true,
+    "policyRuleReferencePrefix": "map.fallback"
+  },
+  "reviewRules": [
+    {
+      "ruleId": "review.low-confidence.v1",
+      "when": {
+        "confidenceBelow": 0.72
+      },
+      "setReviewFlag": true
+    },
+    {
+      "ruleId": "review.ambiguous-top-two.v1",
+      "when": {
+        "topTwoScoreMarginBelow": 0.08
+      },
+      "setReviewFlag": true
+    }
+  ]
+}

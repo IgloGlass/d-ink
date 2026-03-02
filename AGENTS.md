@@ -32,6 +32,7 @@ The product is an **AI tax reviewer + draft engine**, not a full professional ta
 3. **Structured AI outputs only**: schema-validated JSON; no free-text driving computations.
 4. **Auditability is a feature**: every decision/change must be traceable.
 5. **Scoped memory only**: save treatments at return/group/user scope; never globally.
+6. **Structured AI reasoning only**: AI logic must be module-scoped, policy-driven, and versioned outside prompt prose.
 
 ---
 
@@ -86,6 +87,25 @@ API handlers must be thin: parse request → call service → return response.
 - Deterministic modules must be **pure and testable** (no model calls).
 - AI modules must never do arithmetic or final form population.
 - AI output is always **validated** and converted into domain objects before use.
+
+### 4b) Structured AI reasoning framework (mandatory)
+All AI modules/submodules must follow the structured reasoning framework in:
+- `references/ai-module-spec-v1.md`
+- `references/templates/ai-module-spec.template.json`
+- `references/templates/ai-policy-pack.template.json`
+- `references/templates/ai-policy-patch.template.json`
+
+Required design pattern:
+- `module-spec` defines contracts, runtime, gates, audit fields, and active policy versions.
+- `policy-pack` contains ordered decision rules, fallback behavior, and review thresholds.
+- `policy-patch` applies minimal hotfix overlays without rewriting prompts.
+
+Rules:
+- Prompts must stay thin; domain decision logic belongs in policy files.
+- Every AI decision must include a `policyRuleReference`.
+- AI outputs use canonical codes/IDs, then deterministic code resolves labels/derived fields.
+- Any policy change requires module tests + boundary contract tests + golden pack run.
+- Policy/prompt/model versions must be stored with run artifacts for audit/replay.
 
 ### 5) Versioning and immutability for outputs
 Each pipeline run creates versioned artifacts:

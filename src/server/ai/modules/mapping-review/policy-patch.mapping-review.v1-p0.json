@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "ai_policy_patch_v1",
+  "moduleId": "mapping-review",
+  "patchVersion": "mapping-review.v1-p0",
+  "basePolicyVersion": "mapping-review.v1",
+  "status": "inactive",
+  "reason": "Placeholder patch file for rapid production hotfixes.",
+  "effectiveFrom": "2026-03-02",
+  "operations": []
+}
+

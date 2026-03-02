@@ -1,0 +1,491 @@
+{
+  "schemaVersion": "ai_policy_pack_v1",
+  "moduleId": "mapping-review",
+  "policyVersion": "mapping-review.v1",
+  "description": "Comprehensive mapping review policy based on original mapping prompt guidelines. Deterministic mapping remains source of truth; this policy governs structured override suggestions.",
+  "effectiveFrom": "2026-03-02",
+  "sourceDocuments": [
+    "C:/Users/slemi/Documents/Mapping prompt.txt",
+    "C:/Users/slemi/Documents/Mapping guidelines.txt"
+  ],
+  "hardConstraints": {
+    "allowedScopes": [
+      "balance_sheet",
+      "income_statement"
+    ],
+    "allowedOverrideScopes": [
+      "return",
+      "user"
+    ],
+    "allowedCategoryCodesFromCatalogOnly": true,
+    "categoryLabelsAreCanonicalAndCaseSensitive": true,
+    "categoryMustMatchRowStatementType": true,
+    "fallback": {
+      "balanceSheetCategoryCode": "100000",
+      "incomeStatementCategoryCode": "950000"
+    },
+    "outputMustBeStructuredJson": true,
+    "neverInventCategories": true
+  },
+  "categoryCatalog": {
+    "balance_sheet": [
+      {
+        "code": "100000",
+        "name": "Non-tax sensitive - Balance"
+      },
+      {
+        "code": "102000",
+        "name": "Tangible and acquired intangible assets - opening/closing balance"
+      },
+      {
+        "code": "111000",
+        "name": "Buildings - Acquisition value"
+      },
+      {
+        "code": "115000",
+        "name": "Land improvements - Acquisition value"
+      },
+      {
+        "code": "123200",
+        "name": "Leaseholder's improvements - Acquisition value"
+      },
+      {
+        "code": "131000",
+        "name": "Shares and shareholdings - General balance sheet item"
+      },
+      {
+        "code": "138400",
+        "name": "Change in value and write-downs on capital assets - General balance sheet item"
+      },
+      {
+        "code": "138500",
+        "name": "Endowment insurance"
+      },
+      {
+        "code": "141000",
+        "name": "Inventory - Acquisition value"
+      },
+      {
+        "code": "141900",
+        "name": "Inventory - Obsolescence reserve"
+      },
+      {
+        "code": "151500",
+        "name": "Doubtful debts"
+      },
+      {
+        "code": "211000",
+        "name": "Tax allocation reserve"
+      },
+      {
+        "code": "215000",
+        "name": "Accelerated depreciation - tangible/acquired intangible assets"
+      },
+      {
+        "code": "221000",
+        "name": "Basis for yield tax"
+      },
+      {
+        "code": "222000",
+        "name": "Warranty provision"
+      },
+      {
+        "code": "229000",
+        "name": "Other provisions"
+      },
+      {
+        "code": "251300",
+        "name": "Property tax and property fee"
+      },
+      {
+        "code": "294300",
+        "name": "Accrued special payroll tax on pension"
+      },
+      {
+        "code": "294400",
+        "name": "Accrued yield tax on pension"
+      }
+    ],
+    "income_statement": [
+      {
+        "code": "950000",
+        "name": "Non-tax sensitive - Profit and loss statement"
+      },
+      {
+        "code": "367000",
+        "name": "Financial inventory assets - Capital gain/loss"
+      },
+      {
+        "code": "367200",
+        "name": "Financial inventory assets - dividend"
+      },
+      {
+        "code": "394000",
+        "name": "Change in value and write-downs on capital assets"
+      },
+      {
+        "code": "397000",
+        "name": "Tangible/acquired intangible assets - booked depreciation"
+      },
+      {
+        "code": "397200",
+        "name": "Buildings and land - capital gain"
+      },
+      {
+        "code": "797200",
+        "name": "Buildings and land - capital loss"
+      },
+      {
+        "code": "399300",
+        "name": "Received gifts and donations - non-taxable"
+      },
+      {
+        "code": "399500",
+        "name": "Composition agreement - non-taxable"
+      },
+      {
+        "code": "519100",
+        "name": "Property tax and property fee"
+      },
+      {
+        "code": "598000",
+        "name": "Sponsorship, donations and gifts - presumed deductible"
+      },
+      {
+        "code": "699300",
+        "name": "Sponsorship, donations and gifts - presumed non-deductible"
+      },
+      {
+        "code": "607100",
+        "name": "Entertainment - internal and external - presumed deductible"
+      },
+      {
+        "code": "607200",
+        "name": "Entertainment - internal and external - presumed non-deductible"
+      },
+      {
+        "code": "634200",
+        "name": "Sanctions and penalties"
+      },
+      {
+        "code": "636100",
+        "name": "Warranty provision - Change in warranty provision"
+      },
+      {
+        "code": "636200",
+        "name": "Warranty provision - Actual costs"
+      },
+      {
+        "code": "655000",
+        "name": "Consulting fees"
+      },
+      {
+        "code": "657000",
+        "name": "Interest - Banking costs"
+      },
+      {
+        "code": "690000",
+        "name": "Other non-deductible costs"
+      },
+      {
+        "code": "698100",
+        "name": "Membership fees - presumed deductible"
+      },
+      {
+        "code": "698200",
+        "name": "Membership fees - presumed non-deductible"
+      },
+      {
+        "code": "740000",
+        "name": "Pension costs and basis for special payroll tax on pension cost"
+      },
+      {
+        "code": "753000",
+        "name": "Special payroll tax on pension cost"
+      },
+      {
+        "code": "762200",
+        "name": "Health care - presumed deductible"
+      },
+      {
+        "code": "762300",
+        "name": "Health care - presumed non-deductible"
+      },
+      {
+        "code": "777000",
+        "name": "Buildings - booked depreciation"
+      },
+      {
+        "code": "782400",
+        "name": "Land improvement - booked depreciation"
+      },
+      {
+        "code": "784000",
+        "name": "Leaseholder's improvements - booked depreciation"
+      },
+      {
+        "code": "801000",
+        "name": "Capital assets (Shares) - Dividend"
+      },
+      {
+        "code": "802000",
+        "name": "Capital assets (Shares) - Capital gain/loss"
+      },
+      {
+        "code": "808000",
+        "name": "Capital assets (Shares) - Unrealized change in value"
+      },
+      {
+        "code": "831000",
+        "name": "Interest - interest income"
+      },
+      {
+        "code": "831400",
+        "name": "Interest income on the tax account"
+      },
+      {
+        "code": "842300",
+        "name": "Interest cost on the tax account"
+      },
+      {
+        "code": "843100",
+        "name": "Interest - FX-gain"
+      },
+      {
+        "code": "843600",
+        "name": "Interest - FX-loss"
+      },
+      {
+        "code": "521200",
+        "name": "Interest - financial leasing - income"
+      },
+      {
+        "code": "522200",
+        "name": "Interest - financial leasing - cost"
+      },
+      {
+        "code": "849000",
+        "name": "Interest - Interest cost"
+      },
+      {
+        "code": "881000",
+        "name": "Tax allocation reserve - this year's change"
+      },
+      {
+        "code": "881100",
+        "name": "Tax allocation reserve - allocation"
+      },
+      {
+        "code": "881900",
+        "name": "Tax allocation reserve - reversal"
+      },
+      {
+        "code": "882000",
+        "name": "Group contribution - received"
+      },
+      {
+        "code": "883000",
+        "name": "Group contribution - provided"
+      },
+      {
+        "code": "885000",
+        "name": "Accelerated depreciation - tangible/acquired intangible assets"
+      },
+      {
+        "code": "891000",
+        "name": "Tax cost"
+      },
+      {
+        "code": "940000",
+        "name": "Result of the year"
+      }
+    ]
+  },
+  "decisionHierarchy": [
+    {
+      "id": "hierarchy.1",
+      "instruction": "Use policy-pack rules and deterministic evidence first."
+    },
+    {
+      "id": "hierarchy.2",
+      "instruction": "Specific guideline rules override generic tax intuition."
+    },
+    {
+      "id": "hierarchy.3",
+      "instruction": "If uncertainty remains, choose prudent treatment and set review flag."
+    },
+    {
+      "id": "hierarchy.4",
+      "instruction": "Never propose categories outside the allowed catalog."
+    },
+    {
+      "id": "hierarchy.5",
+      "instruction": "Fallback to non-tax-sensitive category by statement type when no specific category is reliable."
+    }
+  ],
+  "guidelineRules": [
+    {
+      "ruleId": "guideline.bs.capitalized-expenditure.non-tax-sensitive.v1",
+      "scope": "balance_sheet",
+      "instruction": "Balances for capitalized expenditure (balanserad utgift/aktiverad utgift) and associated depreciation are generally non-tax-sensitive, unless evidence indicates building or similar specific acquisition category."
+    },
+    {
+      "ruleId": "guideline.bs.building-land-leasehold-depr.not-bs-categories.v1",
+      "scope": "balance_sheet",
+      "instruction": "Balance sheet accounts for building, land improvement, and leasehold accumulated depreciation should map to non-tax-sensitive balance category; these depreciation categories are recognized in income statement mapping."
+    },
+    {
+      "ruleId": "guideline.bs.land.non-depreciable.non-tax-sensitive.v1",
+      "scope": "balance_sheet",
+      "instruction": "Land (mark) is non-depreciable and should be treated as non-tax-sensitive in balance sheet mapping."
+    },
+    {
+      "ruleId": "guideline.bs.accumulated-depreciation.to-102000.v1",
+      "scope": "balance_sheet",
+      "instruction": "Generic accumulated depreciation (ackumulerad avskrivning) should map to Tangible and acquired intangible assets - opening/closing balance (102000), not accelerated depreciation categories."
+    },
+    {
+      "ruleId": "guideline.bs.wip.non-tax-sensitive.v1",
+      "scope": "balance_sheet",
+      "instruction": "WIP or on-going projects (pågående projekt/pågående arbete) are generally non-tax-sensitive in balance sheet mapping."
+    },
+    {
+      "ruleId": "guideline.bs.accruals-provisions.default-229000.v1",
+      "scope": "balance_sheet",
+      "instruction": "Accrual/provision signals (upplupen/accrued/provision/reservering/avsättning) generally map to Other provisions (229000), unless a more specific category applies."
+    },
+    {
+      "ruleId": "guideline.bs.property-tax-accrual.prefer-251300.v1",
+      "scope": "balance_sheet",
+      "instruction": "Accrued property tax/property fee liabilities should map to Property tax and property fee (251300) rather than generic provisions."
+    },
+    {
+      "ruleId": "guideline.bs.group-contribution-receivable.not-229000.v1",
+      "scope": "balance_sheet",
+      "instruction": "Group contribution receivables should not be treated as generic provisions."
+    },
+    {
+      "ruleId": "guideline.bs.intragroup-receivable-impairment.prefer-138400.v1",
+      "scope": "balance_sheet",
+      "instruction": "Intra-group receivables may map to Change in value and write-downs on capital assets - General balance sheet item (138400) when closing balance is lower than opening balance, indicating potential impairment."
+    },
+    {
+      "ruleId": "guideline.bs.estimated-special-payroll-tax-accrued.prefer-294300.v1",
+      "scope": "balance_sheet",
+      "instruction": "Estimated/accrued special payroll tax on pension (for example löneskatt innevarande år with accrual/provision context) should generally map to 294300, but not every special payroll tax liability qualifies."
+    },
+    {
+      "ruleId": "guideline.bs.never-result-of-year.v1",
+      "scope": "balance_sheet",
+      "instruction": "Balance sheet accounts must not map to Result of the year (940000)."
+    },
+    {
+      "ruleId": "guideline.bs.bad-debt-vs-generic-receivables.v1",
+      "scope": "balance_sheet",
+      "instruction": "Bad debt/doubtful receivable signals (osäkra kundfordringar, tvistiga kundfordringar, dubious receivables, revaluation of receivables) support Doubtful debts (151500). Generic receivables should not map to doubtful debts."
+    },
+    {
+      "ruleId": "guideline.is.leasing-costs.prefer-522200.v1",
+      "scope": "income_statement",
+      "instruction": "Leasing cost accounts should generally map to Interest - financial leasing - cost (522200)."
+    },
+    {
+      "ruleId": "guideline.is.generic-ppe-depreciation.prefer-397000.v1",
+      "scope": "income_statement",
+      "instruction": "Booked depreciation for generic tangible/intangible assets (excluding building and land improvement specific cases) should map to 397000."
+    },
+    {
+      "ruleId": "guideline.is.building-land-improvement-depr.specific-categories.v1",
+      "scope": "income_statement",
+      "instruction": "Building booked depreciation maps to 777000 and land improvement booked depreciation maps to 782400."
+    },
+    {
+      "ruleId": "guideline.is.building-maintenance-vs-depreciation.v1",
+      "scope": "income_statement",
+      "instruction": "Differentiate building maintenance/repair from building depreciation. Maintenance should generally be non-tax-sensitive (950000)."
+    },
+    {
+      "ruleId": "guideline.is.cogs-not-depreciation.v1",
+      "scope": "income_statement",
+      "instruction": "COGS and related sold goods cost accounts (including wording about cost-of-goods-sold depreciation) are non-tax-sensitive and should not be treated as depreciation categories."
+    },
+    {
+      "ruleId": "guideline.is.special-payroll-tax-vs-pension-base.v1",
+      "scope": "income_statement",
+      "instruction": "Tax itself maps to Special payroll tax on pension cost (753000). Pension costs forming tax base map to 740000. Accrued special payroll tax category (294300) is balance-sheet only."
+    },
+    {
+      "ruleId": "guideline.is.legal-consulting-tax-assistance-vs-it.v1",
+      "scope": "income_statement",
+      "instruction": "Consulting/legal fees connected to income tax assistance (for example INK2 prep) map to Consulting fees (655000). IT/software/hosting/support consulting should generally be non-tax-sensitive (950000). When tax assistance may be hidden in broader labels such as accounting fees, apply prudent review-oriented judgment."
+    },
+    {
+      "ruleId": "guideline.is.partially-deductible-representation.prudent.v1",
+      "scope": "income_statement",
+      "instruction": "Partially deductible representation should be treated prudently as non-deductible entertainment (607200)."
+    },
+    {
+      "ruleId": "guideline.is.social-contributions-vs-special-payroll-tax.v1",
+      "scope": "income_statement",
+      "instruction": "Social contributions/arbetsgivaravgifter generally map to non-tax-sensitive (950000) and must be differentiated from special payroll tax items (753000)."
+    },
+    {
+      "ruleId": "guideline.is.salary-generic-not-pension-base.v1",
+      "scope": "income_statement",
+      "instruction": "Generic salary/employment costs should generally remain non-tax-sensitive (950000), not pension base category (740000), unless pension-specific evidence exists."
+    },
+    {
+      "ruleId": "guideline.is.tax-account-interest.specific-codes.v1",
+      "scope": "income_statement",
+      "instruction": "Interest income on tax account maps to 831400; interest cost on tax account maps to 842300. Signals can include tax exempt/non-deductible wording."
+    },
+    {
+      "ruleId": "guideline.is.banking-costs.prefer-657000-even-atypical-account.v1",
+      "scope": "income_statement",
+      "instruction": "Banking costs (for example bankkostnader) should generally map to Interest - Banking costs (657000) even if account numbering is atypical."
+    },
+    {
+      "ruleId": "guideline.is.fx-effects.prefer-843100-843600.v1",
+      "scope": "income_statement",
+      "instruction": "FX gains/losses should generally map to 843100/843600 even when account numbers appear operating rather than financial."
+    },
+    {
+      "ruleId": "guideline.is.membership-fees.default-non-deductible.v1",
+      "scope": "income_statement",
+      "instruction": "Membership fees are usually non-deductible (698200). Payments to employers' associations for conflict purposes should map to deductible membership fees (698100)."
+    },
+    {
+      "ruleId": "guideline.is.entertainment-vs-staff-meals-events.v1",
+      "scope": "income_statement",
+      "instruction": "Entertainment is generally non-deductible (607200). Staff catering, employee travel meals, and staff events are generally non-tax-sensitive unless specific representation signals indicate otherwise."
+    },
+    {
+      "ruleId": "guideline.is.gifts.default-non-deductible.with-small-staff-exception.v1",
+      "scope": "income_statement",
+      "instruction": "Gifts are generally non-deductible (699300). Small staff gifts (for example flowers and some Christmas gifts) may map to deductible gifts category (598000)."
+    }
+  ],
+  "reviewRules": [
+    {
+      "ruleId": "review.fallback-used.v1",
+      "when": {
+        "fallbackApplied": true
+      },
+      "setReviewFlag": true
+    },
+    {
+      "ruleId": "review.low-confidence.v1",
+      "when": {
+        "confidenceBelow": 0.72
+      },
+      "setReviewFlag": true
+    },
+    {
+      "ruleId": "review.material-ambiguity.v1",
+      "when": {
+        "topTwoScoreMarginBelow": 0.08
+      },
+      "setReviewFlag": true
+    }
+  ]
+}

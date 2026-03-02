@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "mapping",
+  "moduleVersion": "v1",
+  "status": "active",
+  "owner": "team-tax-engine",
+  "contracts": {
+    "inputSchemaRef": "GenerateMappingDecisionsRequestV1",
+    "outputSchemaRef": "MappingSuggestionSetV1",
+    "errorSchemaRef": "GenerateMappingDecisionsFailureV1"
+  },
+  "runtime": {
+    "provider": "openai",
+    "model": "gpt-5",
+    "temperature": 0.1,
+    "maxOutputTokens": 4000,
+    "timeoutMs": 30000
+  },
+  "gates": {
+    "preconditions": [
+      {
+        "id": "reconciliation_green",
+        "expression": "input.reconciliation.canProceedToMapping == true",
+        "onFailureErrorCode": "RECONCILIATION_BLOCKED"
+      }
+    ]
+  },
+  "policy": {
+    "basePolicyVersion": "mapping-bas.v1",
+    "activePatchVersions": []
+  },
+  "reasoning": {
+    "decisionSteps": [
+      "classify_statement_type",
+      "score_candidates",
+      "apply_exclusions",
+      "apply_fallback_if_needed",
+      "set_review_flag"
+    ],
+    "ambiguityMarginThreshold": 0.08,
+    "fallbackConfidence": 0.4,
+    "reviewConfidenceThreshold": 0.72
+  },
+  "outputRules": {
+    "useCategoryCodesOnly": true,
+    "requirePolicyRuleReference": true,
+    "requireEvidence": true,
+    "allowFreeTextReasoning": false
+  },
+  "audit": {
+    "requiredFields": [
+      "moduleId",
+      "moduleVersion",
+      "promptVersion",
+      "policyVersion",
+      "activePatchVersions",
+      "modelProvider",
+      "modelName"
+    ]
+  },
+  "qualityGates": {
+    "mustRunTests": ["module_unit", "boundary_contract", "golden_pack"]
+  }
+}

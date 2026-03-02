@@ -1,0 +1,40 @@
+Use the provided JSON payload:
+- `reconciliation`
+- `mapping` (active deterministic mapping decisions)
+- `policyPack`
+- `workspaceContext`
+
+Task:
+1. Evaluate each decision against policy rules.
+2. Propose override suggestions only where policy support is stronger than current selection.
+3. Prefer no-change if evidence is weak.
+
+Return JSON only in this shape:
+{
+  "ok": true,
+  "schemaVersion": "mapping_review_suggestions_v1",
+  "policyVersion": "string",
+  "suggestions": [
+    {
+      "decisionId": "string",
+      "selectedCategoryCode": "string",
+      "scope": "return",
+      "reason": "string",
+      "policyRuleReference": "string",
+      "confidence": 0.0,
+      "reviewFlag": false
+    }
+  ]
+}
+
+If blocked:
+{
+  "ok": false,
+  "error": {
+    "code": "RECONCILIATION_BLOCKED",
+    "message": "string",
+    "user_message": "string",
+    "context": {}
+  }
+}
+

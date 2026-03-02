@@ -14,6 +14,7 @@ Last updated: 2026-03-02
 - `SINGLE_SOURCE_OF_TRUTH.md` (top priority for product/architecture decisions)
 - `AGENTS.md` (engineering constraints and coding workflow)
 - `V2_ROADMAP.md` (planned evolution beyond V1)
+- `references/ai-module-spec-v1.md` (structured AI reasoning baseline)
 
 ## Confirmed Decisions
 
@@ -26,6 +27,7 @@ Last updated: 2026-03-02
 7. Additional evidence uploads deferred to V2
 8. Workflow uses explicit persisted state machine
 9. `filed` status is locked/sealed; admin-only reopen with reason + audit
+10. AI reasoning is managed through versioned `module-spec` + `policy-pack` + `policy-patch` files, not long free-form prompt logic
 
 ## Guardrails That Must Not Drift
 
@@ -34,6 +36,7 @@ Last updated: 2026-03-02
 - AI outputs must be schema-validated structured data
 - Hard module boundaries and contract-first interfaces
 - Append-only audit trail and versioned artifacts
+- Structured AI reasoning rules externalized in versioned policy artifacts
 
 ## Outstanding Questions
 
@@ -85,3 +88,4 @@ When a major product or architecture decision changes:
 - 2026-03-01: Added automated dependency boundary checks (`lint:boundaries`) to block circular dependencies and key layer violations as part of the required `check` pipeline.
 - 2026-03-02: Added `TrialBalanceNormalizedV1` contract and deterministic parser for common Excel/CSV formats with sheet scoring, synonym-based header matching, locale-aware numeric parsing, explicit rejected-row diagnostics, and verification gating.
 - 2026-03-02: Locked initial V1 TB canonical columns to `Account Name`, `Account Number`, `Opening Balance`, `Closing Balance` with duplicate account-number suffixing (`.1`, `.2`, ...) for deterministic uniqueness.
+- 2026-03-02: Adopted structured AI reasoning baseline (`module-spec` + `policy-pack` + `policy-patch`) and added reference templates/examples to support auditable, patch-friendly policy updates.

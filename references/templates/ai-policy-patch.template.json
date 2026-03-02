@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "ai_policy_patch_v1",
+  "moduleId": "mapping",
+  "patchVersion": "mapping-bas.v1-p1",
+  "basePolicyVersion": "mapping-bas.v1",
+  "status": "active",
+  "reason": "Fix misclassification for a narrow set of accounts.",
+  "effectiveFrom": "2026-03-02",
+  "operations": [
+    {
+      "op": "disable_rule",
+      "ruleId": "map.example.old-rule.v1"
+    },
+    {
+      "op": "add_rule",
+      "rule": {
+        "ruleId": "map.example.replacement-rule.v1",
+        "priority": 120,
+        "when": {
+          "accountNumberPrefixes": ["6072"],
+          "nameIncludesAny": ["partially deductible"],
+          "nameExcludesAny": []
+        },
+        "then": {
+          "proposedCategoryCode": "607200",
+          "confidenceBase": 0.92,
+          "reviewFlag": false
+        }
+      }
+    },
+    {
+      "op": "set_threshold",
+      "target": "reviewConfidenceThreshold",
+      "value": 0.72
+    }
+  ]
+}

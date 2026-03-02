@@ -200,6 +200,39 @@ describe("mapping contracts v1", () => {
     expect(result.success).toBe(false);
   });
 
+  it("rejects overridden decisions when selected category statement type mismatches proposed", () => {
+    const result = safeParseMappingDecisionV1({
+      id: "Trial Balance:2:6072",
+      accountNumber: "6072",
+      sourceAccountNumber: "6072",
+      accountName: "External representation",
+      proposedCategory: getSilverfinTaxCategoryByCodeV1("607200"),
+      selectedCategory: getSilverfinTaxCategoryByCodeV1("100000"),
+      confidence: 0.6,
+      evidence: [
+        {
+          type: "tb_row",
+          reference: "Trial Balance:2",
+          snippet: "6072 External representation",
+          source: {
+            sheetName: "Trial Balance",
+            rowNumber: 2,
+          },
+        },
+      ],
+      policyRuleReference: "map.is.entertainment.non-deductible.v1",
+      reviewFlag: true,
+      status: "overridden",
+      source: "manual",
+      override: {
+        scope: "return",
+        reason: "Force mismatch",
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it("accepts valid mapping generation request payload", () => {
     const result = safeParseGenerateMappingDecisionsRequestV1({
       trialBalance: createBaseTrialBalanceV1(),

@@ -1,0 +1,69 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "mapping-review",
+  "moduleVersion": "v1",
+  "status": "active",
+  "owner": "team-tax-engine",
+  "contracts": {
+    "inputSchemaRef": "MappingDecisionSetPayloadV1 + TrialBalanceNormalizedV1 + ReconciliationResultPayloadV1",
+    "outputSchemaRef": "MappingOverrideInstructionV1[]",
+    "errorSchemaRef": "MappingOverrideFailureV1"
+  },
+  "runtime": {
+    "provider": "openai",
+    "model": "gpt-5",
+    "temperature": 0.1,
+    "maxOutputTokens": 2500,
+    "timeoutMs": 25000
+  },
+  "gates": {
+    "preconditions": [
+      {
+        "id": "reconciliation_green",
+        "expression": "input.reconciliation.canProceedToMapping == true",
+        "onFailureErrorCode": "RECONCILIATION_BLOCKED"
+      },
+      {
+        "id": "active_mapping_exists",
+        "expression": "input.mapping.schemaVersion == 'mapping_decisions_v1'",
+        "onFailureErrorCode": "MAPPING_NOT_FOUND"
+      }
+    ]
+  },
+  "policy": {
+    "basePolicyVersion": "mapping-review.v1",
+    "activePatchVersions": ["mapping-review.v1-p1"]
+  },
+  "reasoning": {
+    "decisionSteps": [
+      "find_high_risk_decisions",
+      "check_policy_conflicts",
+      "propose_override_only_when_material",
+      "attach_rule_reference_and_reason"
+    ],
+    "maxOverridesPerRun": 50,
+    "minConfidenceToOverride": 0.78
+  },
+  "outputRules": {
+    "useCategoryCodesOnly": true,
+    "allowedScopeValues": ["return", "user"],
+    "mustIncludeReason": true,
+    "mustReferenceDecisionId": true
+  },
+  "audit": {
+    "requiredFields": [
+      "workspaceId",
+      "moduleId",
+      "moduleVersion",
+      "promptVersion",
+      "policyVersion",
+      "activePatchVersions",
+      "modelProvider",
+      "modelName",
+      "proposedOverrideCount"
+    ]
+  },
+  "qualityGates": {
+    "mustRunTests": ["module_unit", "boundary_contract", "golden_pack"]
+  }
+}

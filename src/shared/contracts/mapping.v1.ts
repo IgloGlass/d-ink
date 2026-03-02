@@ -569,6 +569,18 @@ export const MappingDecisionV1Schema = z
   .superRefine((value, ctx) => {
     const selectedMatchesProposed =
       value.selectedCategory.code === value.proposedCategory.code;
+    const selectedStatementTypeMatchesProposed =
+      value.selectedCategory.statementType ===
+      value.proposedCategory.statementType;
+
+    if (!selectedStatementTypeMatchesProposed) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Selected category statement type must match proposed category statement type.",
+        path: ["selectedCategory", "statementType"],
+      });
+    }
 
     if (value.status === "overridden" && !value.override) {
       ctx.addIssue({

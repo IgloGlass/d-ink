@@ -1,7 +1,7 @@
 # D.ink Single Source of Truth
 
 Status: Living document  
-Last updated: 2026-02-24  
+Last updated: 2026-03-02  
 Owner: Product + Engineering
 
 ## Purpose
@@ -132,6 +132,25 @@ Recommended transition matrix (V1 baseline):
 - Versioned artifacts, no silent overwrites
 - Append-only audit events for all material actions
 - Structured errors and structured logs
+- Structured AI reasoning must use versioned module/policy configs (not prompt prose as source of truth)
+
+## AI Reasoning Baseline (V1+)
+
+AI reasoning configuration is a first-class artifact and must be managed with:
+- `module-spec` (contracts, gates, runtime, audit fields)
+- `policy-pack` (ordered decision rules + fallback/review behavior)
+- `policy-patch` (minimal hotfix overlays)
+
+Reference baseline:
+- `references/ai-module-spec-v1.md`
+- `references/templates/ai-module-spec.template.json`
+- `references/templates/ai-policy-pack.template.json`
+- `references/templates/ai-policy-patch.template.json`
+
+Operational rule:
+- Update policy files first when fixing AI behavior.
+- Keep prompts thin and generic.
+- Persist `promptVersion`, `policyVersion`, and active patch versions in run metadata.
 
 ## Open Items to Finalize
 
@@ -143,3 +162,4 @@ Recommended transition matrix (V1 baseline):
 
 - 2026-02-24: Created and resolved V1 discrepancies listed above.
 - 2026-02-24: Locked V1 authentication to invite-based magic-link (no passwords in V1).
+- 2026-03-02: Adopted structured AI reasoning baseline with versioned `module-spec` / `policy-pack` / `policy-patch` governance.

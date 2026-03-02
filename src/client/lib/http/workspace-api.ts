@@ -1,4 +1,17 @@
 import {
+  type ApplyMappingOverridesResultV1,
+  type GetActiveMappingDecisionsResultV1,
+  type MappingOverrideInstructionV1,
+  type MappingPreferenceScopeV1,
+  parseApplyMappingOverridesResultV1,
+  parseGetActiveMappingDecisionsResultV1,
+} from "../../../shared/contracts/mapping-override.v1";
+import {
+  type GenerateMappingReviewSuggestionsResultV1,
+  parseGenerateMappingReviewSuggestionsResultV1,
+} from "../../../shared/contracts/mapping-review.v1";
+import type { SilverfinTaxCategoryCodeV1 } from "../../../shared/contracts/mapping.v1";
+import {
   type ApplyWorkspaceTransitionResultV1,
   type CreateWorkspaceResultV1,
   type GetWorkspaceByIdResultV1,
@@ -47,6 +60,46 @@ export type TransitionWorkspaceInputV1 = {
 
 export type TransitionWorkspaceResponseV1 = Extract<
   ApplyWorkspaceTransitionResultV1,
+  { ok: true }
+>;
+
+export type GetActiveMappingResponseV1 = Extract<
+  GetActiveMappingDecisionsResultV1,
+  { ok: true }
+>;
+
+export type ApplyMappingOverrideInputV1 = Omit<
+  MappingOverrideInstructionV1,
+  "scope" | "selectedCategoryCode"
+> & {
+  scope: MappingPreferenceScopeV1;
+  selectedCategoryCode: SilverfinTaxCategoryCodeV1;
+};
+
+export type ApplyMappingOverridesInputV1 = {
+  expectedActiveMapping: {
+    artifactId: string;
+    version: number;
+  };
+  overrides: ApplyMappingOverrideInputV1[];
+  tenantId: string;
+  workspaceId: string;
+};
+
+export type ApplyMappingOverridesResponseV1 = Extract<
+  ApplyMappingOverridesResultV1,
+  { ok: true }
+>;
+
+export type GenerateMappingReviewSuggestionsInputV1 = {
+  tenantId: string;
+  workspaceId: string;
+  scope?: "return" | "user";
+  maxSuggestions?: number;
+};
+
+export type GenerateMappingReviewSuggestionsResponseV1 = Extract<
+  GenerateMappingReviewSuggestionsResultV1,
   { ok: true }
 >;
 
@@ -114,6 +167,26 @@ function parseTransitionWorkspaceHttpResponseV1(
   return expectSuccessResultV1(parseApplyWorkspaceTransitionResultV1(payload));
 }
 
+function parseGetActiveMappingHttpResponseV1(
+  payload: unknown,
+): GetActiveMappingResponseV1 {
+  return expectSuccessResultV1(parseGetActiveMappingDecisionsResultV1(payload));
+}
+
+function parseApplyMappingOverridesHttpResponseV1(
+  payload: unknown,
+): ApplyMappingOverridesResponseV1 {
+  return expectSuccessResultV1(parseApplyMappingOverridesResultV1(payload));
+}
+
+function parseGenerateMappingReviewSuggestionsHttpResponseV1(
+  payload: unknown,
+): GenerateMappingReviewSuggestionsResponseV1 {
+  return expectSuccessResultV1(
+    parseGenerateMappingReviewSuggestionsResultV1(payload),
+  );
+}
+
 export async function listWorkspacesByTenantV1(input: {
   tenantId: string;
 }): Promise<ListWorkspacesResponseV1> {
@@ -162,5 +235,51 @@ export async function applyWorkspaceTransitionV1(
       reason: input.reason,
     },
     parseResponse: parseTransitionWorkspaceHttpResponseV1,
+  });
+}
+
+export async function getActiveMappingDecisionsV1(input: {
+  tenantId: string;
+  workspaceId: string;
+}): Promise<GetActiveMappingResponseV1> {
+  const search = new URLSearchParams({ tenantId: input.tenantId });
+
+  return apiRequest<GetActiveMappingResponseV1>({
+    path: `/v1/workspaces/${input.workspaceId}/mapping-decisions/active?${search.toString()}`,
+    method: "GET",
+    parseResponse: parseGetActiveMappingHttpResponseV1,
+  });
+}
+
+export async function applyMappingOverridesV1(
+  input: ApplyMappingOverridesInputV1,
+): Promise<ApplyMappingOverridesResponseV1> {
+  return apiRequest<ApplyMappingOverridesResponseV1>({
+    path: `/v1/workspaces/${input.workspaceId}/mapping-overrides`,
+    method: "POST",
+    body: {
+      tenantId: input.tenantId,
+      expectedActiveMapping: input.expectedActiveMapping,
+      overrides: input.overrides,
+    },
+    parseResponse: parseApplyMappingOverridesHttpResponseV1,
+  });
+}
+
+export async function generateMappingReviewSuggestionsV1(input: {
+  tenantId: string;
+  workspaceId: string;
+  scope?: "return" | "user";
+  maxSuggestions?: number;
+}): Promise<GenerateMappingReviewSuggestionsResponseV1> {
+  return apiRequest<GenerateMappingReviewSuggestionsResponseV1>({
+    path: `/v1/workspaces/${input.workspaceId}/mapping-review-suggestions`,
+    method: "POST",
+    body: {
+      tenantId: input.tenantId,
+      scope: input.scope ?? "return",
+      maxSuggestions: input.maxSuggestions,
+    },
+    parseResponse: parseGenerateMappingReviewSuggestionsHttpResponseV1,
   });
 }

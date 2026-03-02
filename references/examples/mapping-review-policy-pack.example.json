@@ -1,0 +1,76 @@
+{
+  "schemaVersion": "ai_policy_pack_v1",
+  "moduleId": "mapping-review",
+  "policyVersion": "mapping-review.v1",
+  "description": "Review-focused policy that proposes overrides on risky deterministic mappings.",
+  "effectiveFrom": "2026-03-02",
+  "categoryCatalogRef": "SilverfinTaxCategoryCodeV1Schema",
+  "rules": [
+    {
+      "ruleId": "review.bs.group-receivable-not-other-provisions.v1",
+      "priority": 100,
+      "when": {
+        "statementType": "balance_sheet",
+        "nameIncludesAny": [
+          "koncernbidrag",
+          "group contribution",
+          "fordran",
+          "receivable"
+        ],
+        "selectedCategoryCodeIn": ["229000"]
+      },
+      "then": {
+        "overrideCategoryCode": "100000",
+        "reasonTemplate": "Group contribution receivable should not be treated as other provisions."
+      }
+    },
+    {
+      "ruleId": "review.is.partially-deductible-representation-prudent.v1",
+      "priority": 95,
+      "when": {
+        "statementType": "income_statement",
+        "nameIncludesAny": [
+          "representation",
+          "partially deductible",
+          "delvis avdragsgill"
+        ],
+        "selectedCategoryCodeIn": ["607100"]
+      },
+      "then": {
+        "overrideCategoryCode": "607200",
+        "reasonTemplate": "Partially deductible representation is treated prudently as non-deductible."
+      }
+    },
+    {
+      "ruleId": "review.is.it-consulting-vs-tax-assistance.v1",
+      "priority": 90,
+      "when": {
+        "statementType": "income_statement",
+        "accountNumberPrefixes": ["654", "655"],
+        "nameIncludesAny": ["it consulting", "software", "hosting", "support"],
+        "selectedCategoryCodeIn": ["655000"]
+      },
+      "then": {
+        "overrideCategoryCode": "950000",
+        "reasonTemplate": "IT consulting costs are usually non-tax-sensitive and should not default to consulting fees."
+      }
+    }
+  ],
+  "safetyRules": [
+    {
+      "ruleId": "safety.do-not-override-low-confidence.v1",
+      "when": {
+        "confidenceBelow": 0.78
+      },
+      "action": "skip_override"
+    },
+    {
+      "ruleId": "safety.require-review-flag-or-policy-hit.v1",
+      "when": {
+        "reviewFlagIsFalse": true,
+        "matchedPolicyRuleCountBelow": 1
+      },
+      "action": "skip_override"
+    }
+  ]
+}

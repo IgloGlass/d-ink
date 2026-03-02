@@ -1,11 +1,26 @@
 import { z } from "zod";
 
 import { IsoDateSchema, UuidV4Schema } from "../../shared/contracts/common.v1";
+import {
+  ExpectedActiveMappingRefV1Schema,
+  MappingOverrideInstructionV1Schema,
+} from "../../shared/contracts/mapping-override.v1";
+import { GenerateMappingReviewSuggestionsRequestV1Schema } from "../../shared/contracts/mapping-review.v1";
+import { ExecuteTrialBalancePipelineRequestV1Schema } from "../../shared/contracts/tb-pipeline-run.v1";
 import { WorkspaceStatusV1Schema } from "../../shared/contracts/workspace.v1";
 import type { Env } from "../../shared/types/env";
 import { resolveSessionPrincipalByTokenV1 } from "../workflow/auth-magic-link.v1";
 import {
+  applyMappingOverridesV1,
+  getActiveMappingDecisionsV1,
+} from "../workflow/mapping-override.v1";
+import { generateMappingReviewSuggestionsV1 } from "../workflow/mapping-review.v1";
+import { executeTrialBalancePipelineRunV1 } from "../workflow/trial-balance-pipeline-run.v1";
+import {
+  createMappingOverrideDepsV1,
+  createMappingReviewDepsV1,
   createResolveSessionPrincipalDepsV1,
+  createTrialBalancePipelineRunDepsV1,
   createWorkspaceLifecycleDepsV1,
 } from "../workflow/workflow-deps.v1";
 import {
@@ -47,6 +62,25 @@ const WorkspaceTransitionHttpRequestBodyV1Schema = z
     reason: z.string().optional(),
   })
   .strict();
+
+const TrialBalancePipelineRunHttpRequestBodyV1Schema =
+  ExecuteTrialBalancePipelineRequestV1Schema.omit({
+    workspaceId: true,
+    createdByUserId: true,
+  });
+
+const MappingOverrideHttpRequestBodyV1Schema = z
+  .object({
+    tenantId: UuidV4Schema,
+    expectedActiveMapping: ExpectedActiveMappingRefV1Schema,
+    overrides: z.array(MappingOverrideInstructionV1Schema).min(1),
+  })
+  .strict();
+
+const MappingReviewHttpRequestBodyV1Schema =
+  GenerateMappingReviewSuggestionsRequestV1Schema.omit({
+    workspaceId: true,
+  });
 
 async function requireTenantSessionPrincipalV1(input: {
   request: Request;
@@ -218,6 +252,177 @@ function mapWorkspaceLifecycleFailureToResponseV1(input: {
   return createJsonErrorResponseV1({
     status: 500,
     code: "PERSISTENCE_ERROR",
+    message: input.error.message,
+    userMessage: input.error.user_message,
+    context: input.error.context,
+  });
+}
+
+function mapTrialBalancePipelineFailureToResponseV1(input: {
+  error: {
+    code: string;
+    context: Record<string, unknown>;
+    message: string;
+    user_message: string;
+  };
+}): Response {
+  if (input.error.code === "INPUT_INVALID") {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  if (input.error.code === "WORKSPACE_NOT_FOUND") {
+    return createJsonErrorResponseV1({
+      status: 404,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  if (input.error.code === "PARSE_FAILED") {
+    return createJsonErrorResponseV1({
+      status: 422,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  if (input.error.code === "RECONCILIATION_BLOCKED") {
+    return createJsonErrorResponseV1({
+      status: 409,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  if (
+    input.error.code === "RECONCILIATION_FAILED" ||
+    input.error.code === "MAPPING_FAILED"
+  ) {
+    return createJsonErrorResponseV1({
+      status: 500,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  return createJsonErrorResponseV1({
+    status: 500,
+    code: "PERSISTENCE_ERROR",
+    message: input.error.message,
+    userMessage: input.error.user_message,
+    context: input.error.context,
+  });
+}
+
+function mapMappingOverrideFailureToResponseV1(input: {
+  error: {
+    code: string;
+    context: Record<string, unknown>;
+    message: string;
+    user_message: string;
+  };
+}): Response {
+  if (input.error.code === "INPUT_INVALID") {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  if (
+    input.error.code === "WORKSPACE_NOT_FOUND" ||
+    input.error.code === "MAPPING_NOT_FOUND"
+  ) {
+    return createJsonErrorResponseV1({
+      status: 404,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  if (input.error.code === "STATE_CONFLICT") {
+    return createJsonErrorResponseV1({
+      status: 409,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  return createJsonErrorResponseV1({
+    status: 500,
+    code: "PERSISTENCE_ERROR",
+    message: input.error.message,
+    userMessage: input.error.user_message,
+    context: input.error.context,
+  });
+}
+
+function mapMappingReviewFailureToResponseV1(input: {
+  error: {
+    code: string;
+    context: Record<string, unknown>;
+    message: string;
+    user_message: string;
+  };
+}): Response {
+  if (input.error.code === "INPUT_INVALID") {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  if (
+    input.error.code === "WORKSPACE_NOT_FOUND" ||
+    input.error.code === "MAPPING_NOT_FOUND" ||
+    input.error.code === "RECONCILIATION_NOT_FOUND"
+  ) {
+    return createJsonErrorResponseV1({
+      status: 404,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  if (input.error.code === "RECONCILIATION_BLOCKED") {
+    return createJsonErrorResponseV1({
+      status: 409,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  return createJsonErrorResponseV1({
+    status: 500,
+    code: input.error.code,
     message: input.error.message,
     userMessage: input.error.user_message,
     context: input.error.context,
@@ -448,6 +653,215 @@ async function handleWorkspaceTransitionRouteV1(
   });
 }
 
+async function handleTrialBalancePipelineRunRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+
+  const parsedBody = TrialBalancePipelineRunHttpRequestBodyV1Schema.safeParse(
+    await readJsonBodyV1(request),
+  );
+  if (!parsedBody.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "TB pipeline request body is invalid.",
+    });
+  }
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await executeTrialBalancePipelineRunV1(
+    {
+      ...parsedBody.data,
+      workspaceId,
+      createdByUserId: sessionGuardResult.principal.userId,
+    },
+    createTrialBalancePipelineRunDepsV1(env),
+  );
+
+  if (!result.ok) {
+    return mapTrialBalancePipelineFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: {
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+async function handleGetActiveMappingRouteV1(
+  request: Request,
+  env: Env,
+  workspaceId: string,
+): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const parsedQuery = WorkspaceGetQueryV1Schema.safeParse({
+    tenantId: requestUrl.searchParams.get("tenantId"),
+  });
+  if (!parsedQuery.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Mapping query parameters are invalid.",
+    });
+  }
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedQuery.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await getActiveMappingDecisionsV1(
+    {
+      tenantId: parsedQuery.data.tenantId,
+      workspaceId,
+    },
+    createMappingOverrideDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapMappingOverrideFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: {
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+async function handleApplyMappingOverridesRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+
+  const parsedBody = MappingOverrideHttpRequestBodyV1Schema.safeParse(
+    await readJsonBodyV1(request),
+  );
+  if (!parsedBody.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Mapping override request body is invalid.",
+    });
+  }
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await applyMappingOverridesV1(
+    {
+      ...parsedBody.data,
+      workspaceId,
+    },
+    {
+      actorUserId: sessionGuardResult.principal.userId,
+    },
+    createMappingOverrideDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapMappingOverrideFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: {
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+async function handleGenerateMappingReviewSuggestionsRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+
+  const parsedBody = MappingReviewHttpRequestBodyV1Schema.safeParse(
+    await readJsonBodyV1(request),
+  );
+  if (!parsedBody.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Mapping review request body is invalid.",
+    });
+  }
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await generateMappingReviewSuggestionsV1(
+    {
+      ...parsedBody.data,
+      workspaceId,
+    },
+    createMappingReviewDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapMappingReviewFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: {
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 /**
  * Handles V1 workspace HTTP routes for create, fetch, and status transitions.
  */
@@ -499,6 +913,70 @@ export async function handleWorkspaceRoutesV1(
     }
 
     return handleGetWorkspaceRouteV1(request, env, routeSegments[0]);
+  }
+
+  if (
+    routeSegments.length === 2 &&
+    routeSegments[0] &&
+    routeSegments[1] === "tb-pipeline-runs"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+
+    return handleTrialBalancePipelineRunRouteV1(
+      request,
+      env,
+      appBaseUrl,
+      routeSegments[0],
+    );
+  }
+
+  if (
+    routeSegments.length === 3 &&
+    routeSegments[0] &&
+    routeSegments[1] === "mapping-decisions" &&
+    routeSegments[2] === "active"
+  ) {
+    if (request.method !== "GET") {
+      return createMethodNotAllowedResponseV1("GET");
+    }
+
+    return handleGetActiveMappingRouteV1(request, env, routeSegments[0]);
+  }
+
+  if (
+    routeSegments.length === 2 &&
+    routeSegments[0] &&
+    routeSegments[1] === "mapping-overrides"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+
+    return handleApplyMappingOverridesRouteV1(
+      request,
+      env,
+      appBaseUrl,
+      routeSegments[0],
+    );
+  }
+
+  if (
+    routeSegments.length === 2 &&
+    routeSegments[0] &&
+    routeSegments[1] === "mapping-review-suggestions"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+
+    return handleGenerateMappingReviewSuggestionsRouteV1(
+      request,
+      env,
+      appBaseUrl,
+      routeSegments[0],
+    );
   }
 
   if (

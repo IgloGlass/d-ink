@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "mapping-review",
+  "moduleVersion": "v1",
+  "status": "active",
+  "owner": "team-tax-engine",
+  "purpose": "Propose structured mapping overrides for deterministic mapping decisions that require review.",
+  "contracts": {
+    "inputSchemaRef": "GetActiveMappingDecisionsResultV1(ok=true) + ReconciliationResultPayloadV1",
+    "outputSchemaRef": "MappingReviewSuggestionSetV1",
+    "downstreamApplySchemaRef": "ApplyMappingOverridesRequestV1"
+  },
+  "boundaries": {
+    "deterministicSourceOfTruth": true,
+    "advisoryOnly": true,
+    "autoApplyAllowed": false,
+    "notes": [
+      "Deterministic mapper remains source of truth for initial decisions.",
+      "This module can only propose override instructions for human review.",
+      "Final persisted override application must use applyMappingOverridesV1 workflow."
+    ]
+  },
+  "runtime": {
+    "provider": "openai",
+    "model": "gpt-5",
+    "temperature": 0.1,
+    "maxOutputTokens": 3000,
+    "timeoutMs": 30000
+  },
+  "gates": {
+    "preconditions": [
+      {
+        "id": "reconciliation_green",
+        "expression": "input.reconciliation.canProceedToMapping == true",
+        "onFailureErrorCode": "RECONCILIATION_BLOCKED"
+      },
+      {
+        "id": "active_mapping_present",
+        "expression": "input.mapping.schemaVersion == 'mapping_decisions_v1'",
+        "onFailureErrorCode": "MAPPING_NOT_FOUND"
+      }
+    ]
+  },
+  "policy": {
+    "basePolicyVersion": "mapping-review.v1",
+    "activePatchVersions": []
+  },
+  "reasoning": {
+    "decisionHierarchy": [
+      "follow_policy_pack_rules",
+      "prefer_higher_specificity_rule",
+      "prefer_prudent_tax_sensitive_treatment_when_ambiguous",
+      "fallback_by_statement_type_if_uncertain"
+    ],
+    "reviewConfidenceThreshold": 0.72,
+    "maxSuggestionsPerRun": 100
+  },
+  "outputRules": {
+    "jsonOnly": true,
+    "codesOnly": true,
+    "mustIncludeDecisionId": true,
+    "mustIncludeSelectedCategoryCode": true,
+    "mustIncludeReason": true,
+    "mustIncludePolicyRuleReference": true
+  },
+  "audit": {
+    "requiredFields": [
+      "workspaceId",
+      "moduleId",
+      "moduleVersion",
+      "promptVersion",
+      "policyVersion",
+      "activePatchVersions",
+      "modelProvider",
+      "modelName",
+      "suggestionCount"
+    ]
+  }
+}
+
