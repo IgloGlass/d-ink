@@ -2,6 +2,7 @@ export * from "./audit-event.v1";
 export * from "./audit-event.v2";
 export * from "./auth-magic-link.v1";
 export * from "./common.v1";
+export * from "./trial-balance.v1";
 export * from "./workspace-lifecycle.v1";
 export * from "./workspace-status-transition.v1";
 export * from "./workspace.v1";

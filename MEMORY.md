@@ -1,7 +1,7 @@
 # D.ink Project Memory
 
 Status: Living project memory for AI-assisted development  
-Last updated: 2026-03-01
+Last updated: 2026-03-02
 
 ## Current Product Snapshot
 
@@ -83,3 +83,5 @@ When a major product or architecture decision changes:
 - 2026-02-24: Added V1 backlog reminder for admin UI action to generate and copy invite links.
 - 2026-03-01: Completed architecture hardening pass to remove route-layer persistence coupling, enforce runtime API response contract parsing on the client, and centralize audit SQL helpers.
 - 2026-03-01: Added automated dependency boundary checks (`lint:boundaries`) to block circular dependencies and key layer violations as part of the required `check` pipeline.
+- 2026-03-02: Added `TrialBalanceNormalizedV1` contract and deterministic parser for common Excel/CSV formats with sheet scoring, synonym-based header matching, locale-aware numeric parsing, explicit rejected-row diagnostics, and verification gating.
+- 2026-03-02: Locked initial V1 TB canonical columns to `Account Name`, `Account Number`, `Opening Balance`, `Closing Balance` with duplicate account-number suffixing (`.1`, `.2`, ...) for deterministic uniqueness.

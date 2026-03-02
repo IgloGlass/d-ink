@@ -29,6 +29,7 @@ corepack pnpm install
 
 ```bash
 pnpm dev
+pnpm generate:tb-template
 pnpm lint
 pnpm typecheck
 pnpm test
@@ -39,11 +40,17 @@ Fallback (no global `pnpm`):
 
 ```bash
 corepack pnpm dev
+corepack pnpm generate:tb-template
 corepack pnpm lint
 corepack pnpm typecheck
 corepack pnpm test
 corepack pnpm check
 ```
+
+## Trial balance template
+
+- Static download path: `/templates/trial-balance-template-v1.xlsx`
+- Source generator: `scripts/generate-trial-balance-template-v1.mjs`
 
 ## Scaffold scope in Ticket 1
 

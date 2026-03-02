@@ -66,6 +66,14 @@ describe("WorkspaceListPage", () => {
       expect(screen.getByText("Tenant workspace list")).toBeInTheDocument();
       expect(screen.getByText("44444444")).toBeInTheDocument();
     });
+
+    const templateLink = screen.getByRole("link", {
+      name: "Download trial balance template (.xlsx)",
+    });
+    expect(templateLink).toHaveAttribute(
+      "href",
+      "/templates/trial-balance-template-v1.xlsx",
+    );
   });
 
   it("creates workspace and refreshes list", async () => {

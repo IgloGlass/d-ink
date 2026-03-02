@@ -45,6 +45,11 @@ export function WorkspaceListPage() {
       <div className="card">
         <h1>Workspaces</h1>
         <p>Create and manage tenant workspaces.</p>
+        <p>
+          <a href="/templates/trial-balance-template-v1.xlsx" download>
+            Download trial balance template (.xlsx)
+          </a>
+        </p>
 
         <form
           className="form-grid"
