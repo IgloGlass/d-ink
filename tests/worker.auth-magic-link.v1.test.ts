@@ -1,20 +1,50 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { hashTokenWithHmacV1 } from "../src/server/workflow/auth-magic-link.v1";
+import type { Env } from "../src/shared/types/env";
 import worker from "../src/worker";
 import { applyWorkspaceAuditSchemaForTests } from "./db/test-schema";
-import {
-  APP_BASE_URL,
-  buildPostJsonRequest,
-  buildSessionCookie,
-  buildWorkerEnv,
-  seedSession,
-} from "./worker/test-harness.v1";
+
+const APP_BASE_URL = "https://app.dink.test";
+const AUTH_TOKEN_HMAC_SECRET = "test-auth-token-secret";
 
 const TENANT_A = "70000000-0000-4000-8000-000000000001";
 const TENANT_B = "70000000-0000-4000-8000-000000000002";
 const ADMIN_USER_ID = "70000000-0000-4000-8000-000000000003";
 const EDITOR_USER_ID = "70000000-0000-4000-8000-000000000004";
+
+function buildWorkerEnv(overrides: Partial<Env> = {}): Env {
+  return {
+    DB: env.DB,
+    AUTH_TOKEN_HMAC_SECRET,
+    APP_BASE_URL,
+    ...overrides,
+  };
+}
+
+function buildJsonRequest(input: {
+  body: unknown;
+  cookie?: string;
+  origin?: string;
+  method: "POST";
+  url: string;
+}): Request {
+  const headers = new Headers();
+  headers.set("Content-Type", "application/json");
+  if (input.cookie) {
+    headers.set("Cookie", input.cookie);
+  }
+  if (input.origin) {
+    headers.set("Origin", input.origin);
+  }
+
+  return new Request(input.url, {
+    method: input.method,
+    headers,
+    body: JSON.stringify(input.body),
+  });
+}
 
 function getSetCookieValues(response: Response): string[] {
   const headersWithGetSetCookie = response.headers as Headers & {
@@ -33,13 +63,96 @@ function getSetCookieValues(response: Response): string[] {
   return rawValue.split(",").map((value) => value.trim());
 }
 
+function buildSessionCookie(token: string, tenantId?: string): string {
+  const parts = [`dink_session_v1=${token}`];
+  if (tenantId) {
+    parts.push(`dink_tenant_v1=${tenantId}`);
+  }
+
+  return parts.join("; ");
+}
+
+async function seedSession(input: {
+  emailNormalized: string;
+  role: "Admin" | "Editor";
+  sessionToken: string;
+  tenantId: string;
+  userId: string;
+}): Promise<void> {
+  const nowTimeMs = Date.now();
+  const nowIso = new Date(nowTimeMs).toISOString();
+  const expiresAt = new Date(nowTimeMs + 24 * 60 * 60 * 1000).toISOString();
+  const sessionTokenHash = await hashTokenWithHmacV1(
+    AUTH_TOKEN_HMAC_SECRET,
+    input.sessionToken,
+  );
+
+  await env.DB.prepare(
+    `
+      INSERT INTO users (id, email_normalized, created_at)
+      VALUES (?1, ?2, ?3)
+    `,
+  )
+    .bind(input.userId, input.emailNormalized, nowIso)
+    .run();
+
+  await env.DB.prepare(
+    `
+      INSERT INTO tenant_memberships (
+        id,
+        tenant_id,
+        user_id,
+        role,
+        created_at,
+        updated_at
+      )
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+    `,
+  )
+    .bind(
+      crypto.randomUUID(),
+      input.tenantId,
+      input.userId,
+      input.role,
+      nowIso,
+      nowIso,
+    )
+    .run();
+
+  await env.DB.prepare(
+    `
+      INSERT INTO auth_sessions (
+        id,
+        tenant_id,
+        user_id,
+        token_hash,
+        created_at,
+        expires_at,
+        revoked_at,
+        last_seen_at
+      )
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?5)
+    `,
+  )
+    .bind(
+      crypto.randomUUID(),
+      input.tenantId,
+      input.userId,
+      sessionTokenHash,
+      nowIso,
+      expiresAt,
+    )
+    .run();
+}
+
 async function createInviteAsAdmin(input: {
   adminSessionToken: string;
   tenantId: string;
 }): Promise<{
   magicLinkUrl: string;
 }> {
-  const inviteRequest = buildPostJsonRequest({
+  const inviteRequest = buildJsonRequest({
+    method: "POST",
     url: `${APP_BASE_URL}/v1/auth/magic-link/invites`,
     cookie: buildSessionCookie(input.adminSessionToken, input.tenantId),
     body: {
@@ -69,7 +182,8 @@ describe("worker auth magic-link routes v1", () => {
   });
 
   it("POST invites without session cookie returns 401", async () => {
-    const request = buildPostJsonRequest({
+    const request = buildJsonRequest({
+      method: "POST",
       url: `${APP_BASE_URL}/v1/auth/magic-link/invites`,
       body: {
         tenantId: TENANT_A,
@@ -100,7 +214,8 @@ describe("worker auth magic-link routes v1", () => {
       sessionToken: "editor-session-token",
     });
 
-    const request = buildPostJsonRequest({
+    const request = buildJsonRequest({
+      method: "POST",
       url: `${APP_BASE_URL}/v1/auth/magic-link/invites`,
       cookie: buildSessionCookie("editor-session-token", TENANT_A),
       body: {
@@ -130,7 +245,8 @@ describe("worker auth magic-link routes v1", () => {
       sessionToken: "admin-session-token",
     });
 
-    const request = buildPostJsonRequest({
+    const request = buildJsonRequest({
+      method: "POST",
       url: `${APP_BASE_URL}/v1/auth/magic-link/invites`,
       cookie: buildSessionCookie("admin-session-token", TENANT_A),
       body: {
@@ -167,7 +283,8 @@ describe("worker auth magic-link routes v1", () => {
       sessionToken: "admin-session-token-url",
     });
 
-    const request = buildPostJsonRequest({
+    const request = buildJsonRequest({
+      method: "POST",
       url: `${APP_BASE_URL}/v1/auth/magic-link/invites`,
       cookie: buildSessionCookie("admin-session-token-url", TENANT_A),
       body: {
@@ -245,7 +362,8 @@ describe("worker auth magic-link routes v1", () => {
       sessionToken: "admin-session-token-authenticate",
     });
 
-    const request = buildPostJsonRequest({
+    const request = buildJsonRequest({
+      method: "POST",
       url: `${APP_BASE_URL}/v1/auth/session/authenticate`,
       cookie: buildSessionCookie("admin-session-token-authenticate"),
       body: {
@@ -268,7 +386,8 @@ describe("worker auth magic-link routes v1", () => {
   });
 
   it("POST session authenticate with missing/invalid cookie returns 401", async () => {
-    const request = buildPostJsonRequest({
+    const request = buildJsonRequest({
+      method: "POST",
       url: `${APP_BASE_URL}/v1/auth/session/authenticate`,
       cookie: buildSessionCookie("non-existent-session-token"),
       body: {
@@ -469,7 +588,8 @@ describe("worker auth magic-link routes v1", () => {
   });
 
   it("method mismatch on /v1/auth/session/current returns 405 with Allow GET", async () => {
-    const request = buildPostJsonRequest({
+    const request = buildJsonRequest({
+      method: "POST",
       url: `${APP_BASE_URL}/v1/auth/session/current`,
       body: {},
     });
@@ -495,7 +615,8 @@ describe("worker auth magic-link routes v1", () => {
       sessionToken: "admin-session-token-mismatch",
     });
 
-    const request = buildPostJsonRequest({
+    const request = buildJsonRequest({
+      method: "POST",
       url: `${APP_BASE_URL}/v1/auth/magic-link/invites`,
       cookie: buildSessionCookie("admin-session-token-mismatch"),
       body: {
@@ -515,7 +636,8 @@ describe("worker auth magic-link routes v1", () => {
   });
 
   it("POST logout without session cookie returns 200 and clears auth cookies", async () => {
-    const request = buildPostJsonRequest({
+    const request = buildJsonRequest({
+      method: "POST",
       url: `${APP_BASE_URL}/v1/auth/session/logout`,
       body: {},
     });
@@ -549,7 +671,8 @@ describe("worker auth magic-link routes v1", () => {
       sessionToken,
     });
 
-    const logoutRequest = buildPostJsonRequest({
+    const logoutRequest = buildJsonRequest({
+      method: "POST",
       url: `${APP_BASE_URL}/v1/auth/session/logout`,
       cookie: buildSessionCookie(sessionToken, TENANT_A),
       body: {},
@@ -571,7 +694,8 @@ describe("worker auth magic-link routes v1", () => {
       setCookies.some((value) => value.startsWith("dink_tenant_v1=")),
     ).toBe(true);
 
-    const authenticateRequest = buildPostJsonRequest({
+    const authenticateRequest = buildJsonRequest({
+      method: "POST",
       url: `${APP_BASE_URL}/v1/auth/session/authenticate`,
       cookie: buildSessionCookie(sessionToken, TENANT_A),
       body: {
@@ -594,7 +718,8 @@ describe("worker auth magic-link routes v1", () => {
   });
 
   it("POST logout with invalid or expired cookie returns 200 no-op and clears cookies", async () => {
-    const request = buildPostJsonRequest({
+    const request = buildJsonRequest({
+      method: "POST",
       url: `${APP_BASE_URL}/v1/auth/session/logout`,
       cookie: buildSessionCookie("invalid-or-expired-token", TENANT_A),
       body: {},
@@ -618,7 +743,8 @@ describe("worker auth magic-link routes v1", () => {
   });
 
   it("POST logout with foreign Origin returns 403 ORIGIN_FORBIDDEN", async () => {
-    const request = buildPostJsonRequest({
+    const request = buildJsonRequest({
+      method: "POST",
       url: `${APP_BASE_URL}/v1/auth/session/logout`,
       origin: "https://evil.example",
       body: {},
@@ -682,7 +808,8 @@ describe("worker auth magic-link routes v1", () => {
       .spyOn(crypto, "randomUUID")
       .mockReturnValue(duplicateAuditId);
 
-    const request = buildPostJsonRequest({
+    const request = buildJsonRequest({
+      method: "POST",
       url: `${APP_BASE_URL}/v1/auth/session/logout`,
       cookie: buildSessionCookie(sessionToken, TENANT_A),
       body: {},

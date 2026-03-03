@@ -211,26 +211,6 @@ export type GetWorkspaceByIdSuccessV1 = z.infer<
 >;
 
 /**
- * HTTP success payload for get-workspace route responses.
- *
- * Note: transport route returns 404 for missing workspaces, so successful
- * payloads always include a non-null workspace.
- */
-export const GetWorkspaceByIdHttpSuccessV1Schema = z
-  .object({
-    ok: z.literal(true),
-    workspace: WorkspaceV1Schema,
-  })
-  .strict();
-
-/**
- * Inferred TypeScript type for get-workspace HTTP success payloads.
- */
-export type GetWorkspaceByIdHttpSuccessV1 = z.infer<
-  typeof GetWorkspaceByIdHttpSuccessV1Schema
->;
-
-/**
  * Discriminated result payload for get workspace operation.
  */
 export const GetWorkspaceByIdResultV1Schema = z.discriminatedUnion("ok", [
@@ -380,24 +360,6 @@ export function safeParseCreateWorkspaceResultV1(
   input: unknown,
 ): z.SafeParseReturnType<unknown, CreateWorkspaceResultV1> {
   return CreateWorkspaceResultV1Schema.safeParse(input);
-}
-
-/**
- * Parses unknown input into a get workspace by ID HTTP success payload.
- */
-export function parseGetWorkspaceByIdHttpSuccessV1(
-  input: unknown,
-): GetWorkspaceByIdHttpSuccessV1 {
-  return GetWorkspaceByIdHttpSuccessV1Schema.parse(input);
-}
-
-/**
- * Safely validates unknown input as a get workspace by ID HTTP success payload.
- */
-export function safeParseGetWorkspaceByIdHttpSuccessV1(
-  input: unknown,
-): z.SafeParseReturnType<unknown, GetWorkspaceByIdHttpSuccessV1> {
-  return GetWorkspaceByIdHttpSuccessV1Schema.safeParse(input);
 }
 
 /**
