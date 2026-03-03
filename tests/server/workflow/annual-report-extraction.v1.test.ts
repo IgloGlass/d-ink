@@ -225,4 +225,29 @@ describe("annual report extraction workflow v1", () => {
       expect(runResult.error.context.reason).toBe("payload_too_large");
     }
   });
+
+  it("rejects annual report file-type/content mismatches", async () => {
+    await seedWorkspace();
+    const deps = createDeps();
+    const zipLikeBytes = btoa(String.fromCharCode(0x50, 0x4b, 0x03, 0x04));
+
+    const runResult = await runAnnualReportExtractionV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        fileName: "annual-report.pdf",
+        fileBytesBase64: zipLikeBytes,
+        policyVersion: "annual-report-manual-first.v1",
+      },
+      deps,
+    );
+
+    expect(runResult.ok).toBe(false);
+    if (!runResult.ok) {
+      expect(runResult.error.code).toBe("INPUT_INVALID");
+      expect(runResult.error.context.reason).toBe(
+        "file_type_content_mismatch",
+      );
+    }
+  });
 });

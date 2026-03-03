@@ -135,7 +135,7 @@ async function seedSession(): Promise<void> {
       USER_ID,
       sessionTokenHash,
       nowIso,
-      "2026-03-03T14:00:00.000Z",
+      "2026-03-04T14:00:00.000Z",
     )
     .run();
 }

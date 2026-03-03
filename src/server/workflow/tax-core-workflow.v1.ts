@@ -344,8 +344,11 @@ export async function runTaxAdjustmentsV1(
       }),
     });
 
+    // V1 treats deterministic `proposed` decisions as auto-accepted unless
+    // they are explicitly manual-review required or later overridden.
     const acceptedCount = persisted.artifact.payload.decisions.filter(
-      (decision) => decision.status === "accepted",
+      (decision) =>
+        decision.status === "accepted" || decision.status === "proposed",
     ).length;
     if (acceptedCount > 0) {
       await appendAuditEventBestEffortV1({

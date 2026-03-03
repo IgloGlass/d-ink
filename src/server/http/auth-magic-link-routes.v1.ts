@@ -6,6 +6,7 @@ import {
 } from "../../shared/contracts/auth-magic-link.v1";
 import { UuidV4Schema } from "../../shared/contracts/common.v1";
 import type { Env } from "../../shared/types/env";
+import { MAX_UPLOAD_JSON_BODY_BYTES_V1 } from "../security/payload-limits.v1";
 import {
   authenticateSessionV1,
   consumeMagicLinkTokenV1,
@@ -21,7 +22,7 @@ import {
 import {
   createJsonErrorResponseV1,
   createMethodNotAllowedResponseV1,
-  readJsonBodyV1,
+  parseJsonBodyWithSchemaV1,
   validateOriginForPostV1,
 } from "./http-helpers.v1";
 import { parseCookiesV1 } from "./session-auth.v1";
@@ -337,21 +338,21 @@ async function handleCreateInviteRouteV1(
     return originValidationError;
   }
 
-  const parsedBody = InviteHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "Invite request body is invalid.",
-    });
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Invite",
+    schema: InviteHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
+  const parsedBody = bodyParseResult.data;
 
   const sessionGuardResult = await requireTenantSessionPrincipalV1({
     request,
     env,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
     tenantMismatchUserMessage:
       "You can only invite users in the active tenant.",
   });
@@ -362,9 +363,9 @@ async function handleCreateInviteRouteV1(
   const deps = createAuthMagicLinkDepsV1(env);
   const createInviteResult = await createMagicLinkInviteV1(
     {
-      tenantId: parsedBody.data.tenantId,
-      inviteeEmail: parsedBody.data.inviteeEmail,
-      inviteeRole: parsedBody.data.inviteeRole,
+      tenantId: parsedBody.tenantId,
+      inviteeEmail: parsedBody.inviteeEmail,
+      inviteeRole: parsedBody.inviteeRole,
       actorUserId: sessionGuardResult.principal.userId,
     },
     deps,
@@ -405,7 +406,7 @@ async function handleCreateInviteRouteV1(
 
   const magicLinkUrl = buildMagicLinkUrlV1({
     appBaseUrl,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
     token: createInviteResult.magicLinkToken,
   });
 
@@ -499,21 +500,21 @@ async function handleAuthenticateSessionRouteV1(
     return sessionTokenResult.response;
   }
 
-  const parsedBody = AuthenticateHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "Session authenticate request body is invalid.",
-    });
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Session authenticate",
+    schema: AuthenticateHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
+  const parsedBody = bodyParseResult.data;
 
   const deps = createAuthMagicLinkDepsV1(env);
   const authResult = await authenticateSessionV1(
     {
-      tenantId: parsedBody.data.tenantId,
+      tenantId: parsedBody.tenantId,
       sessionToken: sessionTokenResult.sessionToken,
     },
     deps,
@@ -585,19 +586,18 @@ async function handleDevLoginRouteV1(
     });
   }
 
-  const parsedBody = DevLoginHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "Dev login request body is invalid.",
-    });
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Dev login",
+    schema: DevLoginHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
+  const parsedBody = bodyParseResult.data;
 
-  const tenantIdCandidate =
-    parsedBody.data.tenantId ?? env.DEV_AUTH_DEFAULT_TENANT_ID;
+  const tenantIdCandidate = parsedBody.tenantId ?? env.DEV_AUTH_DEFAULT_TENANT_ID;
   const normalizedTenantId = normalizeDevTenantIdV1(tenantIdCandidate);
   if (!normalizedTenantId) {
     return createJsonErrorResponseV1({
@@ -609,9 +609,7 @@ async function handleDevLoginRouteV1(
   }
 
   const emailCandidate =
-    parsedBody.data.email ??
-    env.DEV_AUTH_DEFAULT_EMAIL ??
-    "dev.user@example.com";
+    parsedBody.email ?? env.DEV_AUTH_DEFAULT_EMAIL ?? "dev.user@example.com";
   const emailResult = z.string().trim().email().safeParse(emailCandidate);
   if (!emailResult.success) {
     return createJsonErrorResponseV1({
@@ -622,7 +620,7 @@ async function handleDevLoginRouteV1(
     });
   }
 
-  const roleCandidate = parsedBody.data.role ?? env.DEV_AUTH_DEFAULT_ROLE;
+  const roleCandidate = parsedBody.role ?? env.DEV_AUTH_DEFAULT_ROLE;
   const roleResult = AuthRoleV1Schema.safeParse(roleCandidate ?? "Admin");
   if (!roleResult.success) {
     return createJsonErrorResponseV1({

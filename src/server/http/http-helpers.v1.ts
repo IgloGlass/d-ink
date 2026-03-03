@@ -1,3 +1,5 @@
+import type { z } from "zod";
+
 import {
   type PayloadLimitReasonV1,
   parseContentLengthHeaderV1,
@@ -178,6 +180,98 @@ export function isJsonBodyReadErrorV1(
       candidate.reason === "payload_too_large") &&
     typeof candidate.maxBytes === "number"
   );
+}
+
+export function buildZodErrorContextV1(error: z.ZodError): Record<string, unknown> {
+  return {
+    issues: error.issues.map((issue) => ({
+      code: issue.code,
+      message: issue.message,
+      path: issue.path.join("."),
+    })),
+  };
+}
+
+export function mapJsonBodyReadErrorToResponseV1(input: {
+  error: JsonBodyReadErrorV1;
+  routeLabel: string;
+}): Response {
+  if (input.error.reason === "content_length_invalid") {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: `${input.routeLabel} request body has an invalid Content-Length header.`,
+      userMessage: `${input.routeLabel} request body is invalid.`,
+      context: {
+        reason: input.error.reason,
+        contentLengthHeaderValue: input.error.contentLengthHeaderValue ?? null,
+      },
+    });
+  }
+
+  return createJsonErrorResponseV1({
+    status: 413,
+    code: "INPUT_INVALID",
+    message: `${input.routeLabel} request body exceeded configured size limit.`,
+    userMessage: `${input.routeLabel} request body is too large.`,
+    context: {
+      reason: input.error.reason,
+      maxBytes: input.error.maxBytes,
+      actualBytes: input.error.actualBytes ?? null,
+    },
+  });
+}
+
+export async function parseJsonBodyWithSchemaV1<TParsed>(input: {
+  maxBytes: number;
+  request: Request;
+  routeLabel: string;
+  schema: {
+    safeParse: (
+      payload: unknown,
+    ) => { success: true; data: TParsed } | { success: false; error: z.ZodError };
+  };
+}): Promise<
+  | {
+      ok: true;
+      data: TParsed;
+    }
+  | {
+      ok: false;
+      response: Response;
+    }
+> {
+  const requestBody = await readJsonBodyV1(input.request, {
+    maxBytes: input.maxBytes,
+  });
+  if (isJsonBodyReadErrorV1(requestBody)) {
+    return {
+      ok: false,
+      response: mapJsonBodyReadErrorToResponseV1({
+        error: requestBody,
+        routeLabel: input.routeLabel,
+      }),
+    };
+  }
+
+  const parsedBody = input.schema.safeParse(requestBody);
+  if (!parsedBody.success) {
+    return {
+      ok: false,
+      response: createJsonErrorResponseV1({
+        status: 400,
+        code: "INPUT_INVALID",
+        message: `${input.routeLabel} request body is invalid.`,
+        userMessage: `${input.routeLabel} request body is invalid.`,
+        context: buildZodErrorContextV1(parsedBody.error),
+      }),
+    };
+  }
+
+  return {
+    ok: true,
+    data: parsedBody.data,
+  };
 }
 
 export async function readJsonBodyV1(

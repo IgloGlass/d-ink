@@ -84,8 +84,7 @@ import {
 import {
   createJsonErrorResponseV1,
   createMethodNotAllowedResponseV1,
-  isJsonBodyReadErrorV1,
-  readJsonBodyV1,
+  parseJsonBodyWithSchemaV1,
   validateOriginForPostV1,
 } from "./http-helpers.v1";
 import { parseCookiesV1 } from "./session-auth.v1";
@@ -295,41 +294,6 @@ async function requireTenantSessionPrincipalV1(input: {
     ok: true,
     principal: sessionLookupResult.principal,
   };
-}
-
-function mapJsonBodyReadErrorToResponseV1(input: {
-  error: {
-    reason: "content_length_invalid" | "payload_too_large";
-    maxBytes: number;
-    actualBytes?: number;
-    contentLengthHeaderValue?: string;
-  };
-  routeLabel: string;
-}): Response {
-  if (input.error.reason === "content_length_invalid") {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: `${input.routeLabel} request body has an invalid Content-Length header.`,
-      userMessage: `${input.routeLabel} request body is invalid.`,
-      context: {
-        reason: input.error.reason,
-        contentLengthHeaderValue: input.error.contentLengthHeaderValue ?? null,
-      },
-    });
-  }
-
-  return createJsonErrorResponseV1({
-    status: 413,
-    code: "INPUT_INVALID",
-    message: `${input.routeLabel} request body exceeded configured size limit.`,
-    userMessage: `${input.routeLabel} request body is too large.`,
-    context: {
-      reason: input.error.reason,
-      maxBytes: input.error.maxBytes,
-      actualBytes: input.error.actualBytes ?? null,
-    },
-  });
 }
 
 function mapWorkspaceLifecycleFailureToResponseV1(input: {
@@ -730,21 +694,21 @@ async function handleCreateWorkspaceRouteV1(
     return originValidationError;
   }
 
-  const parsedBody = CreateWorkspaceHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "Create workspace request body is invalid.",
-    });
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Create workspace",
+    schema: CreateWorkspaceHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
+  const parsedBody = bodyParseResult.data;
 
   const sessionGuardResult = await requireTenantSessionPrincipalV1({
     request,
     env,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
   });
   if (!sessionGuardResult.ok) {
     return sessionGuardResult.response;
@@ -752,10 +716,10 @@ async function handleCreateWorkspaceRouteV1(
 
   const result = await createWorkspaceV1(
     {
-      tenantId: parsedBody.data.tenantId,
-      companyId: parsedBody.data.companyId,
-      fiscalYearStart: parsedBody.data.fiscalYearStart,
-      fiscalYearEnd: parsedBody.data.fiscalYearEnd,
+      tenantId: parsedBody.tenantId,
+      companyId: parsedBody.companyId,
+      fiscalYearStart: parsedBody.fiscalYearStart,
+      fiscalYearEnd: parsedBody.fiscalYearEnd,
       actor: {
         actorType: "user",
         actorRole: sessionGuardResult.principal.role,
@@ -894,21 +858,21 @@ async function handleWorkspaceTransitionRouteV1(
     return originValidationError;
   }
 
-  const parsedBody = WorkspaceTransitionHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "Workspace transition request body is invalid.",
-    });
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Workspace transition",
+    schema: WorkspaceTransitionHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
+  const parsedBody = bodyParseResult.data;
 
   const sessionGuardResult = await requireTenantSessionPrincipalV1({
     request,
     env,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
   });
   if (!sessionGuardResult.ok) {
     return sessionGuardResult.response;
@@ -916,10 +880,10 @@ async function handleWorkspaceTransitionRouteV1(
 
   const result = await applyWorkspaceTransitionV1(
     {
-      tenantId: parsedBody.data.tenantId,
+      tenantId: parsedBody.tenantId,
       workspaceId,
-      toStatus: parsedBody.data.toStatus,
-      reason: parsedBody.data.reason,
+      toStatus: parsedBody.toStatus,
+      reason: parsedBody.reason,
       actor: {
         actorType: "user",
         actorRole: sessionGuardResult.principal.role,
@@ -955,30 +919,21 @@ async function handleTrialBalancePipelineRunRouteV1(
     return originValidationError;
   }
 
-  const requestBody = await readJsonBodyV1(request, {
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
     maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "TB pipeline",
+    schema: TrialBalancePipelineRunHttpRequestBodyV1Schema,
   });
-  if (isJsonBodyReadErrorV1(requestBody)) {
-    return mapJsonBodyReadErrorToResponseV1({
-      error: requestBody,
-      routeLabel: "TB pipeline",
-    });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
 
-  const parsedBody =
-    TrialBalancePipelineRunHttpRequestBodyV1Schema.safeParse(requestBody);
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "TB pipeline request body is invalid.",
-    });
-  }
-
+  const parsedBody = bodyParseResult.data;
   const sessionGuardResult = await requireTenantSessionPrincipalV1({
     request,
     env,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
   });
   if (!sessionGuardResult.ok) {
     return sessionGuardResult.response;
@@ -986,7 +941,7 @@ async function handleTrialBalancePipelineRunRouteV1(
 
   const result = await executeTrialBalancePipelineRunV1(
     {
-      ...parsedBody.data,
+      ...parsedBody,
       workspaceId,
       createdByUserId: sessionGuardResult.principal.userId,
     },
@@ -1019,30 +974,21 @@ async function handleAnnualReportRunRouteV1(
     return originValidationError;
   }
 
-  const requestBody = await readJsonBodyV1(request, {
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
     maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Annual report",
+    schema: AnnualReportRunHttpRequestBodyV1Schema,
   });
-  if (isJsonBodyReadErrorV1(requestBody)) {
-    return mapJsonBodyReadErrorToResponseV1({
-      error: requestBody,
-      routeLabel: "Annual report",
-    });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
-
-  const parsedBody =
-    AnnualReportRunHttpRequestBodyV1Schema.safeParse(requestBody);
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "Annual report run request body is invalid.",
-    });
-  }
+  const parsedBody = bodyParseResult.data;
 
   const sessionGuardResult = await requireTenantSessionPrincipalV1({
     request,
     env,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
   });
   if (!sessionGuardResult.ok) {
     return sessionGuardResult.response;
@@ -1050,7 +996,7 @@ async function handleAnnualReportRunRouteV1(
 
   const result = await runAnnualReportExtractionV1(
     {
-      ...parsedBody.data,
+      ...parsedBody,
       workspaceId,
       createdByUserId: sessionGuardResult.principal.userId,
     },
@@ -1127,21 +1073,21 @@ async function handleAnnualReportOverridesRouteV1(
     return originValidationError;
   }
 
-  const parsedBody = AnnualReportOverrideHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "Annual report override request body is invalid.",
-    });
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Annual report override",
+    schema: AnnualReportOverrideHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
+  const parsedBody = bodyParseResult.data;
 
   const sessionGuardResult = await requireTenantSessionPrincipalV1({
     request,
     env,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
   });
   if (!sessionGuardResult.ok) {
     return sessionGuardResult.response;
@@ -1149,7 +1095,7 @@ async function handleAnnualReportOverridesRouteV1(
 
   const result = await applyAnnualReportExtractionOverridesV1(
     {
-      ...parsedBody.data,
+      ...parsedBody,
       workspaceId,
       authorUserId: sessionGuardResult.principal.userId,
     },
@@ -1181,21 +1127,21 @@ async function handleConfirmAnnualReportRouteV1(
     return originValidationError;
   }
 
-  const parsedBody = AnnualReportConfirmHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "Annual report confirmation request body is invalid.",
-    });
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Annual report confirmation",
+    schema: AnnualReportConfirmHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
+  const parsedBody = bodyParseResult.data;
 
   const sessionGuardResult = await requireTenantSessionPrincipalV1({
     request,
     env,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
   });
   if (!sessionGuardResult.ok) {
     return sessionGuardResult.response;
@@ -1203,7 +1149,7 @@ async function handleConfirmAnnualReportRouteV1(
 
   const result = await confirmAnnualReportExtractionV1(
     {
-      ...parsedBody.data,
+      ...parsedBody,
       workspaceId,
       confirmedByUserId: sessionGuardResult.principal.userId,
     },
@@ -1234,21 +1180,21 @@ async function handleRunTaxAdjustmentsRouteV1(
   if (originValidationError) {
     return originValidationError;
   }
-  const parsedBody = TaxAdjustmentRunHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "Tax-adjustment run request body is invalid.",
-    });
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Tax-adjustment run",
+    schema: TaxAdjustmentRunHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
+  const parsedBody = bodyParseResult.data;
 
   const sessionGuardResult = await requireTenantSessionPrincipalV1({
     request,
     env,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
   });
   if (!sessionGuardResult.ok) {
     return sessionGuardResult.response;
@@ -1256,7 +1202,7 @@ async function handleRunTaxAdjustmentsRouteV1(
 
   const result = await runTaxAdjustmentsV1(
     {
-      ...parsedBody.data,
+      ...parsedBody,
       workspaceId,
       createdByUserId: sessionGuardResult.principal.userId,
     },
@@ -1328,20 +1274,20 @@ async function handleTaxAdjustmentOverridesRouteV1(
   if (originValidationError) {
     return originValidationError;
   }
-  const parsedBody = TaxAdjustmentOverrideHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "Tax-adjustment override request body is invalid.",
-    });
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Tax-adjustment override",
+    schema: TaxAdjustmentOverrideHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
+  const parsedBody = bodyParseResult.data;
   const sessionGuardResult = await requireTenantSessionPrincipalV1({
     request,
     env,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
   });
   if (!sessionGuardResult.ok) {
     return sessionGuardResult.response;
@@ -1349,7 +1295,7 @@ async function handleTaxAdjustmentOverridesRouteV1(
 
   const result = await applyTaxAdjustmentOverridesV1(
     {
-      ...parsedBody.data,
+      ...parsedBody,
       workspaceId,
       authorUserId: sessionGuardResult.principal.userId,
     },
@@ -1378,21 +1324,21 @@ async function handleRunTaxSummaryRouteV1(
   if (originValidationError) {
     return originValidationError;
   }
-  const parsedBody = TaxSummaryRunHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "Tax summary run request body is invalid.",
-    });
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Tax summary run",
+    schema: TaxSummaryRunHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
+  const parsedBody = bodyParseResult.data;
 
   const sessionGuardResult = await requireTenantSessionPrincipalV1({
     request,
     env,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
   });
   if (!sessionGuardResult.ok) {
     return sessionGuardResult.response;
@@ -1400,7 +1346,7 @@ async function handleRunTaxSummaryRouteV1(
 
   const result = await runTaxSummaryV1(
     {
-      ...parsedBody.data,
+      ...parsedBody,
       workspaceId,
       createdByUserId: sessionGuardResult.principal.userId,
     },
@@ -1472,20 +1418,20 @@ async function handleRunInk2FormRouteV1(
   if (originValidationError) {
     return originValidationError;
   }
-  const parsedBody = Ink2FormRunHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "INK2 run request body is invalid.",
-    });
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "INK2 run",
+    schema: Ink2FormRunHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
+  const parsedBody = bodyParseResult.data;
   const sessionGuardResult = await requireTenantSessionPrincipalV1({
     request,
     env,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
   });
   if (!sessionGuardResult.ok) {
     return sessionGuardResult.response;
@@ -1493,7 +1439,7 @@ async function handleRunInk2FormRouteV1(
 
   const result = await runInk2FormV1(
     {
-      ...parsedBody.data,
+      ...parsedBody,
       workspaceId,
       createdByUserId: sessionGuardResult.principal.userId,
     },
@@ -1564,20 +1510,20 @@ async function handleInk2FormOverridesRouteV1(
   if (originValidationError) {
     return originValidationError;
   }
-  const parsedBody = Ink2FormOverrideHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "INK2 override request body is invalid.",
-    });
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "INK2 override",
+    schema: Ink2FormOverrideHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
+  const parsedBody = bodyParseResult.data;
   const sessionGuardResult = await requireTenantSessionPrincipalV1({
     request,
     env,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
   });
   if (!sessionGuardResult.ok) {
     return sessionGuardResult.response;
@@ -1585,7 +1531,7 @@ async function handleInk2FormOverridesRouteV1(
 
   const result = await applyInk2FormOverridesV1(
     {
-      ...parsedBody.data,
+      ...parsedBody,
       workspaceId,
       authorUserId: sessionGuardResult.principal.userId,
     },
@@ -1614,20 +1560,20 @@ async function handlePdfExportRouteV1(
   if (originValidationError) {
     return originValidationError;
   }
-  const parsedBody = PdfExportHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "Export request body is invalid.",
-    });
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Export",
+    schema: PdfExportHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
+  const parsedBody = bodyParseResult.data;
   const sessionGuardResult = await requireTenantSessionPrincipalV1({
     request,
     env,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
   });
   if (!sessionGuardResult.ok) {
     return sessionGuardResult.response;
@@ -1635,7 +1581,7 @@ async function handlePdfExportRouteV1(
 
   const result = await createPdfExportV1(
     {
-      ...parsedBody.data,
+      ...parsedBody,
       workspaceId,
       createdByUserId: sessionGuardResult.principal.userId,
     },
@@ -1748,20 +1694,20 @@ async function handleCreateCommentRouteV1(
   if (originValidationError) {
     return originValidationError;
   }
-  const parsedBody = CreateCommentHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "Create comment request body is invalid.",
-    });
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Create comment",
+    schema: CreateCommentHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
+  const parsedBody = bodyParseResult.data;
   const sessionGuardResult = await requireTenantSessionPrincipalV1({
     request,
     env,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
   });
   if (!sessionGuardResult.ok) {
     return sessionGuardResult.response;
@@ -1769,7 +1715,7 @@ async function handleCreateCommentRouteV1(
 
   const result = await createCommentV1(
     {
-      ...parsedBody.data,
+      ...parsedBody,
       workspaceId,
       createdByUserId: sessionGuardResult.principal.userId,
     },
@@ -1840,20 +1786,20 @@ async function handleCreateTaskRouteV1(
   if (originValidationError) {
     return originValidationError;
   }
-  const parsedBody = CreateTaskHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "Create task request body is invalid.",
-    });
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Create task",
+    schema: CreateTaskHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
+  const parsedBody = bodyParseResult.data;
   const sessionGuardResult = await requireTenantSessionPrincipalV1({
     request,
     env,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
   });
   if (!sessionGuardResult.ok) {
     return sessionGuardResult.response;
@@ -1861,7 +1807,7 @@ async function handleCreateTaskRouteV1(
 
   const result = await createTaskV1(
     {
-      ...parsedBody.data,
+      ...parsedBody,
       workspaceId,
       createdByUserId: sessionGuardResult.principal.userId,
     },
@@ -1891,20 +1837,20 @@ async function handleCompleteTaskRouteV1(
   if (originValidationError) {
     return originValidationError;
   }
-  const parsedBody = CompleteTaskHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "Complete task request body is invalid.",
-    });
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Complete task",
+    schema: CompleteTaskHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
+  const parsedBody = bodyParseResult.data;
   const sessionGuardResult = await requireTenantSessionPrincipalV1({
     request,
     env,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
   });
   if (!sessionGuardResult.ok) {
     return sessionGuardResult.response;
@@ -1912,7 +1858,7 @@ async function handleCompleteTaskRouteV1(
 
   const result = await completeTaskV1(
     {
-      ...parsedBody.data,
+      ...parsedBody,
       workspaceId,
       taskId,
       completedByUserId: sessionGuardResult.principal.userId,
@@ -1988,21 +1934,21 @@ async function handleApplyMappingOverridesRouteV1(
     return originValidationError;
   }
 
-  const parsedBody = MappingOverrideHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "Mapping override request body is invalid.",
-    });
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Mapping override",
+    schema: MappingOverrideHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
+  const parsedBody = bodyParseResult.data;
 
   const sessionGuardResult = await requireTenantSessionPrincipalV1({
     request,
     env,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
   });
   if (!sessionGuardResult.ok) {
     return sessionGuardResult.response;
@@ -2010,7 +1956,7 @@ async function handleApplyMappingOverridesRouteV1(
 
   const result = await applyMappingOverridesV1(
     {
-      ...parsedBody.data,
+      ...parsedBody,
       workspaceId,
     },
     {
@@ -2044,21 +1990,21 @@ async function handleGenerateMappingReviewSuggestionsRouteV1(
     return originValidationError;
   }
 
-  const parsedBody = MappingReviewHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
-  if (!parsedBody.success) {
-    return createJsonErrorResponseV1({
-      status: 400,
-      code: "INPUT_INVALID",
-      message: "Mapping review request body is invalid.",
-    });
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Mapping review",
+    schema: MappingReviewHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
   }
+  const parsedBody = bodyParseResult.data;
 
   const sessionGuardResult = await requireTenantSessionPrincipalV1({
     request,
     env,
-    tenantId: parsedBody.data.tenantId,
+    tenantId: parsedBody.tenantId,
   });
   if (!sessionGuardResult.ok) {
     return sessionGuardResult.response;
@@ -2066,7 +2012,7 @@ async function handleGenerateMappingReviewSuggestionsRouteV1(
 
   const result = await generateMappingReviewSuggestionsV1(
     {
-      ...parsedBody.data,
+      ...parsedBody,
       workspaceId,
     },
     createMappingReviewDepsV1(env),

@@ -16,9 +16,10 @@
     "test:client": "vitest run --config vitest.client.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
     "lint": "biome check .",
+    "lint:logging": "node scripts/check-tenant-safe-logging.v1.mjs",
     "lint:boundaries": "depcruise --config .dependency-cruiser.cjs --output-type err-long src",
     "format": "biome format --write .",
-    "check": "npm run lint && npm run lint:boundaries && npm run typecheck && npm run test"
+    "check": "npm run lint && npm run lint:logging && npm run lint:boundaries && npm run typecheck && npm run test"
   },
   "engines": {
     "node": ">=20"

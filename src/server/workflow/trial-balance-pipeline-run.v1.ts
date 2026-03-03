@@ -12,6 +12,7 @@ import {
 } from "../../shared/contracts/tb-pipeline-run.v1";
 import { generateDeterministicMappingDecisionsV1 } from "../mapping/deterministic-mapping.v1";
 import { parseTrialBalanceFileV1 } from "../parsing/trial-balance-parser.v1";
+import { validateTrialBalanceFileTypeCoherenceV1 } from "../security/file-type-coherence.v1";
 import { MAX_TRIAL_BALANCE_FILE_BYTES_V1 } from "../security/payload-limits.v1";
 import { evaluateTrialBalanceReconciliationV1 } from "../validation/trial-balance-reconciliation.v1";
 import { applyMappingPreferencesToDecisionSetV1 } from "./mapping-override.v1";
@@ -152,6 +153,24 @@ export async function executeTrialBalancePipelineRunV1(
           actualBytes: fileBytes.byteLength,
           fileName: request.fileName,
         },
+      },
+    });
+  }
+  const fileTypeCoherenceFailure = validateTrialBalanceFileTypeCoherenceV1({
+    fileName: request.fileName,
+    fileType: request.fileType,
+    fileBytes,
+  });
+  if (fileTypeCoherenceFailure) {
+    return parseExecuteTrialBalancePipelineResultV1({
+      ok: false,
+      error: {
+        code: "INPUT_INVALID",
+        message:
+          "Trial balance file content does not match declared or inferred file type.",
+        user_message:
+          "The uploaded trial balance file type does not match its content.",
+        context: fileTypeCoherenceFailure,
       },
     });
   }

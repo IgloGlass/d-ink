@@ -402,6 +402,22 @@ describe("mapping review workflow v1", () => {
         evidenceTypes: ["tb_row"],
       },
     ]);
+
+    const firstProjectedDecision = projectedInput.projection.decisions[0];
+    if (!firstProjectedDecision) {
+      throw new Error("Expected at least one projected mapping decision.");
+    }
+    expect(Object.keys(firstProjectedDecision).sort()).toEqual([
+      "accountName",
+      "evidenceTypes",
+      "id",
+      "proposedStatementType",
+      "selectedCategoryCode",
+    ]);
+    const serializedProjection = JSON.stringify(projectedInput.projection);
+    expect(serializedProjection).not.toContain("sourceAccountNumber");
+    expect(serializedProjection).not.toContain("sourceSnippet");
+    expect(serializedProjection).not.toContain("rawValues");
   });
 
   it("returns AI_OUTPUT_INVALID when model suggests incompatible statement type", async () => {

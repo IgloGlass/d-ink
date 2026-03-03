@@ -20,6 +20,7 @@ import {
 } from "../../shared/contracts/annual-report-extraction.v1";
 import { parseAuditEventV2 } from "../../shared/contracts/audit-event.v2";
 import { parseAnnualReportExtractionV1 } from "../parsing/annual-report-extractor.v1";
+import { validateAnnualReportFileTypeCoherenceV1 } from "../security/file-type-coherence.v1";
 import { MAX_ANNUAL_REPORT_FILE_BYTES_V1 } from "../security/payload-limits.v1";
 
 export interface AnnualReportExtractionDepsV1 {
@@ -329,6 +330,23 @@ export async function runAnnualReportExtractionV1(
           actualBytes: fileBytes.byteLength,
           fileName: request.fileName,
         },
+      }),
+    );
+  }
+  const fileTypeCoherenceFailure = validateAnnualReportFileTypeCoherenceV1({
+    fileName: request.fileName,
+    fileType: request.fileType,
+    fileBytes,
+  });
+  if (fileTypeCoherenceFailure) {
+    return parseRunAnnualReportExtractionResultV1(
+      buildFailureV1({
+        code: "INPUT_INVALID",
+        message:
+          "Annual report file content does not match declared or inferred file type.",
+        userMessage:
+          "The uploaded annual report file type does not match its content.",
+        context: fileTypeCoherenceFailure,
       }),
     );
   }

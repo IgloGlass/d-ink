@@ -699,4 +699,34 @@ describe("trial-balance pipeline run workflow v1", () => {
       expect(result.error.context.reason).toBe("payload_too_large");
     }
   });
+
+  it("returns INPUT_INVALID when trial-balance file type mismatches content", async () => {
+    const repository = new InMemoryTbPipelineArtifactRepositoryV1(
+      new Set([`${tenantId}:${workspaceId}`]),
+      tenantId,
+    );
+
+    const result = await executeTrialBalancePipelineRunV1(
+      {
+        tenantId,
+        workspaceId,
+        createdByUserId: userId,
+        fileName: "tb.xlsx",
+        fileBytesBase64: btoa("%PDF-1.7"),
+        policyVersion: "deterministic-bas.v1",
+      },
+      createDeps({
+        artifactRepository: repository,
+        mappingPreferenceRepository:
+          new InMemoryMappingPreferenceRepositoryV1(),
+        auditRepository: new InMemoryAuditRepositoryV1(),
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INPUT_INVALID");
+      expect(result.error.context.reason).toBe("file_type_content_mismatch");
+    }
+  });
 });

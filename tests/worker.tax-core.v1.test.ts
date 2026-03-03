@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
 
 import { hashTokenWithHmacV1 } from "../src/server/workflow/auth-magic-link.v1";
-import { AUDIT_EVENT_TYPES_V1 } from "../src/shared/audit/audit-event-catalog.v1";
+import {
+  AUDIT_EVENT_TYPES_V1,
+  REQUIRED_AUDIT_EVENT_TYPES_V1,
+} from "../src/shared/audit/audit-event-catalog.v1";
 import type { Env } from "../src/shared/types/env";
 import worker from "../src/worker";
 import { applyWorkspaceAuditSchemaForTests } from "./db/test-schema";
@@ -159,6 +162,49 @@ describe("worker tax core routes v1", () => {
   it("runs deterministic tax-core chain and collaboration endpoints", async () => {
     const cookie = buildSessionCookie(SESSION_TOKEN);
 
+    const parseFailedAnnualRun = await worker.fetch(
+      buildJsonRequest({
+        method: "POST",
+        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/annual-report-runs`,
+        cookie,
+        body: {
+          tenantId: TENANT_ID,
+          fileName: "annual-report.pdf",
+          fileBytesBase64: btoa("   "),
+          policyVersion: "annual-report-manual-first.v1",
+        },
+      }),
+      buildWorkerEnv(),
+    );
+    expect(parseFailedAnnualRun.status).toBe(422);
+
+    const annualRunInitial = await worker.fetch(
+      buildJsonRequest({
+        method: "POST",
+        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/annual-report-runs`,
+        cookie,
+        body: {
+          tenantId: TENANT_ID,
+          fileName: "annual-report.pdf",
+          fileBytesBase64: btoa(`
+            Company Name: Acme AB
+            Org nr: 556677-8899
+            Fiscal year: 2025-01-01 to 2025-12-31
+            K2
+            Resultat före skatt: 1 000 000
+          `),
+          policyVersion: "annual-report-manual-first.v1",
+        },
+      }),
+      buildWorkerEnv(),
+    );
+    const annualRunInitialPayload = (await annualRunInitial.json()) as {
+      active: { artifactId: string; version: number };
+      ok: true;
+    };
+    expect(annualRunInitial.status).toBe(200);
+    expect(annualRunInitialPayload.ok).toBe(true);
+
     const annualRun = await worker.fetch(
       buildJsonRequest({
         method: "POST",
@@ -240,7 +286,59 @@ describe("worker tax core routes v1", () => {
       }),
       buildWorkerEnv(),
     );
-    expect(tbRun.status).toBe(200);
+    if (tbRun.status !== 200) {
+      throw new Error(`TB run failed: ${tbRun.status} ${await tbRun.text()}`);
+    }
+    const tbRunPayload = (await tbRun.json()) as {
+      ok: true;
+      pipeline: {
+        artifacts: {
+          mapping: {
+            artifactId: string;
+            version: number;
+          };
+        };
+        mapping: {
+          decisions: Array<{
+            id: string;
+            selectedCategory: { code: string };
+          }>;
+        };
+      };
+    };
+    const firstMappingDecision = tbRunPayload.pipeline.mapping.decisions[0];
+    if (!firstMappingDecision) {
+      throw new Error("Expected at least one mapping decision.");
+    }
+    const selectedCategoryCode =
+      firstMappingDecision.selectedCategory.code === "607200"
+        ? "607100"
+        : "607200";
+
+    const mappingOverride = await worker.fetch(
+      buildJsonRequest({
+        method: "POST",
+        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/mapping-overrides`,
+        cookie,
+        body: {
+          tenantId: TENANT_ID,
+          expectedActiveMapping: {
+            artifactId: tbRunPayload.pipeline.artifacts.mapping.artifactId,
+            version: tbRunPayload.pipeline.artifacts.mapping.version,
+          },
+          overrides: [
+            {
+              decisionId: firstMappingDecision.id,
+              selectedCategoryCode,
+              scope: "user",
+              reason: "Audit matrix smoke override",
+            },
+          ],
+        },
+      }),
+      buildWorkerEnv(),
+    );
+    expect(mappingOverride.status).toBe(200);
 
     const adjustmentsRun = await worker.fetch(
       buildJsonRequest({
@@ -344,11 +442,26 @@ describe("worker tax core routes v1", () => {
     );
     expect(ink2Override.status).toBe(200);
 
-    await env.DB.prepare(
-      `UPDATE workspaces SET status = 'approved_for_export' WHERE id = ?1 AND tenant_id = ?2`,
-    )
-      .bind(WORKSPACE_ID, TENANT_ID)
-      .run();
+    const transitionTo = async (
+      toStatus: "approved_for_export" | "in_review" | "ready_for_approval",
+    ): Promise<void> => {
+      const transitionResponse = await worker.fetch(
+        buildJsonRequest({
+          method: "POST",
+          url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/transitions`,
+          cookie,
+          body: {
+            tenantId: TENANT_ID,
+            toStatus,
+          },
+        }),
+        buildWorkerEnv(),
+      );
+      expect(transitionResponse.status).toBe(200);
+    };
+    await transitionTo("in_review");
+    await transitionTo("ready_for_approval");
+    await transitionTo("approved_for_export");
 
     const exportRun = await worker.fetch(
       buildJsonRequest({
@@ -419,27 +532,10 @@ describe("worker tax core routes v1", () => {
       }>();
     const eventTypes = (auditRows.results ?? []).map((row) => row.event_type);
 
-    expect(eventTypes).toEqual(
-      expect.arrayContaining([
-        AUDIT_EVENT_TYPES_V1.FILE_UPLOADED,
-        AUDIT_EVENT_TYPES_V1.PARSE_SUCCEEDED,
-        AUDIT_EVENT_TYPES_V1.RECONCILIATION_RESULT_RECORDED,
-        AUDIT_EVENT_TYPES_V1.MAPPING_GENERATED,
-        AUDIT_EVENT_TYPES_V1.EXTRACTION_CREATED,
-        AUDIT_EVENT_TYPES_V1.EXTRACTION_OVERRIDDEN,
-        AUDIT_EVENT_TYPES_V1.EXTRACTION_CONFIRMED,
-        AUDIT_EVENT_TYPES_V1.ADJUSTMENT_GENERATED,
-        AUDIT_EVENT_TYPES_V1.ADJUSTMENT_OVERRIDDEN,
-        AUDIT_EVENT_TYPES_V1.SUMMARY_GENERATED,
-        AUDIT_EVENT_TYPES_V1.FORM_POPULATED,
-        AUDIT_EVENT_TYPES_V1.FORM_FIELD_EDITED,
-        AUDIT_EVENT_TYPES_V1.FORM_APPROVED,
-        AUDIT_EVENT_TYPES_V1.EXPORT_CREATED,
-        AUDIT_EVENT_TYPES_V1.COMMENT_CREATED,
-        AUDIT_EVENT_TYPES_V1.TASK_CREATED,
-        AUDIT_EVENT_TYPES_V1.TASK_COMPLETED,
-      ]),
-    );
+    for (const requiredEventType of REQUIRED_AUDIT_EVENT_TYPES_V1) {
+      expect(eventTypes).toContain(requiredEventType);
+    }
+    expect(eventTypes).toContain(AUDIT_EVENT_TYPES_V1.SUMMARY_GENERATED);
 
     const completedTaskAudit = (auditRows.results ?? []).find(
       (row) => row.event_type === AUDIT_EVENT_TYPES_V1.TASK_COMPLETED,
