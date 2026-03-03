@@ -6,13 +6,50 @@ import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
 import { StatusPill } from "../../components/status-pill";
 import { ApiClientError, toUserFacingErrorMessage } from "../../lib/http/api-client";
 import {
+  type ApplyAnnualReportOverridesResponseV1,
+  type ApplyInk2OverridesResponseV1,
+  type ApplyTaxAdjustmentsOverridesResponseV1,
+  type ConfirmAnnualReportExtractionResponseV1,
+  type CreateCommentResponseV1,
+  type CreatePdfExportResponseV1,
+  type CreateTaskResponseV1,
+  type GetActiveInk2FormResponseV1,
+  type GetActiveAnnualReportExtractionResponseV1,
+  type GetActiveTaxAdjustmentsResponseV1,
+  type GetActiveTaxSummaryResponseV1,
+  type ListCommentsResponseV1,
+  type ListTasksResponseV1,
+  type ListWorkspaceExportsResponseV1,
+  type RunInk2FormResponseV1,
+  type RunAnnualReportExtractionResponseV1,
+  type RunTaxAdjustmentsResponseV1,
+  type RunTaxSummaryResponseV1,
   type GenerateMappingReviewSuggestionsResponseV1,
   type WorkspaceStatusV1,
+  applyAnnualReportOverridesV1,
+  applyInk2OverridesV1,
   applyMappingOverridesV1,
+  applyTaxAdjustmentsOverridesV1,
   applyWorkspaceTransitionV1,
+  completeTaskV1,
+  confirmAnnualReportExtractionV1,
+  createCommentV1,
+  createPdfExportV1,
+  createTaskV1,
   generateMappingReviewSuggestionsV1,
+  getActiveInk2FormV1,
+  getActiveAnnualReportExtractionV1,
   getActiveMappingDecisionsV1,
+  getActiveTaxAdjustmentsV1,
+  getActiveTaxSummaryV1,
   getWorkspaceByIdV1,
+  listCommentsV1,
+  listTasksV1,
+  listWorkspaceExportsV1,
+  runInk2FormV1,
+  runAnnualReportExtractionV1,
+  runTaxAdjustmentsV1,
+  runTaxSummaryV1,
   runTrialBalancePipelineV1,
 } from "../../lib/http/workspace-api";
 import {
@@ -45,12 +82,73 @@ const activeMappingKeyV1 = (tenantId: string, workspaceId: string) => [
   tenantId,
   workspaceId,
 ];
+const activeAnnualReportKeyV1 = (tenantId: string, workspaceId: string) => [
+  "active-annual-report",
+  tenantId,
+  workspaceId,
+];
+const activeTaxAdjustmentsKeyV1 = (tenantId: string, workspaceId: string) => [
+  "active-tax-adjustments",
+  tenantId,
+  workspaceId,
+];
+const activeTaxSummaryKeyV1 = (tenantId: string, workspaceId: string) => [
+  "active-tax-summary",
+  tenantId,
+  workspaceId,
+];
+const activeInk2FormKeyV1 = (tenantId: string, workspaceId: string) => [
+  "active-ink2-form",
+  tenantId,
+  workspaceId,
+];
+const exportsKeyV1 = (tenantId: string, workspaceId: string) => [
+  "workspace-exports",
+  tenantId,
+  workspaceId,
+];
+const commentsKeyV1 = (tenantId: string, workspaceId: string) => [
+  "workspace-comments",
+  tenantId,
+  workspaceId,
+];
+const tasksKeyV1 = (tenantId: string, workspaceId: string) => [
+  "workspace-tasks",
+  tenantId,
+  workspaceId,
+];
 
 type OverrideDraftV1 = {
   selectedCategoryCode: SilverfinTaxCategoryCodeV1;
   scope: "return" | "user";
   reason: string;
 };
+
+type AnnualReportFieldKeyV1 =
+  | "companyName"
+  | "organizationNumber"
+  | "fiscalYearStart"
+  | "fiscalYearEnd"
+  | "accountingStandard"
+  | "profitBeforeTax";
+
+type AnnualOverrideDraftV1 = {
+  reason: string;
+  value: string;
+};
+
+const annualReportFieldConfigsV1: Array<{
+  key: AnnualReportFieldKeyV1;
+  label: string;
+  type: "number" | "select" | "text";
+}> = [
+  { key: "companyName", label: "Company name", type: "text" },
+  { key: "organizationNumber", label: "Organization number", type: "text" },
+  { key: "fiscalYearStart", label: "Fiscal year start", type: "text" },
+  { key: "fiscalYearEnd", label: "Fiscal year end", type: "text" },
+  { key: "accountingStandard", label: "Accounting standard", type: "select" },
+  { key: "profitBeforeTax", label: "Profit before tax", type: "number" },
+];
 
 function inferFileTypeV1(name: string): TrialBalanceFileTypeV1 | undefined {
   const lower = name.toLowerCase();
@@ -81,12 +179,36 @@ export function WorkspaceDetailPage() {
   const [statusReason, setStatusReason] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [policyVersion, setPolicyVersion] = useState("deterministic-bas.v1");
+  const [annualReportFile, setAnnualReportFile] = useState<File | null>(null);
+  const [annualPolicyVersion, setAnnualPolicyVersion] = useState(
+    "annual-report-manual-first.v1",
+  );
+  const [annualOverrideDrafts, setAnnualOverrideDrafts] = useState<
+    Record<AnnualReportFieldKeyV1, AnnualOverrideDraftV1>
+  >({
+    companyName: { value: "", reason: "" },
+    organizationNumber: { value: "", reason: "" },
+    fiscalYearStart: { value: "", reason: "" },
+    fiscalYearEnd: { value: "", reason: "" },
+    accountingStandard: { value: "", reason: "" },
+    profitBeforeTax: { value: "", reason: "" },
+  });
   const [drafts, setDrafts] = useState<Record<string, OverrideDraftV1>>({});
   const [reviewScope, setReviewScope] = useState<"return" | "user">("return");
   const [reviewMax, setReviewMax] = useState(30);
   const [reviewResult, setReviewResult] =
     useState<GenerateMappingReviewSuggestionsResponseV1 | null>(null);
   const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<string[]>([]);
+  const [taxAdjustmentsPolicyVersion, setTaxAdjustmentsPolicyVersion] = useState(
+    "tax-adjustments.v1",
+  );
+  const [adjustmentOverrideAmount, setAdjustmentOverrideAmount] = useState("");
+  const [adjustmentOverrideReason, setAdjustmentOverrideReason] = useState("");
+  const [ink2OverrideAmount, setInk2OverrideAmount] = useState("");
+  const [ink2OverrideReason, setInk2OverrideReason] = useState("");
+  const [newCommentBody, setNewCommentBody] = useState("");
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskDescription, setNewTaskDescription] = useState("");
 
   if (!workspaceId) {
     return <section className="card">Workspace ID missing.</section>;
@@ -100,6 +222,68 @@ export function WorkspaceDetailPage() {
     queryKey: activeMappingKeyV1(principal.tenantId, workspaceId),
     queryFn: () =>
       getActiveMappingDecisionsV1({ tenantId: principal.tenantId, workspaceId }),
+  });
+  const annualReportQuery = useQuery({
+    queryKey: activeAnnualReportKeyV1(principal.tenantId, workspaceId),
+    queryFn: () =>
+      getActiveAnnualReportExtractionV1({
+        tenantId: principal.tenantId,
+        workspaceId,
+      }),
+    retry: (failureCount, error) => {
+      if (
+        error instanceof ApiClientError &&
+        error.code === "EXTRACTION_NOT_FOUND"
+      ) {
+        return false;
+      }
+      return failureCount < 2;
+    },
+  });
+  const taxAdjustmentsQuery = useQuery({
+    queryKey: activeTaxAdjustmentsKeyV1(principal.tenantId, workspaceId),
+    queryFn: () => getActiveTaxAdjustmentsV1({ tenantId: principal.tenantId, workspaceId }),
+    retry: (failureCount, error) => {
+      if (
+        error instanceof ApiClientError &&
+        error.code === "ADJUSTMENTS_NOT_FOUND"
+      ) {
+        return false;
+      }
+      return failureCount < 2;
+    },
+  });
+  const taxSummaryQuery = useQuery({
+    queryKey: activeTaxSummaryKeyV1(principal.tenantId, workspaceId),
+    queryFn: () => getActiveTaxSummaryV1({ tenantId: principal.tenantId, workspaceId }),
+    retry: (failureCount, error) => {
+      if (error instanceof ApiClientError && error.code === "ADJUSTMENTS_NOT_FOUND") {
+        return false;
+      }
+      return failureCount < 2;
+    },
+  });
+  const ink2FormQuery = useQuery({
+    queryKey: activeInk2FormKeyV1(principal.tenantId, workspaceId),
+    queryFn: () => getActiveInk2FormV1({ tenantId: principal.tenantId, workspaceId }),
+    retry: (failureCount, error) => {
+      if (error instanceof ApiClientError && error.code === "FORM_NOT_FOUND") {
+        return false;
+      }
+      return failureCount < 2;
+    },
+  });
+  const exportsQuery = useQuery({
+    queryKey: exportsKeyV1(principal.tenantId, workspaceId),
+    queryFn: () => listWorkspaceExportsV1({ tenantId: principal.tenantId, workspaceId }),
+  });
+  const commentsQuery = useQuery({
+    queryKey: commentsKeyV1(principal.tenantId, workspaceId),
+    queryFn: () => listCommentsV1({ tenantId: principal.tenantId, workspaceId }),
+  });
+  const tasksQuery = useQuery({
+    queryKey: tasksKeyV1(principal.tenantId, workspaceId),
+    queryFn: () => listTasksV1({ tenantId: principal.tenantId, workspaceId }),
   });
 
   useEffect(() => {
@@ -125,6 +309,46 @@ export function WorkspaceDetailPage() {
       return next;
     });
   }, [mappingQuery.data?.active.artifactId, mappingQuery.data?.active.version]);
+
+  useEffect(() => {
+    const extraction = annualReportQuery.data?.extraction;
+    if (!extraction) {
+      return;
+    }
+
+    setAnnualOverrideDrafts({
+      companyName: {
+        value: extraction.fields.companyName.value ?? "",
+        reason: "",
+      },
+      organizationNumber: {
+        value: extraction.fields.organizationNumber.value ?? "",
+        reason: "",
+      },
+      fiscalYearStart: {
+        value: extraction.fields.fiscalYearStart.value ?? "",
+        reason: "",
+      },
+      fiscalYearEnd: {
+        value: extraction.fields.fiscalYearEnd.value ?? "",
+        reason: "",
+      },
+      accountingStandard: {
+        value: extraction.fields.accountingStandard.value ?? "",
+        reason: "",
+      },
+      profitBeforeTax: {
+        value:
+          extraction.fields.profitBeforeTax.value !== undefined
+            ? String(extraction.fields.profitBeforeTax.value)
+            : "",
+        reason: "",
+      },
+    });
+  }, [
+    annualReportQuery.data?.active.artifactId,
+    annualReportQuery.data?.active.version,
+  ]);
 
   const statusMutation = useMutation({
     mutationFn: () =>
@@ -163,6 +387,283 @@ export function WorkspaceDetailPage() {
       });
       setReviewResult(null);
       setSelectedSuggestionIds([]);
+    },
+  });
+
+  const runAnnualReportMutation = useMutation({
+    mutationFn: async (): Promise<RunAnnualReportExtractionResponseV1> => {
+      if (!annualReportFile) {
+        throw new Error("Select an annual report file first.");
+      }
+
+      const lowerName = annualReportFile.name.toLowerCase();
+      const fileType = lowerName.endsWith(".docx")
+        ? ("docx" as const)
+        : ("pdf" as const);
+
+      return runAnnualReportExtractionV1({
+        tenantId: principal.tenantId,
+        workspaceId,
+        fileName: annualReportFile.name,
+        fileType,
+        fileBytesBase64: await fileToBase64V1(annualReportFile),
+        policyVersion: annualPolicyVersion,
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: activeAnnualReportKeyV1(principal.tenantId, workspaceId),
+      });
+    },
+  });
+
+  const applyAnnualOverrideMutation = useMutation({
+    mutationFn: async (
+      fieldKey: AnnualReportFieldKeyV1,
+    ): Promise<ApplyAnnualReportOverridesResponseV1> => {
+      const active = annualReportQuery.data?.active;
+      if (!active) {
+        throw new Error("Active annual report extraction not loaded.");
+      }
+
+      const draft = annualOverrideDrafts[fieldKey];
+      if (!draft.reason.trim()) {
+        throw new Error("Override reason is required.");
+      }
+
+      const value =
+        fieldKey === "profitBeforeTax" ? Number(draft.value) : draft.value.trim();
+      if (
+        (fieldKey !== "profitBeforeTax" && String(value).length === 0) ||
+        (fieldKey === "profitBeforeTax" && !Number.isFinite(value as number))
+      ) {
+        throw new Error("Provide a valid override value.");
+      }
+
+      return applyAnnualReportOverridesV1({
+        tenantId: principal.tenantId,
+        workspaceId,
+        expectedActiveExtraction: {
+          artifactId: active.artifactId,
+          version: active.version,
+        },
+        overrides: [
+          {
+            fieldKey,
+            reason: draft.reason.trim(),
+            value: value as string | number,
+          },
+        ],
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: activeAnnualReportKeyV1(principal.tenantId, workspaceId),
+      });
+    },
+  });
+
+  const confirmAnnualReportMutation = useMutation({
+    mutationFn: async (): Promise<ConfirmAnnualReportExtractionResponseV1> => {
+      const active = annualReportQuery.data?.active;
+      if (!active) {
+        throw new Error("Active annual report extraction not loaded.");
+      }
+
+      return confirmAnnualReportExtractionV1({
+        tenantId: principal.tenantId,
+        workspaceId,
+        expectedActiveExtraction: {
+          artifactId: active.artifactId,
+          version: active.version,
+        },
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: activeAnnualReportKeyV1(principal.tenantId, workspaceId),
+      });
+    },
+  });
+
+  const runTaxAdjustmentsMutation = useMutation({
+    mutationFn: async (): Promise<RunTaxAdjustmentsResponseV1> =>
+      runTaxAdjustmentsV1({
+        tenantId: principal.tenantId,
+        workspaceId,
+        policyVersion: taxAdjustmentsPolicyVersion,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: activeTaxAdjustmentsKeyV1(principal.tenantId, workspaceId),
+      });
+    },
+  });
+
+  const applyTaxAdjustmentOverrideMutation = useMutation({
+    mutationFn: async (): Promise<ApplyTaxAdjustmentsOverridesResponseV1> => {
+      const active = taxAdjustmentsQuery.data?.active;
+      const firstDecision = taxAdjustmentsQuery.data?.adjustments.decisions[0];
+      if (!active || !firstDecision) {
+        throw new Error("No active adjustment decision to override.");
+      }
+      const amount = Number(adjustmentOverrideAmount);
+      if (!Number.isFinite(amount) || !adjustmentOverrideReason.trim()) {
+        throw new Error("Provide a valid amount and reason.");
+      }
+
+      return applyTaxAdjustmentsOverridesV1({
+        tenantId: principal.tenantId,
+        workspaceId,
+        expectedActiveAdjustments: {
+          artifactId: active.artifactId,
+          version: active.version,
+        },
+        overrides: [
+          {
+            decisionId: firstDecision.id,
+            amount,
+            reason: adjustmentOverrideReason.trim(),
+          },
+        ],
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: activeTaxAdjustmentsKeyV1(principal.tenantId, workspaceId),
+      });
+      setAdjustmentOverrideAmount("");
+      setAdjustmentOverrideReason("");
+    },
+  });
+
+  const runTaxSummaryMutation = useMutation({
+    mutationFn: async (): Promise<RunTaxSummaryResponseV1> =>
+      runTaxSummaryV1({
+        tenantId: principal.tenantId,
+        workspaceId,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: activeTaxSummaryKeyV1(principal.tenantId, workspaceId),
+      });
+    },
+  });
+
+  const runInk2FormMutation = useMutation({
+    mutationFn: async (): Promise<RunInk2FormResponseV1> =>
+      runInk2FormV1({
+        tenantId: principal.tenantId,
+        workspaceId,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: activeInk2FormKeyV1(principal.tenantId, workspaceId),
+      });
+    },
+  });
+
+  const applyInk2OverrideMutation = useMutation({
+    mutationFn: async (): Promise<ApplyInk2OverridesResponseV1> => {
+      const active = ink2FormQuery.data?.active;
+      const firstField = ink2FormQuery.data?.form.fields[0];
+      if (!active || !firstField) {
+        throw new Error("No active INK2 field to override.");
+      }
+      const amount = Number(ink2OverrideAmount);
+      if (!Number.isFinite(amount) || !ink2OverrideReason.trim()) {
+        throw new Error("Provide a valid amount and reason.");
+      }
+
+      return applyInk2OverridesV1({
+        tenantId: principal.tenantId,
+        workspaceId,
+        expectedActiveForm: {
+          artifactId: active.artifactId,
+          version: active.version,
+        },
+        overrides: [
+          {
+            fieldId: firstField.fieldId,
+            amount,
+            reason: ink2OverrideReason.trim(),
+          },
+        ],
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: activeInk2FormKeyV1(principal.tenantId, workspaceId),
+      });
+      setInk2OverrideAmount("");
+      setInk2OverrideReason("");
+    },
+  });
+
+  const createPdfExportMutation = useMutation({
+    mutationFn: async (): Promise<CreatePdfExportResponseV1> =>
+      createPdfExportV1({
+        tenantId: principal.tenantId,
+        workspaceId,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: exportsKeyV1(principal.tenantId, workspaceId),
+      });
+    },
+  });
+
+  const createCommentMutation = useMutation({
+    mutationFn: async (): Promise<CreateCommentResponseV1> => {
+      if (!newCommentBody.trim()) {
+        throw new Error("Comment body is required.");
+      }
+      return createCommentV1({
+        tenantId: principal.tenantId,
+        workspaceId,
+        body: newCommentBody.trim(),
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: commentsKeyV1(principal.tenantId, workspaceId),
+      });
+      setNewCommentBody("");
+    },
+  });
+
+  const createTaskMutation = useMutation({
+    mutationFn: async (): Promise<CreateTaskResponseV1> => {
+      if (!newTaskTitle.trim()) {
+        throw new Error("Task title is required.");
+      }
+      return createTaskV1({
+        tenantId: principal.tenantId,
+        workspaceId,
+        title: newTaskTitle.trim(),
+        description: newTaskDescription.trim() || undefined,
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: tasksKeyV1(principal.tenantId, workspaceId),
+      });
+      setNewTaskTitle("");
+      setNewTaskDescription("");
+    },
+  });
+
+  const completeTaskMutation = useMutation({
+    mutationFn: async (taskId: string) =>
+      completeTaskV1({
+        tenantId: principal.tenantId,
+        workspaceId,
+        taskId,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: tasksKeyV1(principal.tenantId, workspaceId),
+      });
     },
   });
 
@@ -248,6 +749,24 @@ export function WorkspaceDetailPage() {
     mappingQuery.isError &&
     mappingQuery.error instanceof ApiClientError &&
     mappingQuery.error.code === "MAPPING_NOT_FOUND";
+  const annualExtractionNotFound =
+    annualReportQuery.isError &&
+    annualReportQuery.error instanceof ApiClientError &&
+    annualReportQuery.error.code === "EXTRACTION_NOT_FOUND";
+  const taxAdjustmentsNotFound =
+    taxAdjustmentsQuery.isError &&
+    taxAdjustmentsQuery.error instanceof ApiClientError &&
+    taxAdjustmentsQuery.error.code === "ADJUSTMENTS_NOT_FOUND";
+  const taxSummaryNotFound =
+    taxSummaryQuery.isError &&
+    taxSummaryQuery.error instanceof ApiClientError &&
+    taxSummaryQuery.error.code === "ADJUSTMENTS_NOT_FOUND";
+  const ink2FormNotFound =
+    ink2FormQuery.isError &&
+    ink2FormQuery.error instanceof ApiClientError &&
+    ink2FormQuery.error.code === "FORM_NOT_FOUND";
+  const annualExtractionConfirmed =
+    annualReportQuery.data?.extraction.confirmation.isConfirmed ?? false;
 
   const decisionById = useMemo(() => {
     const decisions = mappingQuery.data?.mapping.decisions ?? [];
@@ -305,6 +824,186 @@ export function WorkspaceDetailPage() {
         </article>
 
         <article className="card card--section">
+          <h2>Annual report extraction</h2>
+          <form
+            className="form-grid"
+            onSubmit={(event) => {
+              event.preventDefault();
+              runAnnualReportMutation.mutate();
+            }}
+          >
+            <label>
+              Annual report file
+              <input
+                type="file"
+                accept=".pdf,.docx"
+                onChange={(event) =>
+                  setAnnualReportFile(event.currentTarget.files?.[0] ?? null)
+                }
+              />
+            </label>
+            <label>
+              Policy version
+              <input
+                type="text"
+                value={annualPolicyVersion}
+                onChange={(event) => setAnnualPolicyVersion(event.target.value)}
+              />
+            </label>
+            <button
+              type="submit"
+              className="primary"
+              disabled={runAnnualReportMutation.isPending || annualReportFile === null}
+            >
+              {runAnnualReportMutation.isPending
+                ? "Extracting..."
+                : "Run annual extraction"}
+            </button>
+          </form>
+          {runAnnualReportMutation.isError ? (
+            <p className="error-text">
+              {toUserFacingErrorMessage(runAnnualReportMutation.error)}
+            </p>
+          ) : null}
+          {annualReportQuery.isPending ? <p>Loading annual extraction...</p> : null}
+          {annualExtractionNotFound ? (
+            <p className="hint-text">
+              No annual extraction yet. Upload a PDF or DOCX file to start.
+            </p>
+          ) : null}
+          {annualReportQuery.isError && !annualExtractionNotFound ? (
+            <p className="error-text">
+              {toUserFacingErrorMessage(annualReportQuery.error)}
+            </p>
+          ) : null}
+          {annualReportQuery.isSuccess ? (
+            <>
+              <p className="hint-text">
+                Active extraction v{annualReportQuery.data.active.version} ·{" "}
+                {annualReportQuery.data.extraction.confirmation.isConfirmed
+                  ? "Confirmed"
+                  : "Not confirmed"}
+              </p>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Field</th>
+                      <th>Current value</th>
+                      <th>Status</th>
+                      <th>Override value</th>
+                      <th>Reason</th>
+                      <th>Apply</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {annualReportFieldConfigsV1.map((config) => {
+                      const field = annualReportQuery.data.extraction.fields[config.key];
+                      const draft = annualOverrideDrafts[config.key];
+                      return (
+                        <tr key={config.key}>
+                          <td>{config.label}</td>
+                          <td>{field.value !== undefined ? String(field.value) : "-"}</td>
+                          <td>{field.status}</td>
+                          <td>
+                            {config.type === "select" ? (
+                              <select
+                                aria-label={`${config.label} override value`}
+                                value={draft?.value ?? ""}
+                                onChange={(event) =>
+                                  setAnnualOverrideDrafts((current) => ({
+                                    ...current,
+                                    [config.key]: {
+                                      ...(current[config.key] ?? { reason: "", value: "" }),
+                                      value: event.target.value,
+                                    },
+                                  }))
+                                }
+                              >
+                                <option value="">Select</option>
+                                <option value="K2">K2</option>
+                                <option value="K3">K3</option>
+                              </select>
+                            ) : (
+                              <input
+                                aria-label={`${config.label} override value`}
+                                type={config.type === "number" ? "number" : "text"}
+                                value={draft?.value ?? ""}
+                                onChange={(event) =>
+                                  setAnnualOverrideDrafts((current) => ({
+                                    ...current,
+                                    [config.key]: {
+                                      ...(current[config.key] ?? { reason: "", value: "" }),
+                                      value: event.target.value,
+                                    },
+                                  }))
+                                }
+                              />
+                            )}
+                          </td>
+                          <td>
+                            <input
+                              aria-label={`${config.label} override reason`}
+                              type="text"
+                              value={draft?.reason ?? ""}
+                              onChange={(event) =>
+                                setAnnualOverrideDrafts((current) => ({
+                                  ...current,
+                                  [config.key]: {
+                                    ...(current[config.key] ?? { reason: "", value: "" }),
+                                    reason: event.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="secondary"
+                              disabled={applyAnnualOverrideMutation.isPending}
+                              onClick={() => applyAnnualOverrideMutation.mutate(config.key)}
+                            >
+                              Apply
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <button
+                type="button"
+                className="primary"
+                disabled={
+                  confirmAnnualReportMutation.isPending ||
+                  annualReportQuery.data.extraction.confirmation.isConfirmed
+                }
+                onClick={() => confirmAnnualReportMutation.mutate()}
+              >
+                {confirmAnnualReportMutation.isPending
+                  ? "Confirming..."
+                  : "Confirm extraction"}
+              </button>
+            </>
+          ) : null}
+          {applyAnnualOverrideMutation.isError ? (
+            <p className="error-text">
+              {toUserFacingErrorMessage(applyAnnualOverrideMutation.error)}
+            </p>
+          ) : null}
+          {confirmAnnualReportMutation.isError ? (
+            <p className="error-text">
+              {toUserFacingErrorMessage(confirmAnnualReportMutation.error)}
+            </p>
+          ) : null}
+          {confirmAnnualReportMutation.isSuccess ? (
+            <p className="success-text">Annual extraction confirmed.</p>
+          ) : null}
+        </article>
+
+        <article className="card card--section">
           <h2>Run trial balance pipeline</h2>
           <form
             className="form-grid"
@@ -348,6 +1047,16 @@ export function WorkspaceDetailPage() {
           ) : null}
         </article>
       </div>
+
+      {!annualExtractionConfirmed ? (
+        <article className="card card--section">
+          <h2>Tax-core gate</h2>
+          <p className="hint-text">
+            Confirm annual report extraction before running tax-core steps
+            (adjustments, tax summary, INK2 draft, and PDF export).
+          </p>
+        </article>
+      ) : null}
 
       <article className="card card--section">
         <div className="section-heading-row">
@@ -598,6 +1307,267 @@ export function WorkspaceDetailPage() {
           <p className="error-text">
             {toUserFacingErrorMessage(applySuggestionsMutation.error)}
           </p>
+        ) : null}
+      </article>
+
+      <article className="card card--section">
+        <h2>Tax adjustments</h2>
+        <form
+          className="form-grid form-grid--inline"
+          onSubmit={(event) => {
+            event.preventDefault();
+            runTaxAdjustmentsMutation.mutate();
+          }}
+        >
+          <label>
+            Policy version
+            <input
+              type="text"
+              value={taxAdjustmentsPolicyVersion}
+              onChange={(event) => setTaxAdjustmentsPolicyVersion(event.target.value)}
+            />
+          </label>
+          <button
+            type="submit"
+            className="primary"
+            disabled={runTaxAdjustmentsMutation.isPending || !annualExtractionConfirmed}
+          >
+            {runTaxAdjustmentsMutation.isPending ? "Running..." : "Run adjustments"}
+          </button>
+        </form>
+        {taxAdjustmentsQuery.isSuccess ? (
+          <p className="hint-text">
+            Active v{taxAdjustmentsQuery.data.active.version} · decisions:{" "}
+            {taxAdjustmentsQuery.data.adjustments.summary.totalDecisions} · net:{" "}
+            {taxAdjustmentsQuery.data.adjustments.summary.totalNetAdjustments}
+          </p>
+        ) : null}
+        {taxAdjustmentsNotFound ? (
+          <p className="hint-text">No active adjustments yet.</p>
+        ) : null}
+        {taxAdjustmentsQuery.isError && !taxAdjustmentsNotFound ? (
+          <p className="error-text">{toUserFacingErrorMessage(taxAdjustmentsQuery.error)}</p>
+        ) : null}
+        <div className="form-grid form-grid--inline">
+          <label>
+            Override first decision amount
+            <input
+              type="number"
+              value={adjustmentOverrideAmount}
+              onChange={(event) => setAdjustmentOverrideAmount(event.target.value)}
+            />
+          </label>
+          <label>
+            Reason
+            <input
+              type="text"
+              value={adjustmentOverrideReason}
+              onChange={(event) => setAdjustmentOverrideReason(event.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            className="secondary"
+            disabled={applyTaxAdjustmentOverrideMutation.isPending}
+            onClick={() => applyTaxAdjustmentOverrideMutation.mutate()}
+          >
+            Apply adjustment override
+          </button>
+        </div>
+        {runTaxAdjustmentsMutation.isError ? (
+          <p className="error-text">
+            {toUserFacingErrorMessage(runTaxAdjustmentsMutation.error)}
+          </p>
+        ) : null}
+        {applyTaxAdjustmentOverrideMutation.isError ? (
+          <p className="error-text">
+            {toUserFacingErrorMessage(applyTaxAdjustmentOverrideMutation.error)}
+          </p>
+        ) : null}
+      </article>
+
+      <article className="card card--section">
+        <h2>Tax summary</h2>
+        <button
+          type="button"
+          className="primary"
+          disabled={runTaxSummaryMutation.isPending || !annualExtractionConfirmed}
+          onClick={() => runTaxSummaryMutation.mutate()}
+        >
+          {runTaxSummaryMutation.isPending ? "Running..." : "Run tax summary"}
+        </button>
+        {taxSummaryQuery.isSuccess ? (
+          <dl className="workspace-meta-grid">
+            <div>
+              <dt>Taxable income</dt>
+              <dd>{taxSummaryQuery.data.summary.taxableIncome}</dd>
+            </div>
+            <div>
+              <dt>Corporate tax</dt>
+              <dd>{taxSummaryQuery.data.summary.corporateTax}</dd>
+            </div>
+          </dl>
+        ) : null}
+        {taxSummaryNotFound ? <p className="hint-text">No tax summary yet.</p> : null}
+        {taxSummaryQuery.isError && !taxSummaryNotFound ? (
+          <p className="error-text">{toUserFacingErrorMessage(taxSummaryQuery.error)}</p>
+        ) : null}
+      </article>
+
+      <article className="card card--section">
+        <h2>INK2 draft</h2>
+        <button
+          type="button"
+          className="primary"
+          disabled={runInk2FormMutation.isPending || !annualExtractionConfirmed}
+          onClick={() => runInk2FormMutation.mutate()}
+        >
+          {runInk2FormMutation.isPending ? "Running..." : "Run INK2 draft"}
+        </button>
+        {ink2FormQuery.isSuccess ? (
+          <>
+            <p className="hint-text">
+              Active v{ink2FormQuery.data.active.version} · validation:{" "}
+              {ink2FormQuery.data.form.validation.status}
+            </p>
+            <div className="form-grid form-grid--inline">
+              <label>
+                Override first field amount
+                <input
+                  type="number"
+                  value={ink2OverrideAmount}
+                  onChange={(event) => setInk2OverrideAmount(event.target.value)}
+                />
+              </label>
+              <label>
+                Reason
+                <input
+                  type="text"
+                  value={ink2OverrideReason}
+                  onChange={(event) => setInk2OverrideReason(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="secondary"
+                disabled={applyInk2OverrideMutation.isPending}
+                onClick={() => applyInk2OverrideMutation.mutate()}
+              >
+                Apply INK2 override
+              </button>
+            </div>
+          </>
+        ) : null}
+        {ink2FormNotFound ? <p className="hint-text">No INK2 form yet.</p> : null}
+        {ink2FormQuery.isError && !ink2FormNotFound ? (
+          <p className="error-text">{toUserFacingErrorMessage(ink2FormQuery.error)}</p>
+        ) : null}
+        {applyInk2OverrideMutation.isError ? (
+          <p className="error-text">{toUserFacingErrorMessage(applyInk2OverrideMutation.error)}</p>
+        ) : null}
+      </article>
+
+      <article className="card card--section">
+        <h2>PDF export</h2>
+        <button
+          type="button"
+          className="primary"
+          disabled={createPdfExportMutation.isPending}
+          onClick={() => createPdfExportMutation.mutate()}
+        >
+          {createPdfExportMutation.isPending ? "Generating..." : "Generate PDF export"}
+        </button>
+        {createPdfExportMutation.isError ? (
+          <p className="error-text">{toUserFacingErrorMessage(createPdfExportMutation.error)}</p>
+        ) : null}
+        {exportsQuery.isSuccess ? (
+          <p className="hint-text">Exports: {exportsQuery.data.exports.length}</p>
+        ) : null}
+      </article>
+
+      <article className="card card--section">
+        <h2>Comments</h2>
+        <form
+          className="form-grid form-grid--inline"
+          onSubmit={(event) => {
+            event.preventDefault();
+            createCommentMutation.mutate();
+          }}
+        >
+          <label>
+            New comment
+            <input
+              type="text"
+              value={newCommentBody}
+              onChange={(event) => setNewCommentBody(event.target.value)}
+            />
+          </label>
+          <button type="submit" className="secondary" disabled={createCommentMutation.isPending}>
+            Add comment
+          </button>
+        </form>
+        {commentsQuery.isSuccess ? (
+          <ul>
+            {commentsQuery.data.comments.map((comment) => (
+              <li key={comment.id}>{comment.body}</li>
+            ))}
+          </ul>
+        ) : null}
+        {createCommentMutation.isError ? (
+          <p className="error-text">{toUserFacingErrorMessage(createCommentMutation.error)}</p>
+        ) : null}
+      </article>
+
+      <article className="card card--section">
+        <h2>Tasks</h2>
+        <form
+          className="form-grid"
+          onSubmit={(event) => {
+            event.preventDefault();
+            createTaskMutation.mutate();
+          }}
+        >
+          <label>
+            Title
+            <input
+              type="text"
+              value={newTaskTitle}
+              onChange={(event) => setNewTaskTitle(event.target.value)}
+            />
+          </label>
+          <label>
+            Description
+            <input
+              type="text"
+              value={newTaskDescription}
+              onChange={(event) => setNewTaskDescription(event.target.value)}
+            />
+          </label>
+          <button type="submit" className="secondary" disabled={createTaskMutation.isPending}>
+            Add task
+          </button>
+        </form>
+        {tasksQuery.isSuccess ? (
+          <ul>
+            {tasksQuery.data.tasks.map((task) => (
+              <li key={task.id}>
+                {task.title} ({task.status}){" "}
+                {task.status === "open" ? (
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => completeTaskMutation.mutate(task.id)}
+                    disabled={completeTaskMutation.isPending}
+                  >
+                    Complete
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {createTaskMutation.isError ? (
+          <p className="error-text">{toUserFacingErrorMessage(createTaskMutation.error)}</p>
         ) : null}
       </article>
 

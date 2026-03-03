@@ -1,7 +1,7 @@
 # D.ink Project Memory
 
 Status: Living project memory for AI-assisted development  
-Last updated: 2026-03-02
+Last updated: 2026-03-03
 
 ## Current Product Snapshot
 
@@ -40,10 +40,25 @@ Last updated: 2026-03-02
 
 ## Outstanding Questions
 
-- Exact first set of adjustment submodules
-- V1 INK2 field coverage baseline
-- Tax rate configuration/versioning details per fiscal year
 - V1 auth UI: admin invite flow UX (generate/copy link action in admin area)
+
+Resolved in this batch:
+
+- Initial adjustment submodules are locked to:
+  - `non_deductible_expenses`
+  - `representation_entertainment`
+  - `depreciation_differences_basic`
+  - `manual_review_bucket`
+- V1 INK2 draft fields are locked to:
+  - `INK2R.profit_before_tax`
+  - `INK2S.non_deductible_expenses`
+  - `INK2S.representation_non_deductible`
+  - `INK2S.depreciation_adjustment`
+  - `INK2S.other_manual_adjustments`
+  - `INK2S.total_adjustments`
+  - `INK2S.taxable_income`
+  - `INK2S.corporate_tax`
+- Tax rate rule is locked to `20.6%` for fiscal year end >= `2021-01-01`; out-of-range years return `INPUT_INVALID`.
 
 ## Suggested Next Build Order
 
@@ -89,3 +104,4 @@ When a major product or architecture decision changes:
 - 2026-03-02: Added `TrialBalanceNormalizedV1` contract and deterministic parser for common Excel/CSV formats with sheet scoring, synonym-based header matching, locale-aware numeric parsing, explicit rejected-row diagnostics, and verification gating.
 - 2026-03-02: Locked initial V1 TB canonical columns to `Account Name`, `Account Number`, `Opening Balance`, `Closing Balance` with duplicate account-number suffixing (`.1`, `.2`, ...) for deterministic uniqueness.
 - 2026-03-02: Adopted structured AI reasoning baseline (`module-spec` + `policy-pack` + `policy-patch`) and added reference templates/examples to support auditable, patch-friendly policy updates.
+- 2026-03-03: Locked strict V1 core completion order (annual extraction -> adjustments -> summary -> INK2 -> PDF export -> comments/tasks) and kept roles as `Admin`/`Editor`.

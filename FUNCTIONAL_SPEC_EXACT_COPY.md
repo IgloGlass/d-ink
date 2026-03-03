@@ -29,6 +29,9 @@ Define functional behavior for:
 - **Preparer**: uploads files, reviews AI suggestions, edits return
 - **Reviewer**: reviews, comments, requests changes, approves export
 
+Implementation lock (2026-03-03): V1 runtime roles are `Admin` and `Editor`.
+`Preparer`/`Reviewer` remains a conceptual workflow split and does not change auth role codes in V1.
+
 ### 2.2 Access rules (V1)
 - Users can only access firms they belong to
 - Workspace access is scoped to assigned firm and company/group visibility
@@ -464,11 +467,11 @@ If outside scope:
 
 ## 7. Open items (to finalize before implementation)
 - [ ] Exact TB template column names and format
-- [ ] Minimum annual report extraction field list (field-by-field)
-- [ ] INK2 field coverage list (V1)
-- [ ] Corporate tax rate source/config by fiscal year
+- [x] Minimum annual report extraction field list (field-by-field): `companyName`, `organizationNumber`, `fiscalYearStart`, `fiscalYearEnd`, `accountingStandard`, `profitBeforeTax` (hybrid manual-first)
+- [x] INK2 field coverage list (V1): `INK2R.profit_before_tax`, `INK2S.non_deductible_expenses`, `INK2S.representation_non_deductible`, `INK2S.depreciation_adjustment`, `INK2S.other_manual_adjustments`, `INK2S.total_adjustments`, `INK2S.taxable_income`, `INK2S.corporate_tax`
+- [x] Corporate tax rate source/config by fiscal year: deterministic rule `20.6%` for fiscal year end >= `2021-01-01`, else `INPUT_INVALID`
 - [ ] Exact status transition matrix
-- [ ] Which submodule is in the first 2–3 adjustment modules
+- [x] Which submodule is in the first 2–3 adjustment modules: `non_deductible_expenses`, `representation_entertainment`, `depreciation_differences_basic`, `manual_review_bucket`
 - [ ] PDF export layout requirements
 - [ ] SRU inclusion in V1 or V1.x
 

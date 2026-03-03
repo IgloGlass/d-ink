@@ -1,25 +1,76 @@
 import { z } from "zod";
 
+import {
+  ApplyAnnualReportExtractionOverridesRequestV1Schema,
+  ConfirmAnnualReportExtractionRequestV1Schema,
+  RunAnnualReportExtractionRequestV1Schema,
+} from "../../shared/contracts/annual-report-extraction.v1";
+import {
+  CompleteTaskRequestV1Schema,
+  CreateCommentRequestV1Schema,
+  CreateTaskRequestV1Schema,
+} from "../../shared/contracts/collaboration.v1";
 import { IsoDateSchema, UuidV4Schema } from "../../shared/contracts/common.v1";
+import {
+  CreatePdfExportRequestV1Schema,
+  ListWorkspaceExportsRequestV1Schema,
+} from "../../shared/contracts/export-package.v1";
+import {
+  ApplyInk2FormOverridesRequestV1Schema,
+  RunInk2FormRequestV1Schema,
+} from "../../shared/contracts/ink2-form.v1";
 import {
   ExpectedActiveMappingRefV1Schema,
   MappingOverrideInstructionV1Schema,
 } from "../../shared/contracts/mapping-override.v1";
 import { GenerateMappingReviewSuggestionsRequestV1Schema } from "../../shared/contracts/mapping-review.v1";
+import {
+  ApplyTaxAdjustmentOverridesRequestV1Schema,
+  RunTaxAdjustmentRequestV1Schema,
+} from "../../shared/contracts/tax-adjustments.v1";
+import { RunTaxSummaryRequestV1Schema } from "../../shared/contracts/tax-summary.v1";
 import { ExecuteTrialBalancePipelineRequestV1Schema } from "../../shared/contracts/tb-pipeline-run.v1";
 import { WorkspaceStatusV1Schema } from "../../shared/contracts/workspace.v1";
 import type { Env } from "../../shared/types/env";
+import {
+  applyAnnualReportExtractionOverridesV1,
+  confirmAnnualReportExtractionV1,
+  getActiveAnnualReportExtractionV1,
+  runAnnualReportExtractionV1,
+} from "../workflow/annual-report-extraction.v1";
 import { resolveSessionPrincipalByTokenV1 } from "../workflow/auth-magic-link.v1";
+import {
+  completeTaskV1,
+  createCommentV1,
+  createTaskV1,
+  listCommentsV1,
+  listTasksV1,
+} from "../workflow/collaboration.v1";
 import {
   applyMappingOverridesV1,
   getActiveMappingDecisionsV1,
 } from "../workflow/mapping-override.v1";
 import { generateMappingReviewSuggestionsV1 } from "../workflow/mapping-review.v1";
+import {
+  applyInk2FormOverridesV1,
+  applyTaxAdjustmentOverridesV1,
+  createPdfExportV1,
+  getActiveInk2FormV1,
+  getActiveTaxAdjustmentsV1,
+  getActiveTaxSummaryV1,
+  listWorkspaceExportsV1,
+  runInk2FormV1,
+  runTaxAdjustmentsV1,
+  runTaxSummaryV1,
+} from "../workflow/tax-core-workflow.v1";
 import { executeTrialBalancePipelineRunV1 } from "../workflow/trial-balance-pipeline-run.v1";
 import {
+  createAnnualReportExtractionDepsV1,
+  createCollaborationDepsV1,
   createMappingOverrideDepsV1,
   createMappingReviewDepsV1,
   createResolveSessionPrincipalDepsV1,
+  createTaxCoreWorkflowDepsV1,
   createTrialBalancePipelineRunDepsV1,
   createWorkspaceLifecycleDepsV1,
 } from "../workflow/workflow-deps.v1";
@@ -68,6 +119,78 @@ const TrialBalancePipelineRunHttpRequestBodyV1Schema =
     workspaceId: true,
     createdByUserId: true,
   });
+
+const AnnualReportRunHttpRequestBodyV1Schema =
+  RunAnnualReportExtractionRequestV1Schema.omit({
+    workspaceId: true,
+    createdByUserId: true,
+  });
+
+const AnnualReportOverrideHttpRequestBodyV1Schema =
+  ApplyAnnualReportExtractionOverridesRequestV1Schema.omit({
+    workspaceId: true,
+    authorUserId: true,
+  });
+
+const AnnualReportConfirmHttpRequestBodyV1Schema =
+  ConfirmAnnualReportExtractionRequestV1Schema.omit({
+    workspaceId: true,
+    confirmedByUserId: true,
+  });
+
+const TaxAdjustmentRunHttpRequestBodyV1Schema = RunTaxAdjustmentRequestV1Schema.omit(
+  {
+    workspaceId: true,
+    createdByUserId: true,
+  },
+);
+
+const TaxAdjustmentOverrideHttpRequestBodyV1Schema =
+  ApplyTaxAdjustmentOverridesRequestV1Schema.omit({
+    workspaceId: true,
+    authorUserId: true,
+  });
+
+const TaxSummaryRunHttpRequestBodyV1Schema = RunTaxSummaryRequestV1Schema.omit({
+  workspaceId: true,
+  createdByUserId: true,
+});
+
+const Ink2FormRunHttpRequestBodyV1Schema = RunInk2FormRequestV1Schema.omit({
+  workspaceId: true,
+  createdByUserId: true,
+});
+
+const Ink2FormOverrideHttpRequestBodyV1Schema =
+  ApplyInk2FormOverridesRequestV1Schema.omit({
+    workspaceId: true,
+    authorUserId: true,
+  });
+
+const PdfExportHttpRequestBodyV1Schema = CreatePdfExportRequestV1Schema.omit({
+  workspaceId: true,
+  createdByUserId: true,
+});
+
+const ListExportsQueryV1Schema = ListWorkspaceExportsRequestV1Schema.omit({
+  workspaceId: true,
+});
+
+const CreateCommentHttpRequestBodyV1Schema = CreateCommentRequestV1Schema.omit({
+  workspaceId: true,
+  createdByUserId: true,
+});
+
+const CreateTaskHttpRequestBodyV1Schema = CreateTaskRequestV1Schema.omit({
+  workspaceId: true,
+  createdByUserId: true,
+});
+
+const CompleteTaskHttpRequestBodyV1Schema = CompleteTaskRequestV1Schema.omit({
+  workspaceId: true,
+  taskId: true,
+  completedByUserId: true,
+});
 
 const MappingOverrideHttpRequestBodyV1Schema = z
   .object({
@@ -312,6 +435,136 @@ function mapTrialBalancePipelineFailureToResponseV1(input: {
   ) {
     return createJsonErrorResponseV1({
       status: 500,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  return createJsonErrorResponseV1({
+    status: 500,
+    code: "PERSISTENCE_ERROR",
+    message: input.error.message,
+    userMessage: input.error.user_message,
+    context: input.error.context,
+  });
+}
+
+function mapAnnualReportFailureToResponseV1(input: {
+  error: {
+    code: string;
+    context: Record<string, unknown>;
+    message: string;
+    user_message: string;
+  };
+}): Response {
+  if (input.error.code === "INPUT_INVALID") {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  if (
+    input.error.code === "WORKSPACE_NOT_FOUND" ||
+    input.error.code === "EXTRACTION_NOT_FOUND"
+  ) {
+    return createJsonErrorResponseV1({
+      status: 404,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  if (input.error.code === "STATE_CONFLICT") {
+    return createJsonErrorResponseV1({
+      status: 409,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  if (input.error.code === "PARSE_FAILED") {
+    return createJsonErrorResponseV1({
+      status: 422,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  return createJsonErrorResponseV1({
+    status: 500,
+    code: "PERSISTENCE_ERROR",
+    message: input.error.message,
+    userMessage: input.error.user_message,
+    context: input.error.context,
+  });
+}
+
+function mapTaxCoreFailureToResponseV1(input: {
+  error: {
+    code: string;
+    context: Record<string, unknown>;
+    message: string;
+    user_message: string;
+  };
+}): Response {
+  if (input.error.code === "INPUT_INVALID") {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  if (
+    input.error.code === "WORKSPACE_NOT_FOUND" ||
+    input.error.code === "MAPPING_NOT_FOUND" ||
+    input.error.code === "ADJUSTMENTS_NOT_FOUND" ||
+    input.error.code === "SUMMARY_NOT_FOUND" ||
+    input.error.code === "FORM_NOT_FOUND" ||
+    input.error.code === "EXTRACTION_NOT_CONFIRMED" ||
+    input.error.code === "EXTRACTION_NOT_FOUND" ||
+    input.error.code === "TASK_NOT_FOUND"
+  ) {
+    return createJsonErrorResponseV1({
+      status:
+        input.error.code === "EXTRACTION_NOT_CONFIRMED" ? 409 : 404,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  if (
+    input.error.code === "STATE_CONFLICT" ||
+    input.error.code === "EXPORT_NOT_ALLOWED"
+  ) {
+    return createJsonErrorResponseV1({
+      status: 409,
+      code: input.error.code,
+      message: input.error.message,
+      userMessage: input.error.user_message,
+      context: input.error.context,
+    });
+  }
+
+  if (input.error.code === "INPUT_INVALID_FISCAL_YEAR") {
+    return createJsonErrorResponseV1({
+      status: 400,
       code: input.error.code,
       message: input.error.message,
       userMessage: input.error.user_message,
@@ -708,6 +961,921 @@ async function handleTrialBalancePipelineRunRouteV1(
   });
 }
 
+async function handleAnnualReportRunRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+
+  const parsedBody = AnnualReportRunHttpRequestBodyV1Schema.safeParse(
+    await readJsonBodyV1(request),
+  );
+  if (!parsedBody.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Annual report run request body is invalid.",
+    });
+  }
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await runAnnualReportExtractionV1(
+    {
+      ...parsedBody.data,
+      workspaceId,
+      createdByUserId: sessionGuardResult.principal.userId,
+    },
+    createAnnualReportExtractionDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapAnnualReportFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: {
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+async function handleGetActiveAnnualReportRouteV1(
+  request: Request,
+  env: Env,
+  workspaceId: string,
+): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const parsedQuery = WorkspaceGetQueryV1Schema.safeParse({
+    tenantId: requestUrl.searchParams.get("tenantId"),
+  });
+  if (!parsedQuery.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Annual report extraction query parameters are invalid.",
+    });
+  }
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedQuery.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await getActiveAnnualReportExtractionV1(
+    {
+      tenantId: parsedQuery.data.tenantId,
+      workspaceId,
+    },
+    createAnnualReportExtractionDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapAnnualReportFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: {
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+async function handleAnnualReportOverridesRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+
+  const parsedBody = AnnualReportOverrideHttpRequestBodyV1Schema.safeParse(
+    await readJsonBodyV1(request),
+  );
+  if (!parsedBody.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Annual report override request body is invalid.",
+    });
+  }
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await applyAnnualReportExtractionOverridesV1(
+    {
+      ...parsedBody.data,
+      workspaceId,
+      authorUserId: sessionGuardResult.principal.userId,
+    },
+    createAnnualReportExtractionDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapAnnualReportFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: {
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+async function handleConfirmAnnualReportRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+
+  const parsedBody = AnnualReportConfirmHttpRequestBodyV1Schema.safeParse(
+    await readJsonBodyV1(request),
+  );
+  if (!parsedBody.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Annual report confirmation request body is invalid.",
+    });
+  }
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await confirmAnnualReportExtractionV1(
+    {
+      ...parsedBody.data,
+      workspaceId,
+      confirmedByUserId: sessionGuardResult.principal.userId,
+    },
+    createAnnualReportExtractionDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapAnnualReportFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: {
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+async function handleRunTaxAdjustmentsRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+  const parsedBody = TaxAdjustmentRunHttpRequestBodyV1Schema.safeParse(
+    await readJsonBodyV1(request),
+  );
+  if (!parsedBody.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Tax-adjustment run request body is invalid.",
+    });
+  }
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await runTaxAdjustmentsV1(
+    {
+      ...parsedBody.data,
+      workspaceId,
+      createdByUserId: sessionGuardResult.principal.userId,
+    },
+    createTaxCoreWorkflowDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapTaxCoreFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+async function handleGetActiveTaxAdjustmentsRouteV1(
+  request: Request,
+  env: Env,
+  workspaceId: string,
+): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const parsedQuery = WorkspaceGetQueryV1Schema.safeParse({
+    tenantId: requestUrl.searchParams.get("tenantId"),
+  });
+  if (!parsedQuery.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Tax-adjustment query parameters are invalid.",
+    });
+  }
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedQuery.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await getActiveTaxAdjustmentsV1(
+    {
+      tenantId: parsedQuery.data.tenantId,
+      workspaceId,
+    },
+    createTaxCoreWorkflowDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapTaxCoreFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+async function handleTaxAdjustmentOverridesRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+  const parsedBody = TaxAdjustmentOverrideHttpRequestBodyV1Schema.safeParse(
+    await readJsonBodyV1(request),
+  );
+  if (!parsedBody.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Tax-adjustment override request body is invalid.",
+    });
+  }
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await applyTaxAdjustmentOverridesV1(
+    {
+      ...parsedBody.data,
+      workspaceId,
+      authorUserId: sessionGuardResult.principal.userId,
+    },
+    createTaxCoreWorkflowDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapTaxCoreFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+async function handleRunTaxSummaryRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+  const parsedBody = TaxSummaryRunHttpRequestBodyV1Schema.safeParse(
+    await readJsonBodyV1(request),
+  );
+  if (!parsedBody.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Tax summary run request body is invalid.",
+    });
+  }
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await runTaxSummaryV1(
+    {
+      ...parsedBody.data,
+      workspaceId,
+      createdByUserId: sessionGuardResult.principal.userId,
+    },
+    createTaxCoreWorkflowDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapTaxCoreFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+async function handleGetActiveTaxSummaryRouteV1(
+  request: Request,
+  env: Env,
+  workspaceId: string,
+): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const parsedQuery = WorkspaceGetQueryV1Schema.safeParse({
+    tenantId: requestUrl.searchParams.get("tenantId"),
+  });
+  if (!parsedQuery.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Tax summary query parameters are invalid.",
+    });
+  }
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedQuery.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await getActiveTaxSummaryV1(
+    {
+      tenantId: parsedQuery.data.tenantId,
+      workspaceId,
+    },
+    createTaxCoreWorkflowDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapTaxCoreFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+async function handleRunInk2FormRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+  const parsedBody = Ink2FormRunHttpRequestBodyV1Schema.safeParse(
+    await readJsonBodyV1(request),
+  );
+  if (!parsedBody.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "INK2 run request body is invalid.",
+    });
+  }
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await runInk2FormV1(
+    {
+      ...parsedBody.data,
+      workspaceId,
+      createdByUserId: sessionGuardResult.principal.userId,
+    },
+    createTaxCoreWorkflowDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapTaxCoreFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+async function handleGetActiveInk2FormRouteV1(
+  request: Request,
+  env: Env,
+  workspaceId: string,
+): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const parsedQuery = WorkspaceGetQueryV1Schema.safeParse({
+    tenantId: requestUrl.searchParams.get("tenantId"),
+  });
+  if (!parsedQuery.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "INK2 query parameters are invalid.",
+    });
+  }
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedQuery.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await getActiveInk2FormV1(
+    {
+      tenantId: parsedQuery.data.tenantId,
+      workspaceId,
+    },
+    createTaxCoreWorkflowDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapTaxCoreFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+async function handleInk2FormOverridesRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+  const parsedBody = Ink2FormOverrideHttpRequestBodyV1Schema.safeParse(
+    await readJsonBodyV1(request),
+  );
+  if (!parsedBody.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "INK2 override request body is invalid.",
+    });
+  }
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await applyInk2FormOverridesV1(
+    {
+      ...parsedBody.data,
+      workspaceId,
+      authorUserId: sessionGuardResult.principal.userId,
+    },
+    createTaxCoreWorkflowDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapTaxCoreFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+async function handlePdfExportRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+  const parsedBody = PdfExportHttpRequestBodyV1Schema.safeParse(
+    await readJsonBodyV1(request),
+  );
+  if (!parsedBody.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Export request body is invalid.",
+    });
+  }
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await createPdfExportV1(
+    {
+      ...parsedBody.data,
+      workspaceId,
+      createdByUserId: sessionGuardResult.principal.userId,
+    },
+    createTaxCoreWorkflowDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapTaxCoreFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+async function handleListExportsRouteV1(
+  request: Request,
+  env: Env,
+  workspaceId: string,
+): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const parsedQuery = ListExportsQueryV1Schema.safeParse({
+    tenantId: requestUrl.searchParams.get("tenantId"),
+  });
+  if (!parsedQuery.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Export query parameters are invalid.",
+    });
+  }
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedQuery.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await listWorkspaceExportsV1(
+    {
+      ...parsedQuery.data,
+      workspaceId,
+    },
+    createTaxCoreWorkflowDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapTaxCoreFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+async function handleListCommentsRouteV1(
+  request: Request,
+  env: Env,
+  workspaceId: string,
+): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const parsedQuery = WorkspaceGetQueryV1Schema.safeParse({
+    tenantId: requestUrl.searchParams.get("tenantId"),
+  });
+  if (!parsedQuery.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Comments query parameters are invalid.",
+    });
+  }
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedQuery.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await listCommentsV1(
+    {
+      tenantId: parsedQuery.data.tenantId,
+      workspaceId,
+    },
+    createCollaborationDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapTaxCoreFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+async function handleCreateCommentRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+  const parsedBody = CreateCommentHttpRequestBodyV1Schema.safeParse(
+    await readJsonBodyV1(request),
+  );
+  if (!parsedBody.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Create comment request body is invalid.",
+    });
+  }
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await createCommentV1(
+    {
+      ...parsedBody.data,
+      workspaceId,
+      createdByUserId: sessionGuardResult.principal.userId,
+    },
+    createCollaborationDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapTaxCoreFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 201,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+async function handleListTasksRouteV1(
+  request: Request,
+  env: Env,
+  workspaceId: string,
+): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const parsedQuery = WorkspaceGetQueryV1Schema.safeParse({
+    tenantId: requestUrl.searchParams.get("tenantId"),
+  });
+  if (!parsedQuery.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Tasks query parameters are invalid.",
+    });
+  }
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedQuery.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await listTasksV1(
+    {
+      tenantId: parsedQuery.data.tenantId,
+      workspaceId,
+    },
+    createCollaborationDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapTaxCoreFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+async function handleCreateTaskRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+  const parsedBody = CreateTaskHttpRequestBodyV1Schema.safeParse(
+    await readJsonBodyV1(request),
+  );
+  if (!parsedBody.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Create task request body is invalid.",
+    });
+  }
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await createTaskV1(
+    {
+      ...parsedBody.data,
+      workspaceId,
+      createdByUserId: sessionGuardResult.principal.userId,
+    },
+    createCollaborationDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapTaxCoreFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 201,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+async function handleCompleteTaskRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+  taskId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+  const parsedBody = CompleteTaskHttpRequestBodyV1Schema.safeParse(
+    await readJsonBodyV1(request),
+  );
+  if (!parsedBody.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Complete task request body is invalid.",
+    });
+  }
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await completeTaskV1(
+    {
+      ...parsedBody.data,
+      workspaceId,
+      taskId,
+      completedByUserId: sessionGuardResult.principal.userId,
+    },
+    createCollaborationDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapTaxCoreFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
 async function handleGetActiveMappingRouteV1(
   request: Request,
   env: Env,
@@ -925,6 +2093,257 @@ export async function handleWorkspaceRoutesV1(
     }
 
     return handleTrialBalancePipelineRunRouteV1(
+      request,
+      env,
+      appBaseUrl,
+      routeSegments[0],
+    );
+  }
+
+  if (
+    routeSegments.length === 2 &&
+    routeSegments[0] &&
+    routeSegments[1] === "annual-report-runs"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+
+    return handleAnnualReportRunRouteV1(
+      request,
+      env,
+      appBaseUrl,
+      routeSegments[0],
+    );
+  }
+
+  if (
+    routeSegments.length === 3 &&
+    routeSegments[0] &&
+    routeSegments[1] === "annual-report-extractions" &&
+    routeSegments[2] === "active"
+  ) {
+    if (request.method !== "GET") {
+      return createMethodNotAllowedResponseV1("GET");
+    }
+
+    return handleGetActiveAnnualReportRouteV1(request, env, routeSegments[0]);
+  }
+
+  if (
+    routeSegments.length === 3 &&
+    routeSegments[0] &&
+    routeSegments[1] === "annual-report-extractions" &&
+    routeSegments[2] === "overrides"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+
+    return handleAnnualReportOverridesRouteV1(
+      request,
+      env,
+      appBaseUrl,
+      routeSegments[0],
+    );
+  }
+
+  if (
+    routeSegments.length === 2 &&
+    routeSegments[0] &&
+    routeSegments[1] === "tax-adjustment-runs"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+    return handleRunTaxAdjustmentsRouteV1(
+      request,
+      env,
+      appBaseUrl,
+      routeSegments[0],
+    );
+  }
+
+  if (
+    routeSegments.length === 3 &&
+    routeSegments[0] &&
+    routeSegments[1] === "tax-adjustments" &&
+    routeSegments[2] === "active"
+  ) {
+    if (request.method !== "GET") {
+      return createMethodNotAllowedResponseV1("GET");
+    }
+    return handleGetActiveTaxAdjustmentsRouteV1(request, env, routeSegments[0]);
+  }
+
+  if (
+    routeSegments.length === 3 &&
+    routeSegments[0] &&
+    routeSegments[1] === "tax-adjustments" &&
+    routeSegments[2] === "overrides"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+    return handleTaxAdjustmentOverridesRouteV1(
+      request,
+      env,
+      appBaseUrl,
+      routeSegments[0],
+    );
+  }
+
+  if (
+    routeSegments.length === 2 &&
+    routeSegments[0] &&
+    routeSegments[1] === "tax-summary-runs"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+    return handleRunTaxSummaryRouteV1(request, env, appBaseUrl, routeSegments[0]);
+  }
+
+  if (
+    routeSegments.length === 3 &&
+    routeSegments[0] &&
+    routeSegments[1] === "tax-summary" &&
+    routeSegments[2] === "active"
+  ) {
+    if (request.method !== "GET") {
+      return createMethodNotAllowedResponseV1("GET");
+    }
+    return handleGetActiveTaxSummaryRouteV1(request, env, routeSegments[0]);
+  }
+
+  if (
+    routeSegments.length === 2 &&
+    routeSegments[0] &&
+    routeSegments[1] === "ink2-form-runs"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+    return handleRunInk2FormRouteV1(request, env, appBaseUrl, routeSegments[0]);
+  }
+
+  if (
+    routeSegments.length === 3 &&
+    routeSegments[0] &&
+    routeSegments[1] === "ink2-form" &&
+    routeSegments[2] === "active"
+  ) {
+    if (request.method !== "GET") {
+      return createMethodNotAllowedResponseV1("GET");
+    }
+    return handleGetActiveInk2FormRouteV1(request, env, routeSegments[0]);
+  }
+
+  if (
+    routeSegments.length === 3 &&
+    routeSegments[0] &&
+    routeSegments[1] === "ink2-form" &&
+    routeSegments[2] === "overrides"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+    return handleInk2FormOverridesRouteV1(
+      request,
+      env,
+      appBaseUrl,
+      routeSegments[0],
+    );
+  }
+
+  if (
+    routeSegments.length === 3 &&
+    routeSegments[0] &&
+    routeSegments[1] === "exports" &&
+    routeSegments[2] === "pdf"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+    return handlePdfExportRouteV1(request, env, appBaseUrl, routeSegments[0]);
+  }
+
+  if (
+    routeSegments.length === 2 &&
+    routeSegments[0] &&
+    routeSegments[1] === "exports"
+  ) {
+    if (request.method !== "GET") {
+      return createMethodNotAllowedResponseV1("GET");
+    }
+    return handleListExportsRouteV1(request, env, routeSegments[0]);
+  }
+
+  if (
+    routeSegments.length === 2 &&
+    routeSegments[0] &&
+    routeSegments[1] === "comments"
+  ) {
+    if (request.method === "GET") {
+      return handleListCommentsRouteV1(request, env, routeSegments[0]);
+    }
+    if (request.method === "POST") {
+      return handleCreateCommentRouteV1(
+        request,
+        env,
+        appBaseUrl,
+        routeSegments[0],
+      );
+    }
+
+    return createMethodNotAllowedResponseV1(["GET", "POST"]);
+  }
+
+  if (
+    routeSegments.length === 2 &&
+    routeSegments[0] &&
+    routeSegments[1] === "tasks"
+  ) {
+    if (request.method === "GET") {
+      return handleListTasksRouteV1(request, env, routeSegments[0]);
+    }
+    if (request.method === "POST") {
+      return handleCreateTaskRouteV1(request, env, appBaseUrl, routeSegments[0]);
+    }
+
+    return createMethodNotAllowedResponseV1(["GET", "POST"]);
+  }
+
+  if (
+    routeSegments.length === 4 &&
+    routeSegments[0] &&
+    routeSegments[1] === "tasks" &&
+    routeSegments[2] &&
+    routeSegments[3] === "complete"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+    return handleCompleteTaskRouteV1(
+      request,
+      env,
+      appBaseUrl,
+      routeSegments[0],
+      routeSegments[2],
+    );
+  }
+
+  if (
+    routeSegments.length === 3 &&
+    routeSegments[0] &&
+    routeSegments[1] === "annual-report-extractions" &&
+    routeSegments[2] === "confirm"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+
+    return handleConfirmAnnualReportRouteV1(
       request,
       env,
       appBaseUrl,

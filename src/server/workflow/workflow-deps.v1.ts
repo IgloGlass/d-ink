@@ -1,17 +1,23 @@
 import { createD1AuditRepositoryV1 } from "../../db/repositories/audit.repository.v1";
 import { createD1AuthRepositoryV1 } from "../../db/repositories/auth.repository.v1";
+import { createD1CommentsRepositoryV1 } from "../../db/repositories/comments.repository.v1";
 import { createD1MappingPreferenceRepositoryV1 } from "../../db/repositories/mapping-preference.repository.v1";
+import { createD1TasksRepositoryV1 } from "../../db/repositories/tasks.repository.v1";
 import { createD1TbPipelineArtifactRepositoryV1 } from "../../db/repositories/tb-pipeline-artifact.repository.v1";
+import { createD1WorkspaceArtifactRepositoryV1 } from "../../db/repositories/workspace-artifact.repository.v1";
 import { createD1WorkspaceRepositoryV1 } from "../../db/repositories/workspace.repository.v1";
 import { executeMappingReviewModelV1 } from "../ai/modules/mapping-review/executor.v1";
 import { loadMappingReviewModuleConfigV1 } from "../ai/modules/mapping-review/loader.v1";
 import type { Env } from "../../shared/types/env";
+import type { AnnualReportExtractionDepsV1 } from "./annual-report-extraction.v1";
 import type {
   AuthMagicLinkDepsV1,
   ResolveSessionPrincipalDepsV1,
 } from "./auth-magic-link.v1";
+import type { CollaborationDepsV1 } from "./collaboration.v1";
 import type { MappingOverrideDepsV1 } from "./mapping-override.v1";
 import type { MappingReviewDepsV1 } from "./mapping-review.v1";
+import type { TaxCoreWorkflowDepsV1 } from "./tax-core-workflow.v1";
 import type { TrialBalancePipelineRunDepsV1 } from "./trial-balance-pipeline-run.v1";
 import type { WorkspaceLifecycleDepsV1 } from "./workspace-lifecycle.v1";
 
@@ -106,6 +112,49 @@ export function createMappingReviewDepsV1(env: Env): MappingReviewDepsV1 {
     auditRepository: createD1AuditRepositoryV1(env.DB),
     loadModuleConfig: loadMappingReviewModuleConfigV1,
     runModel: executeMappingReviewModelV1,
+    generateId: () => crypto.randomUUID(),
+    nowIsoUtc: () => new Date().toISOString(),
+  };
+}
+
+/**
+ * Creates environment-backed dependencies for annual-report extraction workflows.
+ */
+export function createAnnualReportExtractionDepsV1(
+  env: Env,
+): AnnualReportExtractionDepsV1 {
+  return {
+    artifactRepository: createD1WorkspaceArtifactRepositoryV1(env.DB),
+    auditRepository: createD1AuditRepositoryV1(env.DB),
+    workspaceRepository: createD1WorkspaceRepositoryV1(env.DB),
+    generateId: () => crypto.randomUUID(),
+    nowIsoUtc: () => new Date().toISOString(),
+  };
+}
+
+/**
+ * Creates environment-backed dependencies for deterministic tax-core workflows.
+ */
+export function createTaxCoreWorkflowDepsV1(env: Env): TaxCoreWorkflowDepsV1 {
+  return {
+    auditRepository: createD1AuditRepositoryV1(env.DB),
+    tbArtifactRepository: createD1TbPipelineArtifactRepositoryV1(env.DB),
+    workspaceArtifactRepository: createD1WorkspaceArtifactRepositoryV1(env.DB),
+    workspaceRepository: createD1WorkspaceRepositoryV1(env.DB),
+    generateId: () => crypto.randomUUID(),
+    nowIsoUtc: () => new Date().toISOString(),
+  };
+}
+
+/**
+ * Creates environment-backed dependencies for collaboration workflows.
+ */
+export function createCollaborationDepsV1(env: Env): CollaborationDepsV1 {
+  return {
+    auditRepository: createD1AuditRepositoryV1(env.DB),
+    commentsRepository: createD1CommentsRepositoryV1(env.DB),
+    tasksRepository: createD1TasksRepositoryV1(env.DB),
+    workspaceRepository: createD1WorkspaceRepositoryV1(env.DB),
     generateId: () => crypto.randomUUID(),
     nowIsoUtc: () => new Date().toISOString(),
   };

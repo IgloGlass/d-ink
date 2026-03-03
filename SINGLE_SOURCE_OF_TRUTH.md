@@ -1,7 +1,7 @@
 # D.ink Single Source of Truth
 
 Status: Living document  
-Last updated: 2026-03-02  
+Last updated: 2026-03-03  
 Owner: Product + Engineering
 
 ## Purpose
@@ -154,12 +154,39 @@ Operational rule:
 
 ## Open Items to Finalize
 
-- Tax rate configuration source and versioning approach
-- Exact INK2 field coverage for V1
-- Initial adjustment module set (first 2-3)
+All previously open V1 core items below are now locked for implementation:
+
+- Tax rate configuration (V1): `20.6%` for fiscal year end on or after `2021-01-01`; out-of-range years must return structured `INPUT_INVALID`.
+- Initial adjustment submodules (V1):
+  - `non_deductible_expenses`
+  - `representation_entertainment`
+  - `depreciation_differences_basic`
+  - `manual_review_bucket`
+- Initial INK2 field coverage (V1 draft):
+  - `INK2R.profit_before_tax`
+  - `INK2S.non_deductible_expenses`
+  - `INK2S.representation_non_deductible`
+  - `INK2S.depreciation_adjustment`
+  - `INK2S.other_manual_adjustments`
+  - `INK2S.total_adjustments`
+  - `INK2S.taxable_income`
+  - `INK2S.corporate_tax`
+
+### V1 Core Completion Lock (2026-03-03)
+
+- Delivery order:
+  1. Annual report extraction (hybrid manual-first)
+  2. Tax adjustments
+  3. Deterministic tax summary
+  4. INK2 draft form
+  5. PDF export
+  6. Comments/tasks collaboration
+- Roles remain `Admin` and `Editor`.
+- Scope remains strict V1 (no V2 scaffolding in this batch).
 
 ## Change Log
 
 - 2026-02-24: Created and resolved V1 discrepancies listed above.
 - 2026-02-24: Locked V1 authentication to invite-based magic-link (no passwords in V1).
 - 2026-03-02: Adopted structured AI reasoning baseline with versioned `module-spec` / `policy-pack` / `policy-patch` governance.
+- 2026-03-03: Locked V1 core completion decisions for annual extraction, adjustments, tax summary, INK2 draft coverage, PDF export gating, and collaboration inclusion.
