@@ -257,7 +257,8 @@ function resolveCurrentCommitShaV1() {
 
 async function createPullRequestV1(input) {
   await mkdir(".autopilot", { recursive: true });
-  const prBodyPath = path.join(".autopilot", `pr-body-${input.branchName}.md`);
+  const branchFileToken = input.branchName.replace(/[^a-zA-Z0-9._-]+/g, "-");
+  const prBodyPath = path.join(".autopilot", `pr-body-${branchFileToken}.md`);
   const prBodySections = [
     "## Ticket",
     `- ID: ${input.ticket.ticket_id}`,
