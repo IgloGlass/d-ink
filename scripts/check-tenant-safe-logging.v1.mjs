@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 function collectTypeScriptFilesV1(rootDir) {
@@ -65,4 +65,3 @@ function main() {
 }
 
 main();
-

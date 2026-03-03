@@ -15,6 +15,7 @@ Last updated: 2026-03-03
 - `AGENTS.md` (engineering constraints and coding workflow)
 - `V2_ROADMAP.md` (planned evolution beyond V1)
 - `references/ai-module-spec-v1.md` (structured AI reasoning baseline)
+- `docs/ui-ux-architecture-v1.md` (UI architecture alignment and premium UX direction; pre-implementation)
 
 ## Confirmed Decisions
 
@@ -60,16 +61,45 @@ Resolved in this batch:
   - `INK2S.corporate_tax`
 - Tax rate rule is locked to `20.6%` for fiscal year end >= `2021-01-01`; out-of-range years return `INPUT_INVALID`.
 
-## Suggested Next Build Order
+## Current Gap Statement (Leadership View)
 
-1. Establish monorepo/app skeleton with module boundaries
-2. Define shared schemas and runtime validation
-3. Implement workspace + auth + audit foundations
-4. Implement document/TB ingestion pipelines
-5. Implement reconciliation gate before mapping
-6. Add mapping and adjustment proposal flows
-7. Add deterministic summary and INK2 draft population
-8. Add export and sealed filing flow
+- Backend framework and core scaffolding are largely in place.
+- Main gaps are now product-critical module depth and user-facing confidence:
+  - Strong, realistic UI/UX is not yet complete.
+  - AI reasoning/policy depth is incomplete in key tax modules.
+  - Tax-adjustment submodules are not fully implemented to intended V1 depth.
+  - Deterministic tax-calculation logic is not yet complete.
+  - INK2 form engine with full field-code behavior is not yet complete.
+  - Annual-report extraction requires explicit finalization of:
+    - what information must be extracted,
+    - where/how it is stored,
+    - how it influences downstream module reasoning.
+
+## Chronological Build Pipeline (Active Priority)
+
+1. UI quality pass first (make the app visually strong and realistic for testing feedback).
+2. Annual report module specification:
+   - extraction target fields,
+   - persistence schema/artifacts,
+   - downstream influence contract for mapping/adjustments.
+3. Annual report AI extraction implementation:
+   - module-spec + policy-pack + policy-patch,
+   - schema validation and audit-linked run metadata.
+4. Account mapper implementation (logic + UX):
+   - deterministic/AI boundary,
+   - override flows and reviewer clarity in UI.
+5. Tax adjustments core:
+   - implement/complete V1 submodules,
+   - proposal + override + acceptance lifecycle.
+6. Deterministic tax calculation engine:
+   - totals, dependencies, rounding/sign conventions, tax rate application.
+7. INK2 form engine with field codes:
+   - code-level mapping, validations, approvals, and draft integrity checks.
+8. End-to-end hardening:
+   - workflow integration tests, audit completeness checks, pilot-readiness pass.
+
+Execution rule:
+- Build sequentially in this order; do not start the next phase until current phase meets `npm run check` and phase acceptance criteria.
 
 ## Update Protocol
 
@@ -106,3 +136,16 @@ When a major product or architecture decision changes:
 - 2026-03-02: Adopted structured AI reasoning baseline (`module-spec` + `policy-pack` + `policy-patch`) and added reference templates/examples to support auditable, patch-friendly policy updates.
 - 2026-03-03: Locked strict V1 core completion order (annual extraction -> adjustments -> summary -> INK2 -> PDF export -> comments/tasks) and kept roles as `Admin`/`Editor`.
 - 2026-03-03: Established stabilized Tickets 1-5 baseline anchor for restart/recovery and release traceability under tag `baseline-2026-03-03-tickets-1-5`.
+- 2026-03-03: Restored `npm run` reliability baseline by enforcing LF via `.gitattributes`, normalizing Biome formatting/import order, and adding Node 20.x test runtime guard + deterministic server stress harness.
+- 2026-03-03: Completed risk-focused HTTP orchestration review and refactor artifact in project memory. Findings triage: `P0=0`, `P1=0`, `P2=1` (route-layer error-envelope duplication in `src/server/http/workspace-routes.v1.ts`), mitigated by consolidating mapping through `createServiceFailureResponseV1` plus focused unit coverage in `tests/server/http/http-helpers.v1.test.ts`.
+- 2026-03-03: Recorded active leadership-prioritized chronological pipeline: UI first, then annual-report specification/AI extraction, account mapper, tax adjustments, deterministic tax calculation, INK2 field-code engine, and end-to-end hardening.
+- 2026-03-03: Added formal pre-build UI architecture spec in `docs/ui-ux-architecture-v1.md` with Deloitte-aligned design guardrails, search-first workspace selection, ordered core-module workbench, tabbed module shell, and sidebar-based submodule navigation pattern.
+- 2026-03-03: Locked UI product decisions for implementation: hybrid premium structure (search-first selector + ordered module cards), selector fields baseline, always-editable modules with advisory sequence guidance, module label `Tax Return INK2`, advanced controls hidden by default, and inclusion of a group-level control panel.
+- 2026-03-03: Locked frontend execution choices for the makeover program and captured sequential delivery plan in `docs/frontend-build-plan-v1.md` (desktop-first, smart suggestions, i18n-ready English-first, minimal Admin/Editor UI divergence, complete visual overhaul).
+- 2026-03-03: Added explicit design reference pack in `docs/ui-design-references-v1.md` to anchor implementation against Deloitte-style visual and interaction standards, token baselines, and accessibility guardrails.
+- 2026-03-03: Added precedence-locked UI directive pack in `docs/ui-design-references-v4-ai-builder.md`; rule is now explicit that this V4 AI Builder spec overrides conflicting UI guidance.
+- 2026-03-03: Added companion UI directive pack `docs/ui-design-references-v3-final.md` and reconciled governance hierarchy: V4 (hard tokens/strict CSS) -> V3 (interaction/atmosphere) -> V1 (index/governance), then IA and core product constraints.
+- 2026-03-03: Updated UI governance to recency-first precedence per latest instruction: V3 now overrides V4 on overlap; V4 remains detailed fallback where V3 is silent.
+- 2026-03-03: Corrected UI precedence after clarification: V4 is newest and now has final precedence over V3 on overlap; V3 is retained as fallback where V4 is silent.
+- 2026-03-03: Implemented frontend overhaul cutover for primary V1 shell: V4 tokenized light theme foundation, fixed 56px global header, Ctrl+J workspace context launcher, i18n scaffolding (English active), new IA routes (selector, group control panel, workbench, module shell), compatibility redirects, tax-adjustments grouped sidebar with pinned final-calculation panel, and premium INK2 replica canvas. Added client integration tests for selector/workbench/module shell navigation.
+- 2026-03-03: Account-mapping module now uses virtualized row rendering in the new shell with `View All`/`Exceptions Only`, search-first category override UI, and inline AI command preview adapter. `@tanstack/react-virtual` package installation was blocked locally by npm auth/runtime constraints, so V1 ships with an internal deterministic virtualizer implementation pending dependency-install remediation.

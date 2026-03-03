@@ -200,4 +200,3 @@ export function validateAnnualReportFileTypeCoherenceV1(input: {
     allowedContentKinds,
   });
 }
-

@@ -1,0 +1,80 @@
+{
+  "branchName": "codex/ui-ux-ralph-loop-v1",
+  "contextNotes": [
+    "V4 UI design references are authoritative when there is any conflict.",
+    "Use Open Sans stack, strict 4px/8px radius caps, and no gradient or glass effects.",
+    "Preserve advisory module order while allowing manual entry into every module.",
+    "Desktop-first only for V1. Keep interactions keyboard-accessible.",
+    "Do not break existing workspace API contracts while polishing the UI."
+  ],
+  "userStories": [
+    {
+      "id": "UI-01",
+      "title": "Global Header and Ctrl+J Launcher Polish",
+      "priority": 1,
+      "passes": true,
+      "description": "Refine the app header and quick-switch launcher to match the premium enterprise style. Remove ad-hoc inline dialog styles, add dedicated launcher classes, and support keyboard row navigation for launcher results so switching feels fast and controlled.",
+      "filesToEdit": [
+        "src/client/components/app-shell.tsx",
+        "src/client/styles/global.css",
+        "src/client/components/input-v1.tsx",
+        "src/client/components/button-v1.tsx"
+      ],
+      "acceptanceCriteria": [
+        "Header remains fixed at 56px with clean hierarchy for brand, context badge, language switch, and quick-switch action.",
+        "Quick launcher overlay and panel use reusable CSS classes and token values instead of large inline style blocks.",
+        "Launcher supports arrow up/down and enter to switch workspace from the filtered result list.",
+        "Focus-visible states remain clear for launcher controls and list items."
+      ],
+      "verificationCommands": [
+        "npm run typecheck",
+        "npx vitest run --config vitest.client.config.ts tests/client/company-selector-page.v1.test.tsx"
+      ]
+    },
+    {
+      "id": "UI-02",
+      "title": "Workbench and Group Panel Premium Hierarchy",
+      "priority": 2,
+      "passes": true,
+      "description": "Elevate the workbench and group control panel so cards, summaries, and table sections look cohesive and premium. Improve spacing rhythm, metadata emphasis, and action alignment while keeping existing data sources unchanged.",
+      "filesToEdit": [
+        "src/client/features/workspaces/workspace-workbench-page.v1.tsx",
+        "src/client/features/groups/group-control-panel-page.v1.tsx",
+        "src/client/components/status-badge-v1.tsx",
+        "src/client/styles/global.css"
+      ],
+      "acceptanceCriteria": [
+        "Workbench module cards present clear sequence, status, and action hierarchy with consistent spacing.",
+        "Group control panel has stronger visual separation between profile, summary metrics, and company directory.",
+        "Status badges use consistent tones and legible micro-label treatment across both screens.",
+        "No route or API contract changes are introduced."
+      ],
+      "verificationCommands": [
+        "npm run typecheck",
+        "npx vitest run --config vitest.client.config.ts tests/client/workspace-workbench-page.v1.test.tsx"
+      ]
+    },
+    {
+      "id": "UI-03",
+      "title": "Account Mapping Grid Interaction Polish",
+      "priority": 3,
+      "passes": true,
+      "description": "Improve mapping-grid readability and controls for a high-density financial workspace. Keep virtualization behavior, but make header/body presentation, selection affordance, and AI/manual state signaling cleaner and more deterministic.",
+      "filesToEdit": [
+        "src/client/features/modules/core-module-shell-page.v1.tsx",
+        "src/client/components/guidance-banner-v1.tsx",
+        "src/client/styles/global.css"
+      ],
+      "acceptanceCriteria": [
+        "Mapping grid rows remain smooth at scale with sticky headers and no broken scrolling.",
+        "Selected rows, AI-highlighted rows, and manual-override rows are visually distinguishable without noisy styling.",
+        "Exceptions-only and override flows remain usable with keyboard and mouse.",
+        "Tax-adjustments sidebar and pinned final panel continue to render correctly."
+      ],
+      "verificationCommands": [
+        "npm run typecheck",
+        "npx vitest run --config vitest.client.config.ts tests/client/core-module-shell-page.v1.test.tsx"
+      ]
+    }
+  ]
+}

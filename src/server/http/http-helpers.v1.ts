@@ -18,6 +18,18 @@ export type JsonErrorBodyV1 = {
   ok: false;
 };
 
+/**
+ * Shared failure shape for workflow/service errors surfaced over HTTP.
+ */
+export type ServiceFailureV1 = {
+  error: {
+    code: string;
+    context: Record<string, unknown>;
+    message: string;
+    user_message: string;
+  };
+};
+
 export function createJsonErrorResponseV1(input: {
   code: string;
   context?: Record<string, unknown>;
@@ -46,6 +58,20 @@ export function createJsonErrorResponseV1(input: {
     headers: {
       "Cache-Control": "no-store",
     },
+  });
+}
+
+export function createServiceFailureResponseV1(input: {
+  code?: string;
+  failure: ServiceFailureV1;
+  status: number;
+}): Response {
+  return createJsonErrorResponseV1({
+    status: input.status,
+    code: input.code ?? input.failure.error.code,
+    message: input.failure.error.message,
+    userMessage: input.failure.error.user_message,
+    context: input.failure.error.context,
   });
 }
 
@@ -182,7 +208,9 @@ export function isJsonBodyReadErrorV1(
   );
 }
 
-export function buildZodErrorContextV1(error: z.ZodError): Record<string, unknown> {
+export function buildZodErrorContextV1(
+  error: z.ZodError,
+): Record<string, unknown> {
   return {
     issues: error.issues.map((issue) => ({
       code: issue.code,
@@ -229,7 +257,9 @@ export async function parseJsonBodyWithSchemaV1<TParsed>(input: {
   schema: {
     safeParse: (
       payload: unknown,
-    ) => { success: true; data: TParsed } | { success: false; error: z.ZodError };
+    ) =>
+      | { success: true; data: TParsed }
+      | { success: false; error: z.ZodError };
   };
 }): Promise<
   | {

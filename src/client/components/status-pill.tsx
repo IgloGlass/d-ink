@@ -12,9 +12,5 @@ const statusLabelByValueV1: Record<WorkspaceStatusV1, string> = {
 };
 
 export function StatusPill({ status }: { status: WorkspaceStatusV1 }) {
-  return (
-    <span className={`status-pill status-pill--${status.replaceAll("_", "-")}`}>
-      {statusLabelByValueV1[status]}
-    </span>
-  );
+  return <span className="status-pill">{statusLabelByValueV1[status]}</span>;
 }

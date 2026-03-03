@@ -245,9 +245,7 @@ describe("annual report extraction workflow v1", () => {
     expect(runResult.ok).toBe(false);
     if (!runResult.ok) {
       expect(runResult.error.code).toBe("INPUT_INVALID");
-      expect(runResult.error.context.reason).toBe(
-        "file_type_content_mismatch",
-      );
+      expect(runResult.error.context.reason).toBe("file_type_content_mismatch");
     }
   });
 });

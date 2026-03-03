@@ -12,8 +12,10 @@
     "generate:tb-template": "node scripts/generate-trial-balance-template-v1.mjs",
     "typecheck": "tsc --noEmit",
     "test": "npm run test:server && npm run test:client",
+    "test:runtime-check": "node scripts/assert-test-runtime.v1.mjs",
     "test:server": "node scripts/run-server-tests.v1.mjs",
-    "test:client": "vitest run --config vitest.client.config.ts",
+    "test:server:stress": "node scripts/run-server-tests-stress.v1.mjs",
+    "test:client": "npm run test:runtime-check && vitest run --config vitest.client.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
     "lint": "biome check .",
     "lint:logging": "node scripts/check-tenant-safe-logging.v1.mjs",
@@ -22,7 +24,7 @@
     "check": "npm run lint && npm run lint:logging && npm run lint:boundaries && npm run typecheck && npm run test"
   },
   "engines": {
-    "node": ">=20"
+    "node": "20.x"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.76.1",

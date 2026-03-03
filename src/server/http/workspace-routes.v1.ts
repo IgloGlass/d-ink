@@ -84,6 +84,7 @@ import {
 import {
   createJsonErrorResponseV1,
   createMethodNotAllowedResponseV1,
+  createServiceFailureResponseV1,
   parseJsonBodyWithSchemaV1,
   validateOriginForPostV1,
 } from "./http-helpers.v1";
@@ -296,51 +297,55 @@ async function requireTenantSessionPrincipalV1(input: {
   };
 }
 
-function mapWorkspaceLifecycleFailureToResponseV1(input: {
+type WorkflowFailureResultV1 = {
   error: {
     code: string;
     context: Record<string, unknown>;
     message: string;
     user_message: string;
   };
+};
+
+function createWorkflowFailureResponseV1(input: {
+  code?: string;
+  failure: WorkflowFailureResultV1;
+  status: number;
 }): Response {
+  return createServiceFailureResponseV1({
+    code: input.code,
+    failure: input.failure,
+    status: input.status,
+  });
+}
+
+function mapWorkspaceLifecycleFailureToResponseV1(
+  input: WorkflowFailureResultV1,
+): Response {
   if (input.error.code === "INPUT_INVALID") {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 400,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
   if (input.error.code === "DUPLICATE_WORKSPACE") {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 409,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
   if (input.error.code === "WORKSPACE_NOT_FOUND") {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 404,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
   if (input.error.code === "STATE_CONFLICT") {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 409,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
@@ -353,79 +358,54 @@ function mapWorkspaceLifecycleFailureToResponseV1(input: {
         ? (transitionError as { code: unknown }).code
         : null;
 
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: transitionErrorCode === "ROLE_FORBIDDEN" ? 403 : 409,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
   if (input.error.code === "PERSISTENCE_ERROR") {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 500,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
-  return createJsonErrorResponseV1({
+  return createWorkflowFailureResponseV1({
     status: 500,
     code: "PERSISTENCE_ERROR",
-    message: input.error.message,
-    userMessage: input.error.user_message,
-    context: input.error.context,
+    failure: input,
   });
 }
 
-function mapTrialBalancePipelineFailureToResponseV1(input: {
-  error: {
-    code: string;
-    context: Record<string, unknown>;
-    message: string;
-    user_message: string;
-  };
-}): Response {
+function mapTrialBalancePipelineFailureToResponseV1(
+  input: WorkflowFailureResultV1,
+): Response {
   if (input.error.code === "INPUT_INVALID") {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 400,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
   if (input.error.code === "WORKSPACE_NOT_FOUND") {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 404,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
   if (input.error.code === "PARSE_FAILED") {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 422,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
   if (input.error.code === "RECONCILIATION_BLOCKED") {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 409,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
@@ -433,39 +413,26 @@ function mapTrialBalancePipelineFailureToResponseV1(input: {
     input.error.code === "RECONCILIATION_FAILED" ||
     input.error.code === "MAPPING_FAILED"
   ) {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 500,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
-  return createJsonErrorResponseV1({
+  return createWorkflowFailureResponseV1({
     status: 500,
     code: "PERSISTENCE_ERROR",
-    message: input.error.message,
-    userMessage: input.error.user_message,
-    context: input.error.context,
+    failure: input,
   });
 }
 
-function mapAnnualReportFailureToResponseV1(input: {
-  error: {
-    code: string;
-    context: Record<string, unknown>;
-    message: string;
-    user_message: string;
-  };
-}): Response {
+function mapAnnualReportFailureToResponseV1(
+  input: WorkflowFailureResultV1,
+): Response {
   if (input.error.code === "INPUT_INVALID") {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 400,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
@@ -473,59 +440,40 @@ function mapAnnualReportFailureToResponseV1(input: {
     input.error.code === "WORKSPACE_NOT_FOUND" ||
     input.error.code === "EXTRACTION_NOT_FOUND"
   ) {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 404,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
   if (input.error.code === "STATE_CONFLICT") {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 409,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
   if (input.error.code === "PARSE_FAILED") {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 422,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
-  return createJsonErrorResponseV1({
+  return createWorkflowFailureResponseV1({
     status: 500,
     code: "PERSISTENCE_ERROR",
-    message: input.error.message,
-    userMessage: input.error.user_message,
-    context: input.error.context,
+    failure: input,
   });
 }
 
-function mapTaxCoreFailureToResponseV1(input: {
-  error: {
-    code: string;
-    context: Record<string, unknown>;
-    message: string;
-    user_message: string;
-  };
-}): Response {
+function mapTaxCoreFailureToResponseV1(
+  input: WorkflowFailureResultV1,
+): Response {
   if (input.error.code === "INPUT_INVALID") {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 400,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
@@ -539,12 +487,9 @@ function mapTaxCoreFailureToResponseV1(input: {
     input.error.code === "EXTRACTION_NOT_FOUND" ||
     input.error.code === "TASK_NOT_FOUND"
   ) {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: input.error.code === "EXTRACTION_NOT_CONFIRMED" ? 409 : 404,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
@@ -552,49 +497,33 @@ function mapTaxCoreFailureToResponseV1(input: {
     input.error.code === "STATE_CONFLICT" ||
     input.error.code === "EXPORT_NOT_ALLOWED"
   ) {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 409,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
   if (input.error.code === "INPUT_INVALID_FISCAL_YEAR") {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 400,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
-  return createJsonErrorResponseV1({
+  return createWorkflowFailureResponseV1({
     status: 500,
     code: "PERSISTENCE_ERROR",
-    message: input.error.message,
-    userMessage: input.error.user_message,
-    context: input.error.context,
+    failure: input,
   });
 }
 
-function mapMappingOverrideFailureToResponseV1(input: {
-  error: {
-    code: string;
-    context: Record<string, unknown>;
-    message: string;
-    user_message: string;
-  };
-}): Response {
+function mapMappingOverrideFailureToResponseV1(
+  input: WorkflowFailureResultV1,
+): Response {
   if (input.error.code === "INPUT_INVALID") {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 400,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
@@ -602,49 +531,33 @@ function mapMappingOverrideFailureToResponseV1(input: {
     input.error.code === "WORKSPACE_NOT_FOUND" ||
     input.error.code === "MAPPING_NOT_FOUND"
   ) {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 404,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
   if (input.error.code === "STATE_CONFLICT") {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 409,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
-  return createJsonErrorResponseV1({
+  return createWorkflowFailureResponseV1({
     status: 500,
     code: "PERSISTENCE_ERROR",
-    message: input.error.message,
-    userMessage: input.error.user_message,
-    context: input.error.context,
+    failure: input,
   });
 }
 
-function mapMappingReviewFailureToResponseV1(input: {
-  error: {
-    code: string;
-    context: Record<string, unknown>;
-    message: string;
-    user_message: string;
-  };
-}): Response {
+function mapMappingReviewFailureToResponseV1(
+  input: WorkflowFailureResultV1,
+): Response {
   if (input.error.code === "INPUT_INVALID") {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 400,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
@@ -653,31 +566,22 @@ function mapMappingReviewFailureToResponseV1(input: {
     input.error.code === "MAPPING_NOT_FOUND" ||
     input.error.code === "RECONCILIATION_NOT_FOUND"
   ) {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 404,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
   if (input.error.code === "RECONCILIATION_BLOCKED") {
-    return createJsonErrorResponseV1({
+    return createWorkflowFailureResponseV1({
       status: 409,
-      code: input.error.code,
-      message: input.error.message,
-      userMessage: input.error.user_message,
-      context: input.error.context,
+      failure: input,
     });
   }
 
-  return createJsonErrorResponseV1({
+  return createWorkflowFailureResponseV1({
     status: 500,
-    code: input.error.code,
-    message: input.error.message,
-    userMessage: input.error.user_message,
-    context: input.error.context,
+    failure: input,
   });
 }
 

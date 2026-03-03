@@ -1,0 +1,69 @@
+# Ralph Codex Progress
+
+## 2026-03-03T18:52:52.077Z
+Story failed: UI-01 - Global Header and Ctrl+J Launcher Polish
+Agent status: FAIL_OR_MISSING
+Verification:
+- npm run typecheck => exit 1
+- npx vitest run --config vitest.client.config.ts tests/client/company-selector-page.v1.test.tsx => exit 1
+
+## 2026-03-03T18:52:52.172Z
+Story failed: UI-01 - Global Header and Ctrl+J Launcher Polish
+Agent status: FAIL_OR_MISSING
+Verification:
+- npm run typecheck => exit 1
+- npx vitest run --config vitest.client.config.ts tests/client/company-selector-page.v1.test.tsx => exit 1
+
+## 2026-03-03T18:52:52.264Z
+Story failed: UI-01 - Global Header and Ctrl+J Launcher Polish
+Agent status: FAIL_OR_MISSING
+Verification:
+- npm run typecheck => exit 1
+- npx vitest run --config vitest.client.config.ts tests/client/company-selector-page.v1.test.tsx => exit 1
+
+## 2026-03-03T18:54:17.014Z
+Story failed: UI-01 - Global Header and Ctrl+J Launcher Polish
+Agent status: FAIL_OR_MISSING
+Codex command exit: 255
+
+Codex stderr: '\"C:\Users\slemi\AppData\Local\Programs\Codex\resources\codex.exe\"' is not recognized as an internal or external command,
+operable program or batch file.
+Verification:
+- npm run typecheck => exit 0
+- npx vitest run --config vitest.client.config.ts tests/client/company-selector-page.v1.test.tsx => exit 0
+  stderr: [90mstderr[2m | tests/client/company-selector-page.v1.test.tsx[2m > [22m[2mCompanySelectorPageV1[2m > [22m[2mfilters results via search and navigates to workbench
+[22m[39m⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+## 2026-03-03T18:59:49.104Z
+Story passed: UI-01 - Global Header and Ctrl+J Launcher Polish
+Codex command exit: 0
+Verification:
+- npm run typecheck => exit 0
+- npx vitest run --config vitest.client.config.ts tests/client/company-selector-page.v1.test.tsx => exit 0
+  stderr: [90mstderr[2m | tests/client/company-selector-page.v1.test.tsx[2m > [22m[2mCompanySelectorPageV1[2m > [22m[2mfilters results via search and navigates to workbench
+[22m[39m⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+## 2026-03-03T19:04:47.900Z
+Story passed: UI-02 - Workbench and Group Panel Premium Hierarchy
+Codex command exit: 0
+Verification:
+- npm run typecheck => exit 0
+- npx vitest run --config vitest.client.config.ts tests/client/workspace-workbench-page.v1.test.tsx => exit 0
+  stderr: [90mstderr[2m | tests/client/workspace-workbench-page.v1.test.tsx[2m > [22m[2mWorkspaceWorkbenchPageV1[2m > [22m[2mrenders ordered module cards and opens module shell
+[22m[39m⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+## 2026-03-03T19:09:58.610Z
+Story passed: UI-03 - Account Mapping Grid Interaction Polish
+Codex command exit: 0
+Verification:
+- npm run typecheck => exit 0
+- npx vitest run --config vitest.client.config.ts tests/client/core-module-shell-page.v1.test.tsx => exit 0
+  stderr: [90mstderr[2m | tests/client/core-module-shell-page.v1.test.tsx[2m > [22m[2mCoreModuleShellPageV1[2m > [22m[2mrenders tax adjustments sidebar groups and final panel
+[22m[39m⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+## 2026-03-03T19:09:58.611Z
+All stories complete.

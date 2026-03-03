@@ -2,7 +2,13 @@
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
   "files": {
     "ignoreUnknown": true,
-    "ignore": ["dist"]
+    "ignore": [
+      "dist",
+      ".wrangler",
+      "tmp-ralph",
+      "scripts/ralph/.tmp-prompts",
+      "scripts/ralph/.tmp-outputs"
+    ]
   },
   "formatter": {
     "enabled": true,

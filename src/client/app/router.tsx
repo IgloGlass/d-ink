@@ -9,8 +9,11 @@ import {
 import { AppShell } from "../components/app-shell";
 import { InvitePage } from "../features/auth/invite-page";
 import { SessionGate } from "../features/auth/session-gate";
+import { GroupControlPanelPageV1 } from "../features/groups/group-control-panel-page.v1";
+import { CoreModuleShellPageV1 } from "../features/modules/core-module-shell-page.v1";
+import { CompanySelectorPageV1 } from "../features/workspaces/company-selector-page.v1";
 import { WorkspaceDetailPage } from "../features/workspaces/workspace-detail-page";
-import { WorkspaceListPage } from "../features/workspaces/workspace-list-page";
+import { WorkspaceWorkbenchPageV1 } from "../features/workspaces/workspace-workbench-page.v1";
 import { toUserFacingErrorMessage } from "../lib/http/api-client";
 import {
   currentSessionQueryKeyV1,
@@ -68,11 +71,31 @@ const routerV1 = createBrowserRouter([
       },
       {
         path: "workspaces",
-        element: <WorkspaceListPage />,
+        element: <CompanySelectorPageV1 />,
       },
       {
         path: "workspaces/:workspaceId",
+        element: <Navigate replace to="workbench" />,
+      },
+      {
+        path: "workspaces/:workspaceId/workbench",
+        element: <WorkspaceWorkbenchPageV1 />,
+      },
+      {
+        path: "workspaces/:workspaceId/legacy-detail",
         element: <WorkspaceDetailPage />,
+      },
+      {
+        path: "workspaces/:workspaceId/:coreModule/:subModule",
+        element: <CoreModuleShellPageV1 />,
+      },
+      {
+        path: "workspaces/:workspaceId/:coreModule",
+        element: <CoreModuleShellPageV1 />,
+      },
+      {
+        path: "groups/:groupId/control-panel",
+        element: <GroupControlPanelPageV1 />,
       },
       {
         path: "invite",

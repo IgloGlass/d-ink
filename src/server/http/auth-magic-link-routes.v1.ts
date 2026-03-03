@@ -597,7 +597,8 @@ async function handleDevLoginRouteV1(
   }
   const parsedBody = bodyParseResult.data;
 
-  const tenantIdCandidate = parsedBody.tenantId ?? env.DEV_AUTH_DEFAULT_TENANT_ID;
+  const tenantIdCandidate =
+    parsedBody.tenantId ?? env.DEV_AUTH_DEFAULT_TENANT_ID;
   const normalizedTenantId = normalizeDevTenantIdV1(tenantIdCandidate);
   if (!normalizedTenantId) {
     return createJsonErrorResponseV1({

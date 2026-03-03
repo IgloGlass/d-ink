@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["branchName", "userStories"],
+  "properties": {
+    "branchName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "contextNotes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "userStories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "priority",
+          "passes",
+          "description",
+          "filesToEdit",
+          "acceptanceCriteria",
+          "verificationCommands"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "priority": { "type": "integer", "minimum": 1 },
+          "passes": { "type": "boolean" },
+          "description": { "type": "string", "minLength": 1 },
+          "filesToEdit": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "minItems": 1
+          },
+          "acceptanceCriteria": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "minItems": 1
+          },
+          "verificationCommands": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "minItems": 1
+          }
+        }
+      }
+    }
+  }
+}

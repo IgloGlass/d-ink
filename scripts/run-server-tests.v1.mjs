@@ -3,6 +3,7 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { assertSupportedTestRuntimeV1 } from "./assert-test-runtime.v1.mjs";
 import { isKnownMiniflareEbusyCleanupLineV1 } from "./miniflare-noise-filter.v1.mjs";
 
 function createLineStreamFilterV1(onLine) {
@@ -46,6 +47,8 @@ function buildVitestArgsV1() {
 }
 
 export async function runServerTestsWithNoiseFilterV1() {
+  assertSupportedTestRuntimeV1();
+
   const shouldBypassFilter =
     process.env.DINK_TEST_SERVER_SHOW_MINIFLARE_EBUSY === "1";
   const command = process.execPath;
