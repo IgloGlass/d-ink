@@ -1,0 +1,7 @@
+{
+  "run_id": "run-1772498560422",
+  "ticket_id": "NIGHT-002",
+  "branch_name": "codex/ticket-night-002",
+  "timestamp": "2026-03-03T00:42:45.879Z",
+  "source": "scripts/autopilot-ticket-executor.mjs"
+}

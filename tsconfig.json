@@ -12,7 +12,13 @@
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
-    "types": ["@cloudflare/vitest-pool-workers"]
+    "types": ["@cloudflare/vitest-pool-workers", "node"]
   },
-  "include": ["src", "tests", "vitest.config.ts", "vitest.client.config.ts"]
+  "include": [
+    "src",
+    "tests",
+    "vitest.config.ts",
+    "vitest.client.config.ts",
+    "vitest.autopilot.config.ts"
+  ]
 }

@@ -34,6 +34,8 @@ pnpm lint
 pnpm typecheck
 pnpm test
 pnpm check
+pnpm autopilot:validate
+pnpm autopilot:run -- --dry-run
 ```
 
 Fallback (no global `pnpm`):
@@ -45,7 +47,16 @@ corepack pnpm lint
 corepack pnpm typecheck
 corepack pnpm test
 corepack pnpm check
+corepack pnpm autopilot:validate
+corepack pnpm autopilot:run -- --dry-run
 ```
+
+## Night Ticket Autopilot
+
+- Queue file: `AUTOPILOT_QUEUE.md`
+- Validator: `pnpm autopilot:validate`
+- Runner: `pnpm autopilot:run -- --executor "<command>"`
+- Runbook: `docs/autopilot-night-runbook.md`
 
 ## Local dev auth bypass (optional)
 
