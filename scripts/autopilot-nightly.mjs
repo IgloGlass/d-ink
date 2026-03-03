@@ -160,6 +160,20 @@ function ensureToolingV1() {
   }
 }
 
+function normalizeWindowsGitPathForGhV1() {
+  if (process.platform !== "win32") {
+    return;
+  }
+
+  const normalizedPath = (process.env.PATH ?? "").toLowerCase();
+  const preferredGitPath = "c:\\progra~1\\git\\cmd";
+  if (normalizedPath.includes(preferredGitPath)) {
+    return;
+  }
+
+  process.env.PATH = `C:\\Progra~1\\Git\\cmd;${process.env.PATH ?? ""}`;
+}
+
 async function readQueueFromPathV1(queuePath) {
   const source = await readFile(queuePath, "utf8");
   return parseAutopilotQueueMarkdownV1(source);
@@ -427,6 +441,7 @@ async function main() {
   const cwd = process.cwd();
   const hostname = os.hostname();
 
+  normalizeWindowsGitPathForGhV1();
   ensureToolingV1();
   ensureCleanWorkingTreeV1();
   checkoutFreshBaseBranchV1(options.baseBranch);
