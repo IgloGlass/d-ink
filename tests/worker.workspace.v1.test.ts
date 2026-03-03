@@ -1,141 +1,21 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { hashTokenWithHmacV1 } from "../src/server/workflow/auth-magic-link.v1";
-import type { Env } from "../src/shared/types/env";
 import worker from "../src/worker";
 import { applyWorkspaceAuditSchemaForTests } from "./db/test-schema";
-
-const APP_BASE_URL = "https://app.dink.test";
-const AUTH_TOKEN_HMAC_SECRET = "test-auth-token-secret";
+import {
+  APP_BASE_URL,
+  buildGetRequest,
+  buildPostJsonRequest,
+  buildSessionCookie,
+  buildWorkerEnv,
+  seedSession,
+} from "./worker/test-harness.v1";
 
 const TENANT_A = "71000000-0000-4000-8000-000000000001";
 const TENANT_B = "71000000-0000-4000-8000-000000000002";
 const ADMIN_USER_ID = "71000000-0000-4000-8000-000000000003";
 const EDITOR_USER_ID = "71000000-0000-4000-8000-000000000004";
-
-function buildWorkerEnv(): Env {
-  return {
-    DB: env.DB,
-    AUTH_TOKEN_HMAC_SECRET,
-    APP_BASE_URL,
-  };
-}
-
-function buildJsonRequest(input: {
-  body: unknown;
-  cookie?: string;
-  method: "POST";
-  origin?: string;
-  url: string;
-}): Request {
-  const headers = new Headers();
-  headers.set("Content-Type", "application/json");
-  if (input.cookie) {
-    headers.set("Cookie", input.cookie);
-  }
-  if (input.origin) {
-    headers.set("Origin", input.origin);
-  }
-
-  return new Request(input.url, {
-    method: input.method,
-    headers,
-    body: JSON.stringify(input.body),
-  });
-}
-
-function buildGetRequest(input: {
-  cookie?: string;
-  url: string;
-}): Request {
-  const headers = new Headers();
-  if (input.cookie) {
-    headers.set("Cookie", input.cookie);
-  }
-
-  return new Request(input.url, {
-    method: "GET",
-    headers,
-  });
-}
-
-function buildSessionCookie(token: string): string {
-  return `dink_session_v1=${token}`;
-}
-
-async function seedSession(input: {
-  emailNormalized: string;
-  role: "Admin" | "Editor";
-  sessionToken: string;
-  tenantId: string;
-  userId: string;
-}): Promise<void> {
-  const nowTimeMs = Date.now();
-  const nowIso = new Date(nowTimeMs).toISOString();
-  const expiresAt = new Date(nowTimeMs + 24 * 60 * 60 * 1000).toISOString();
-  const sessionTokenHash = await hashTokenWithHmacV1(
-    AUTH_TOKEN_HMAC_SECRET,
-    input.sessionToken,
-  );
-
-  await env.DB.prepare(
-    `
-      INSERT INTO users (id, email_normalized, created_at)
-      VALUES (?1, ?2, ?3)
-    `,
-  )
-    .bind(input.userId, input.emailNormalized, nowIso)
-    .run();
-
-  await env.DB.prepare(
-    `
-      INSERT INTO tenant_memberships (
-        id,
-        tenant_id,
-        user_id,
-        role,
-        created_at,
-        updated_at
-      )
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-    `,
-  )
-    .bind(
-      crypto.randomUUID(),
-      input.tenantId,
-      input.userId,
-      input.role,
-      nowIso,
-      nowIso,
-    )
-    .run();
-
-  await env.DB.prepare(
-    `
-      INSERT INTO auth_sessions (
-        id,
-        tenant_id,
-        user_id,
-        token_hash,
-        created_at,
-        expires_at,
-        revoked_at,
-        last_seen_at
-      )
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?5)
-    `,
-  )
-    .bind(
-      crypto.randomUUID(),
-      input.tenantId,
-      input.userId,
-      sessionTokenHash,
-      nowIso,
-      expiresAt,
-    )
-    .run();
-}
 
 async function createWorkspaceByRoute(input: {
   companyId: string;
@@ -147,8 +27,7 @@ async function createWorkspaceByRoute(input: {
   response: Response;
   workspaceId?: string;
 }> {
-  const request = buildJsonRequest({
-    method: "POST",
+  const request = buildPostJsonRequest({
     url: `${APP_BASE_URL}/v1/workspaces`,
     cookie: buildSessionCookie(input.sessionToken),
     body: {
@@ -180,8 +59,7 @@ describe("worker workspace routes v1", () => {
   });
 
   it("POST /v1/workspaces without session cookie returns 401", async () => {
-    const request = buildJsonRequest({
-      method: "POST",
+    const request = buildPostJsonRequest({
       url: `${APP_BASE_URL}/v1/workspaces`,
       body: {
         tenantId: TENANT_A,
@@ -256,8 +134,7 @@ describe("worker workspace routes v1", () => {
       sessionToken: "workspace-admin-session-mismatch",
     });
 
-    const request = buildJsonRequest({
-      method: "POST",
+    const request = buildPostJsonRequest({
       url: `${APP_BASE_URL}/v1/workspaces`,
       cookie: buildSessionCookie("workspace-admin-session-mismatch"),
       body: {
@@ -500,8 +377,7 @@ describe("worker workspace routes v1", () => {
     });
     expect(createResult.response.status).toBe(201);
 
-    const transitionRequest = buildJsonRequest({
-      method: "POST",
+    const transitionRequest = buildPostJsonRequest({
       url: `${APP_BASE_URL}/v1/workspaces/${createResult.workspaceId}/transitions`,
       cookie: buildSessionCookie("workspace-editor-session-transition"),
       body: {
@@ -561,8 +437,7 @@ describe("worker workspace routes v1", () => {
       )
       .run();
 
-    const transitionRequest = buildJsonRequest({
-      method: "POST",
+    const transitionRequest = buildPostJsonRequest({
       url: `${APP_BASE_URL}/v1/workspaces/${filedWorkspaceId}/transitions`,
       cookie: buildSessionCookie("workspace-editor-session-role-forbidden"),
       body: {
@@ -604,8 +479,7 @@ describe("worker workspace routes v1", () => {
     });
     expect(createResult.response.status).toBe(201);
 
-    const transitionRequest = buildJsonRequest({
-      method: "POST",
+    const transitionRequest = buildPostJsonRequest({
       url: `${APP_BASE_URL}/v1/workspaces/${createResult.workspaceId}/transitions`,
       cookie: buildSessionCookie("workspace-editor-session-invalid-transition"),
       body: {
@@ -642,8 +516,7 @@ describe("worker workspace routes v1", () => {
       sessionToken: "workspace-admin-session-origin",
     });
 
-    const request = buildJsonRequest({
-      method: "POST",
+    const request = buildPostJsonRequest({
       url: `${APP_BASE_URL}/v1/workspaces`,
       cookie: buildSessionCookie("workspace-admin-session-origin"),
       origin: "https://evil.example",
