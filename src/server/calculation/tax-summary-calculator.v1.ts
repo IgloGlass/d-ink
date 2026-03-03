@@ -91,7 +91,8 @@ export function calculateTaxSummaryV1(
         message: "Tax summary input contracts are invalid.",
         user_message: "Tax summary input payload is invalid.",
         context: {
-          message: error instanceof Error ? error.message : "Unknown parse failure.",
+          message:
+            error instanceof Error ? error.message : "Unknown parse failure.",
         },
       },
     };
@@ -102,8 +103,10 @@ export function calculateTaxSummaryV1(
       ok: false,
       error: {
         code: "INPUT_INVALID",
-        message: "Annual report extraction must be confirmed before tax summary.",
-        user_message: "Confirm annual report extraction before running tax summary.",
+        message:
+          "Annual report extraction must be confirmed before tax summary.",
+        user_message:
+          "Confirm annual report extraction before running tax summary.",
         context: {},
       },
     };
@@ -143,7 +146,9 @@ export function calculateTaxSummaryV1(
     };
   }
 
-  const totalAdjustments = roundToMinorUnitV1(adjustments.summary.totalNetAdjustments);
+  const totalAdjustments = roundToMinorUnitV1(
+    adjustments.summary.totalNetAdjustments,
+  );
   const taxableIncome = roundToMinorUnitV1(profitBeforeTax + totalAdjustments);
   const corporateTax = roundToMinorUnitV1(
     taxableIncome * (taxRateResult.taxRatePercent / 100),
@@ -196,7 +201,8 @@ export function calculateTaxSummaryV1(
         message: "Tax summary output failed contract validation.",
         user_message: "Generated tax summary is invalid.",
         context: {
-          message: error instanceof Error ? error.message : "Unknown parse failure.",
+          message:
+            error instanceof Error ? error.message : "Unknown parse failure.",
         },
       },
     };

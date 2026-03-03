@@ -9,14 +9,8 @@
     "C:/Users/slemi/Documents/Mapping guidelines.txt"
   ],
   "hardConstraints": {
-    "allowedScopes": [
-      "balance_sheet",
-      "income_statement"
-    ],
-    "allowedOverrideScopes": [
-      "return",
-      "user"
-    ],
+    "allowedScopes": ["balance_sheet", "income_statement"],
+    "allowedOverrideScopes": ["return", "user"],
     "allowedCategoryCodesFromCatalogOnly": true,
     "categoryLabelsAreCanonicalAndCaseSensitive": true,
     "categoryMustMatchRowStatementType": true,

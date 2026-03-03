@@ -289,7 +289,8 @@ export function createD1TasksRepositoryV1(db: D1Database): TasksRepositoryV1 {
           return {
             ok: false,
             code: "PERSISTENCE_ERROR",
-            message: updateResult.error ?? "Failed to update task completion state.",
+            message:
+              updateResult.error ?? "Failed to update task completion state.",
           };
         }
 

@@ -297,7 +297,9 @@ function parseArtifactPayloadByTypeV1<TType extends WorkspaceArtifactTypeV1>(
   }
 }
 
-function mapArtifactRowToRecordV1<TType extends WorkspaceArtifactTypeV1>(input: {
+function mapArtifactRowToRecordV1<
+  TType extends WorkspaceArtifactTypeV1,
+>(input: {
   artifactType: TType;
   row: ArtifactVersionRowV1;
 }): WorkspaceArtifactVersionRecordV1<TType> {
@@ -466,13 +468,13 @@ export function createD1WorkspaceArtifactRepositoryV1(
     };
   }
 
-  async function getActiveArtifactInternalV1<TType extends WorkspaceArtifactTypeV1>(
-    input: {
-      artifactType: TType;
-      tenantId: string;
-      workspaceId: string;
-    },
-  ): Promise<WorkspaceArtifactVersionRecordV1<TType> | null> {
+  async function getActiveArtifactInternalV1<
+    TType extends WorkspaceArtifactTypeV1,
+  >(input: {
+    artifactType: TType;
+    tenantId: string;
+    workspaceId: string;
+  }): Promise<WorkspaceArtifactVersionRecordV1<TType> | null> {
     const row = await db
       .prepare(SELECT_ACTIVE_ARTIFACT_SQL_V1)
       .bind(input.tenantId, input.workspaceId, input.artifactType)

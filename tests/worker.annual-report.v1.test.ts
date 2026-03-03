@@ -190,7 +190,9 @@ describe("worker annual report routes v1", () => {
 
     expect(getResponse.status).toBe(200);
     expect(getPayload.ok).toBe(true);
-    expect(getPayload.extraction.schemaVersion).toBe("annual_report_extraction_v1");
+    expect(getPayload.extraction.schemaVersion).toBe(
+      "annual_report_extraction_v1",
+    );
   });
 
   it("applies overrides and confirms extraction", async () => {

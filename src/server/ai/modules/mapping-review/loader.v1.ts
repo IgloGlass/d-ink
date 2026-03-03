@@ -283,7 +283,9 @@ function applyPolicyPatchesV1(input: {
       };
     }
 
-    if (parsedPatch.data.basePolicyVersion !== patchedPolicyPack.policyVersion) {
+    if (
+      parsedPatch.data.basePolicyVersion !== patchedPolicyPack.policyVersion
+    ) {
       return {
         ok: false,
         error: {
@@ -324,9 +326,8 @@ function applyPolicyPatchesV1(input: {
  * - Invalid config must hard-fail and never silently continue with partial policy.
  */
 export function loadMappingReviewModuleConfigV1(): LoadMappingReviewModuleConfigResultV1 {
-  const parsedModuleSpec = MappingReviewModuleSpecV1Schema.safeParse(
-    moduleSpecJson,
-  );
+  const parsedModuleSpec =
+    MappingReviewModuleSpecV1Schema.safeParse(moduleSpecJson);
   if (!parsedModuleSpec.success) {
     return {
       ok: false,
@@ -344,9 +345,8 @@ export function loadMappingReviewModuleConfigV1(): LoadMappingReviewModuleConfig
     };
   }
 
-  const parsedPolicyPack = MappingReviewPolicyPackV1Schema.safeParse(
-    policyPackJson,
-  );
+  const parsedPolicyPack =
+    MappingReviewPolicyPackV1Schema.safeParse(policyPackJson);
   if (!parsedPolicyPack.success) {
     return {
       ok: false,
@@ -398,4 +398,3 @@ export function loadMappingReviewModuleConfigV1(): LoadMappingReviewModuleConfig
     },
   };
 }
-

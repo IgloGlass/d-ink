@@ -4,7 +4,16 @@ import type { AuditRepositoryV1 } from "../../db/repositories/audit.repository.v
 import type { TbPipelineArtifactRepositoryV1 } from "../../db/repositories/tb-pipeline-artifact.repository.v1";
 import type { WorkspaceArtifactRepositoryV1 } from "../../db/repositories/workspace-artifact.repository.v1";
 import type { WorkspaceRepositoryV1 } from "../../db/repositories/workspace.repository.v1";
+import { AUDIT_EVENT_TYPES_V1 } from "../../shared/audit/audit-event-catalog.v1";
 import { parseAuditEventV2 } from "../../shared/contracts/audit-event.v2";
+import {
+  CreatePdfExportRequestV1Schema,
+  type CreatePdfExportResultV1,
+  ListWorkspaceExportsRequestV1Schema,
+  type ListWorkspaceExportsResultV1,
+  parseCreatePdfExportResultV1,
+  parseListWorkspaceExportsResultV1,
+} from "../../shared/contracts/export-package.v1";
 import {
   ApplyInk2FormOverridesRequestV1Schema,
   type ApplyInk2FormOverridesResultV1,
@@ -26,20 +35,12 @@ import {
   parseRunTaxAdjustmentResultV1,
 } from "../../shared/contracts/tax-adjustments.v1";
 import {
-  RunTaxSummaryRequestV1Schema,
   type GetActiveTaxSummaryResultV1,
+  RunTaxSummaryRequestV1Schema,
   type RunTaxSummaryResultV1,
   parseGetActiveTaxSummaryResultV1,
   parseRunTaxSummaryResultV1,
 } from "../../shared/contracts/tax-summary.v1";
-import {
-  CreatePdfExportRequestV1Schema,
-  ListWorkspaceExportsRequestV1Schema,
-  type CreatePdfExportResultV1,
-  type ListWorkspaceExportsResultV1,
-  parseCreatePdfExportResultV1,
-  parseListWorkspaceExportsResultV1,
-} from "../../shared/contracts/export-package.v1";
 import { generateTaxAdjustmentsV1 } from "../adjustments/tax-adjustments-engine.v1";
 import { calculateTaxSummaryV1 } from "../calculation/tax-summary-calculator.v1";
 import { generatePdfExportPackageV1 } from "../exports/pdf-export.v1";
@@ -66,6 +67,16 @@ function buildErrorContextFromZod(error: z.ZodError): Record<string, unknown> {
 
 function parseUnknownErrorMessageV1(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown persistence error.";
+}
+
+async function appendAuditEventBestEffortV1(input: {
+  deps: TaxCoreWorkflowDepsV1;
+  event: ReturnType<typeof parseAuditEventV2>;
+}): Promise<void> {
+  const appendResult = await input.deps.auditRepository.append(input.event);
+  if (!appendResult.ok) {
+    // Artifacts are already immutable source of truth; audit append is best-effort.
+  }
 }
 
 function buildTaxAdjustmentFailureV1(input: {
@@ -164,7 +175,10 @@ function buildExportFailureV1(input: {
 function recalculateAdjustmentSummaryV1(input: {
   decisions: Array<{
     amount: number;
-    direction: "decrease_taxable_income" | "increase_taxable_income" | "informational";
+    direction:
+      | "decrease_taxable_income"
+      | "increase_taxable_income"
+      | "informational";
     status: "accepted" | "manual_review_required" | "overridden" | "proposed";
   }>;
 }) {
@@ -174,7 +188,8 @@ function recalculateAdjustmentSummaryV1(input: {
   const totalNegativeAdjustments = input.decisions
     .filter((decision) => decision.direction === "decrease_taxable_income")
     .reduce((sum, decision) => sum + Math.abs(decision.amount), 0);
-  const totalNetAdjustments = totalPositiveAdjustments - totalNegativeAdjustments;
+  const totalNetAdjustments =
+    totalPositiveAdjustments - totalNegativeAdjustments;
 
   return {
     totalDecisions: input.decisions.length,
@@ -229,10 +244,14 @@ export async function runTaxAdjustmentsV1(
       return parseRunTaxAdjustmentResultV1(
         buildTaxAdjustmentFailureV1({
           code: "EXTRACTION_NOT_CONFIRMED",
-          message: "Confirmed annual report extraction is required before adjustments.",
+          message:
+            "Confirmed annual report extraction is required before adjustments.",
           userMessage:
             "Confirm annual report extraction before running tax adjustments.",
-          context: {},
+          context: {
+            reason: "annual_report_confirmation_required",
+            requiredStage: "annual_report.extraction_confirmed",
+          },
         }),
       );
     }
@@ -241,10 +260,11 @@ export async function runTaxAdjustmentsV1(
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
     });
-    const activeTrialBalance = await deps.tbArtifactRepository.getActiveTrialBalance({
-      tenantId: request.tenantId,
-      workspaceId: request.workspaceId,
-    });
+    const activeTrialBalance =
+      await deps.tbArtifactRepository.getActiveTrialBalance({
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+      });
     if (!activeMapping || !activeTrialBalance) {
       return parseRunTaxAdjustmentResultV1(
         buildTaxAdjustmentFailureV1({
@@ -252,7 +272,11 @@ export async function runTaxAdjustmentsV1(
           message:
             "Active mapping and trial-balance artifacts are required before adjustments.",
           userMessage: "Run trial balance mapping before adjustments.",
-          context: {},
+          context: {
+            reason: "tb_pipeline_artifacts_missing",
+            hasActiveMapping: !!activeMapping,
+            hasActiveTrialBalance: !!activeTrialBalance,
+          },
         }),
       );
     }
@@ -299,14 +323,15 @@ export async function runTaxAdjustmentsV1(
       );
     }
 
-    await deps.auditRepository.append(
-      parseAuditEventV2({
+    await appendAuditEventBestEffortV1({
+      deps,
+      event: parseAuditEventV2({
         id: deps.generateId(),
         tenantId: request.tenantId,
         workspaceId: request.workspaceId,
         actorType: request.createdByUserId ? "user" : "system",
         actorUserId: request.createdByUserId,
-        eventType: "adjustment.generated",
+        eventType: AUDIT_EVENT_TYPES_V1.ADJUSTMENT_GENERATED,
         targetType: "tax_adjustments_artifact",
         targetId: persisted.artifact.id,
         after: {
@@ -317,7 +342,55 @@ export async function runTaxAdjustmentsV1(
         timestamp: deps.nowIsoUtc(),
         context: {},
       }),
-    );
+    });
+
+    const acceptedCount = persisted.artifact.payload.decisions.filter(
+      (decision) => decision.status === "accepted",
+    ).length;
+    if (acceptedCount > 0) {
+      await appendAuditEventBestEffortV1({
+        deps,
+        event: parseAuditEventV2({
+          id: deps.generateId(),
+          tenantId: request.tenantId,
+          workspaceId: request.workspaceId,
+          actorType: request.createdByUserId ? "user" : "system",
+          actorUserId: request.createdByUserId,
+          eventType: AUDIT_EVENT_TYPES_V1.ADJUSTMENT_ACCEPTED,
+          targetType: "tax_adjustments_artifact",
+          targetId: persisted.artifact.id,
+          after: {
+            acceptedCount,
+          },
+          timestamp: deps.nowIsoUtc(),
+          context: {},
+        }),
+      });
+    }
+
+    if (persisted.artifact.version > 1) {
+      await appendAuditEventBestEffortV1({
+        deps,
+        event: parseAuditEventV2({
+          id: deps.generateId(),
+          tenantId: request.tenantId,
+          workspaceId: request.workspaceId,
+          actorType: request.createdByUserId ? "user" : "system",
+          actorUserId: request.createdByUserId,
+          eventType: AUDIT_EVENT_TYPES_V1.MODULE_RERUN,
+          targetType: "pipeline_module",
+          targetId: "tax_adjustments",
+          before: {
+            adjustmentsVersion: persisted.artifact.version - 1,
+          },
+          after: {
+            adjustmentsVersion: persisted.artifact.version,
+          },
+          timestamp: deps.nowIsoUtc(),
+          context: {},
+        }),
+      });
+    }
 
     return parseRunTaxAdjustmentResultV1({
       ok: true,
@@ -348,15 +421,17 @@ export async function getActiveTaxAdjustmentsV1(
   deps: TaxCoreWorkflowDepsV1,
 ): Promise<GetActiveTaxAdjustmentsResultV1> {
   try {
-    const active = await deps.workspaceArtifactRepository.getActiveTaxAdjustments({
-      tenantId: input.tenantId,
-      workspaceId: input.workspaceId,
-    });
+    const active =
+      await deps.workspaceArtifactRepository.getActiveTaxAdjustments({
+        tenantId: input.tenantId,
+        workspaceId: input.workspaceId,
+      });
     if (!active) {
       return parseGetActiveTaxAdjustmentsResultV1(
         buildTaxAdjustmentFailureV1({
           code: "ADJUSTMENTS_NOT_FOUND",
-          message: "No active tax-adjustment artifact exists for this workspace.",
+          message:
+            "No active tax-adjustment artifact exists for this workspace.",
           userMessage: "No tax adjustments were found for this workspace.",
           context: {},
         }),
@@ -403,15 +478,17 @@ export async function applyTaxAdjustmentOverridesV1(
   const request = parsedRequest.data;
 
   try {
-    const active = await deps.workspaceArtifactRepository.getActiveTaxAdjustments({
-      tenantId: request.tenantId,
-      workspaceId: request.workspaceId,
-    });
+    const active =
+      await deps.workspaceArtifactRepository.getActiveTaxAdjustments({
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+      });
     if (!active) {
       return parseApplyTaxAdjustmentOverridesResultV1(
         buildTaxAdjustmentFailureV1({
           code: "ADJUSTMENTS_NOT_FOUND",
-          message: "No active tax-adjustment artifact exists for this workspace.",
+          message:
+            "No active tax-adjustment artifact exists for this workspace.",
           userMessage: "No tax adjustments were found for this workspace.",
           context: {},
         }),
@@ -494,6 +571,31 @@ export async function applyTaxAdjustmentOverridesV1(
       );
     }
 
+    await appendAuditEventBestEffortV1({
+      deps,
+      event: parseAuditEventV2({
+        id: deps.generateId(),
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        actorType: request.authorUserId ? "user" : "system",
+        actorUserId: request.authorUserId,
+        eventType: AUDIT_EVENT_TYPES_V1.ADJUSTMENT_OVERRIDDEN,
+        targetType: "tax_adjustments_artifact",
+        targetId: persisted.artifact.id,
+        before: {
+          artifactId: active.id,
+          version: active.version,
+        },
+        after: {
+          artifactId: persisted.artifact.id,
+          version: persisted.artifact.version,
+          appliedCount: request.overrides.length,
+        },
+        timestamp: deps.nowIsoUtc(),
+        context: {},
+      }),
+    });
+
     return parseApplyTaxAdjustmentOverridesResultV1({
       ok: true,
       active: {
@@ -509,7 +611,8 @@ export async function applyTaxAdjustmentOverridesV1(
       buildTaxAdjustmentFailureV1({
         code: "PERSISTENCE_ERROR",
         message: parseUnknownErrorMessageV1(error),
-        userMessage: "Tax-adjustment overrides failed due to an unexpected error.",
+        userMessage:
+          "Tax-adjustment overrides failed due to an unexpected error.",
         context: {},
       }),
     );
@@ -558,24 +661,32 @@ export async function runTaxSummaryV1(
       return parseRunTaxSummaryResultV1(
         buildTaxSummaryFailureV1({
           code: "EXTRACTION_NOT_CONFIRMED",
-          message: "Confirmed annual report extraction is required before tax summary.",
-          userMessage: "Confirm annual report extraction before running tax summary.",
-          context: {},
+          message:
+            "Confirmed annual report extraction is required before tax summary.",
+          userMessage:
+            "Confirm annual report extraction before running tax summary.",
+          context: {
+            reason: "annual_report_confirmation_required",
+            requiredStage: "annual_report.extraction_confirmed",
+          },
         }),
       );
     }
 
-    const adjustments = await deps.workspaceArtifactRepository.getActiveTaxAdjustments({
-      tenantId: request.tenantId,
-      workspaceId: request.workspaceId,
-    });
+    const adjustments =
+      await deps.workspaceArtifactRepository.getActiveTaxAdjustments({
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+      });
     if (!adjustments) {
       return parseRunTaxSummaryResultV1(
         buildTaxSummaryFailureV1({
           code: "ADJUSTMENTS_NOT_FOUND",
           message: "Active tax adjustments are required before tax summary.",
           userMessage: "Run tax adjustments before tax summary.",
-          context: {},
+          context: {
+            reason: "tax_adjustments_required",
+          },
         }),
       );
     }
@@ -597,14 +708,15 @@ export async function runTaxSummaryV1(
       );
     }
 
-    const persisted = await deps.workspaceArtifactRepository.appendTaxSummaryAndSetActive({
-      artifactId: deps.generateId(),
-      tenantId: request.tenantId,
-      workspaceId: request.workspaceId,
-      createdAt: deps.nowIsoUtc(),
-      createdByUserId: request.createdByUserId,
-      summary: calculated.summary,
-    });
+    const persisted =
+      await deps.workspaceArtifactRepository.appendTaxSummaryAndSetActive({
+        artifactId: deps.generateId(),
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        createdAt: deps.nowIsoUtc(),
+        createdByUserId: request.createdByUserId,
+        summary: calculated.summary,
+      });
     if (!persisted.ok) {
       return parseRunTaxSummaryResultV1(
         buildTaxSummaryFailureV1({
@@ -617,6 +729,54 @@ export async function runTaxSummaryV1(
           context: {},
         }),
       );
+    }
+
+    await appendAuditEventBestEffortV1({
+      deps,
+      event: parseAuditEventV2({
+        id: deps.generateId(),
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        actorType: request.createdByUserId ? "user" : "system",
+        actorUserId: request.createdByUserId,
+        eventType: AUDIT_EVENT_TYPES_V1.SUMMARY_GENERATED,
+        targetType: "tax_summary_artifact",
+        targetId: persisted.artifact.id,
+        after: {
+          artifactId: persisted.artifact.id,
+          version: persisted.artifact.version,
+          taxableIncome: persisted.artifact.payload.taxableIncome,
+          corporateTax: persisted.artifact.payload.corporateTax,
+        },
+        timestamp: deps.nowIsoUtc(),
+        context: {
+          summaryKind: "tax_summary",
+        },
+      }),
+    });
+
+    if (persisted.artifact.version > 1) {
+      await appendAuditEventBestEffortV1({
+        deps,
+        event: parseAuditEventV2({
+          id: deps.generateId(),
+          tenantId: request.tenantId,
+          workspaceId: request.workspaceId,
+          actorType: request.createdByUserId ? "user" : "system",
+          actorUserId: request.createdByUserId,
+          eventType: AUDIT_EVENT_TYPES_V1.MODULE_RERUN,
+          targetType: "pipeline_module",
+          targetId: "tax_summary",
+          before: {
+            summaryVersion: persisted.artifact.version - 1,
+          },
+          after: {
+            summaryVersion: persisted.artifact.version,
+          },
+          timestamp: deps.nowIsoUtc(),
+          context: {},
+        }),
+      });
     }
 
     return parseRunTaxSummaryResultV1({
@@ -711,16 +871,22 @@ export async function runInk2FormV1(
       return parseRunInk2FormResultV1(
         buildInk2FailureV1({
           code: "EXTRACTION_NOT_CONFIRMED",
-          message: "Confirmed annual report extraction is required before INK2 draft.",
-          userMessage: "Confirm annual report extraction before generating INK2 draft.",
-          context: {},
+          message:
+            "Confirmed annual report extraction is required before INK2 draft.",
+          userMessage:
+            "Confirm annual report extraction before generating INK2 draft.",
+          context: {
+            reason: "annual_report_confirmation_required",
+            requiredStage: "annual_report.extraction_confirmed",
+          },
         }),
       );
     }
-    const adjustments = await deps.workspaceArtifactRepository.getActiveTaxAdjustments({
-      tenantId: request.tenantId,
-      workspaceId: request.workspaceId,
-    });
+    const adjustments =
+      await deps.workspaceArtifactRepository.getActiveTaxAdjustments({
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+      });
     const summary = await deps.workspaceArtifactRepository.getActiveTaxSummary({
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
@@ -729,9 +895,15 @@ export async function runInk2FormV1(
       return parseRunInk2FormResultV1(
         buildInk2FailureV1({
           code: "SUMMARY_NOT_FOUND",
-          message: "Active summary and adjustments are required before INK2 draft.",
-          userMessage: "Run adjustments and summary before generating INK2 draft.",
-          context: {},
+          message:
+            "Active summary and adjustments are required before INK2 draft.",
+          userMessage:
+            "Run adjustments and summary before generating INK2 draft.",
+          context: {
+            reason: "summary_or_adjustments_missing",
+            hasAdjustments: !!adjustments,
+            hasSummary: !!summary,
+          },
         }),
       );
     }
@@ -755,14 +927,15 @@ export async function runInk2FormV1(
       );
     }
 
-    const persisted = await deps.workspaceArtifactRepository.appendInk2FormAndSetActive({
-      artifactId: deps.generateId(),
-      tenantId: request.tenantId,
-      workspaceId: request.workspaceId,
-      createdAt: deps.nowIsoUtc(),
-      createdByUserId: request.createdByUserId,
-      form: populated.form,
-    });
+    const persisted =
+      await deps.workspaceArtifactRepository.appendInk2FormAndSetActive({
+        artifactId: deps.generateId(),
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        createdAt: deps.nowIsoUtc(),
+        createdByUserId: request.createdByUserId,
+        form: populated.form,
+      });
     if (!persisted.ok) {
       return parseRunInk2FormResultV1(
         buildInk2FailureV1({
@@ -771,10 +944,56 @@ export async function runInk2FormV1(
               ? "WORKSPACE_NOT_FOUND"
               : "PERSISTENCE_ERROR",
           message: persisted.message,
-          userMessage: "INK2 form draft could not be saved due to a storage error.",
+          userMessage:
+            "INK2 form draft could not be saved due to a storage error.",
           context: {},
         }),
       );
+    }
+
+    await appendAuditEventBestEffortV1({
+      deps,
+      event: parseAuditEventV2({
+        id: deps.generateId(),
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        actorType: request.createdByUserId ? "user" : "system",
+        actorUserId: request.createdByUserId,
+        eventType: AUDIT_EVENT_TYPES_V1.FORM_POPULATED,
+        targetType: "ink2_form_artifact",
+        targetId: persisted.artifact.id,
+        after: {
+          artifactId: persisted.artifact.id,
+          version: persisted.artifact.version,
+          validationStatus: persisted.artifact.payload.validation.status,
+        },
+        timestamp: deps.nowIsoUtc(),
+        context: {},
+      }),
+    });
+
+    if (persisted.artifact.version > 1) {
+      await appendAuditEventBestEffortV1({
+        deps,
+        event: parseAuditEventV2({
+          id: deps.generateId(),
+          tenantId: request.tenantId,
+          workspaceId: request.workspaceId,
+          actorType: request.createdByUserId ? "user" : "system",
+          actorUserId: request.createdByUserId,
+          eventType: AUDIT_EVENT_TYPES_V1.MODULE_RERUN,
+          targetType: "pipeline_module",
+          targetId: "ink2_form",
+          before: {
+            formVersion: persisted.artifact.version - 1,
+          },
+          after: {
+            formVersion: persisted.artifact.version,
+          },
+          timestamp: deps.nowIsoUtc(),
+          context: {},
+        }),
+      });
     }
 
     return parseRunInk2FormResultV1({
@@ -913,14 +1132,15 @@ export async function applyInk2FormOverridesV1(
       }),
     };
 
-    const persisted = await deps.workspaceArtifactRepository.appendInk2FormAndSetActive({
-      artifactId: deps.generateId(),
-      tenantId: request.tenantId,
-      workspaceId: request.workspaceId,
-      createdAt: deps.nowIsoUtc(),
-      createdByUserId: request.authorUserId,
-      form: nextForm,
-    });
+    const persisted =
+      await deps.workspaceArtifactRepository.appendInk2FormAndSetActive({
+        artifactId: deps.generateId(),
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        createdAt: deps.nowIsoUtc(),
+        createdByUserId: request.authorUserId,
+        form: nextForm,
+      });
     if (!persisted.ok) {
       return parseApplyInk2FormOverridesResultV1(
         buildInk2FailureV1({
@@ -929,11 +1149,41 @@ export async function applyInk2FormOverridesV1(
               ? "WORKSPACE_NOT_FOUND"
               : "PERSISTENCE_ERROR",
           message: persisted.message,
-          userMessage: "INK2 overrides could not be saved due to a storage error.",
+          userMessage:
+            "INK2 overrides could not be saved due to a storage error.",
           context: {},
         }),
       );
     }
+
+    await appendAuditEventBestEffortV1({
+      deps,
+      event: parseAuditEventV2({
+        id: deps.generateId(),
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        actorType: request.authorUserId ? "user" : "system",
+        actorUserId: request.authorUserId,
+        eventType: AUDIT_EVENT_TYPES_V1.FORM_FIELD_EDITED,
+        targetType: "ink2_form_artifact",
+        targetId: persisted.artifact.id,
+        before: {
+          artifactId: active.id,
+          version: active.version,
+        },
+        after: {
+          artifactId: persisted.artifact.id,
+          version: persisted.artifact.version,
+          appliedCount: request.overrides.length,
+        },
+        timestamp: deps.nowIsoUtc(),
+        context: {
+          overriddenFieldIds: request.overrides.map(
+            (override) => override.fieldId,
+          ),
+        },
+      }),
+    });
 
     return parseApplyInk2FormOverridesResultV1({
       ok: true,
@@ -995,10 +1245,11 @@ export async function createPdfExportV1(
         tenantId: request.tenantId,
         workspaceId: request.workspaceId,
       });
-    const adjustments = await deps.workspaceArtifactRepository.getActiveTaxAdjustments({
-      tenantId: request.tenantId,
-      workspaceId: request.workspaceId,
-    });
+    const adjustments =
+      await deps.workspaceArtifactRepository.getActiveTaxAdjustments({
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+      });
     const summary = await deps.workspaceArtifactRepository.getActiveTaxSummary({
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
@@ -1015,7 +1266,13 @@ export async function createPdfExportV1(
             "Annual extraction, adjustments, summary, and INK2 form are required before PDF export.",
           userMessage:
             "Complete adjustments, summary, and INK2 draft before PDF export.",
-          context: {},
+          context: {
+            reason: "export_prerequisites_missing",
+            hasExtraction: !!extraction,
+            hasAdjustments: !!adjustments,
+            hasSummary: !!summary,
+            hasForm: !!form,
+          },
         }),
       );
     }
@@ -1044,16 +1301,15 @@ export async function createPdfExportV1(
       );
     }
 
-    const persisted = await deps.workspaceArtifactRepository.appendExportPackageAndSetActive(
-      {
+    const persisted =
+      await deps.workspaceArtifactRepository.appendExportPackageAndSetActive({
         artifactId: deps.generateId(),
         tenantId: request.tenantId,
         workspaceId: request.workspaceId,
         createdAt: deps.nowIsoUtc(),
         createdByUserId: request.createdByUserId,
         exportPackage: generated.exportPackage,
-      },
-    );
+      });
     if (!persisted.ok) {
       return parseCreatePdfExportResultV1(
         buildExportFailureV1({
@@ -1066,6 +1322,71 @@ export async function createPdfExportV1(
           context: {},
         }),
       );
+    }
+
+    await appendAuditEventBestEffortV1({
+      deps,
+      event: parseAuditEventV2({
+        id: deps.generateId(),
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        actorType: request.createdByUserId ? "user" : "system",
+        actorUserId: request.createdByUserId,
+        eventType: AUDIT_EVENT_TYPES_V1.FORM_APPROVED,
+        targetType: "ink2_form_artifact",
+        targetId: form.id,
+        after: {
+          formArtifactId: form.id,
+          approvalSource: "export_generation",
+        },
+        timestamp: deps.nowIsoUtc(),
+        context: {},
+      }),
+    });
+
+    await appendAuditEventBestEffortV1({
+      deps,
+      event: parseAuditEventV2({
+        id: deps.generateId(),
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        actorType: request.createdByUserId ? "user" : "system",
+        actorUserId: request.createdByUserId,
+        eventType: AUDIT_EVENT_TYPES_V1.EXPORT_CREATED,
+        targetType: "export_package_artifact",
+        targetId: persisted.artifact.id,
+        after: {
+          artifactId: persisted.artifact.id,
+          version: persisted.artifact.version,
+          format: persisted.artifact.payload.format,
+        },
+        timestamp: deps.nowIsoUtc(),
+        context: {},
+      }),
+    });
+
+    if (persisted.artifact.version > 1) {
+      await appendAuditEventBestEffortV1({
+        deps,
+        event: parseAuditEventV2({
+          id: deps.generateId(),
+          tenantId: request.tenantId,
+          workspaceId: request.workspaceId,
+          actorType: request.createdByUserId ? "user" : "system",
+          actorUserId: request.createdByUserId,
+          eventType: AUDIT_EVENT_TYPES_V1.MODULE_RERUN,
+          targetType: "pipeline_module",
+          targetId: "pdf_export",
+          before: {
+            exportVersion: persisted.artifact.version - 1,
+          },
+          after: {
+            exportVersion: persisted.artifact.version,
+          },
+          timestamp: deps.nowIsoUtc(),
+          context: {},
+        }),
+      });
     }
 
     return parseCreatePdfExportResultV1({

@@ -32,6 +32,7 @@ import { RunTaxSummaryRequestV1Schema } from "../../shared/contracts/tax-summary
 import { ExecuteTrialBalancePipelineRequestV1Schema } from "../../shared/contracts/tb-pipeline-run.v1";
 import { WorkspaceStatusV1Schema } from "../../shared/contracts/workspace.v1";
 import type { Env } from "../../shared/types/env";
+import { MAX_UPLOAD_JSON_BODY_BYTES_V1 } from "../security/payload-limits.v1";
 import {
   applyAnnualReportExtractionOverridesV1,
   confirmAnnualReportExtractionV1,
@@ -83,6 +84,7 @@ import {
 import {
   createJsonErrorResponseV1,
   createMethodNotAllowedResponseV1,
+  isJsonBodyReadErrorV1,
   readJsonBodyV1,
   validateOriginForPostV1,
 } from "./http-helpers.v1";
@@ -138,12 +140,11 @@ const AnnualReportConfirmHttpRequestBodyV1Schema =
     confirmedByUserId: true,
   });
 
-const TaxAdjustmentRunHttpRequestBodyV1Schema = RunTaxAdjustmentRequestV1Schema.omit(
-  {
+const TaxAdjustmentRunHttpRequestBodyV1Schema =
+  RunTaxAdjustmentRequestV1Schema.omit({
     workspaceId: true,
     createdByUserId: true,
-  },
-);
+  });
 
 const TaxAdjustmentOverrideHttpRequestBodyV1Schema =
   ApplyTaxAdjustmentOverridesRequestV1Schema.omit({
@@ -294,6 +295,41 @@ async function requireTenantSessionPrincipalV1(input: {
     ok: true,
     principal: sessionLookupResult.principal,
   };
+}
+
+function mapJsonBodyReadErrorToResponseV1(input: {
+  error: {
+    reason: "content_length_invalid" | "payload_too_large";
+    maxBytes: number;
+    actualBytes?: number;
+    contentLengthHeaderValue?: string;
+  };
+  routeLabel: string;
+}): Response {
+  if (input.error.reason === "content_length_invalid") {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: `${input.routeLabel} request body has an invalid Content-Length header.`,
+      userMessage: `${input.routeLabel} request body is invalid.`,
+      context: {
+        reason: input.error.reason,
+        contentLengthHeaderValue: input.error.contentLengthHeaderValue ?? null,
+      },
+    });
+  }
+
+  return createJsonErrorResponseV1({
+    status: 413,
+    code: "INPUT_INVALID",
+    message: `${input.routeLabel} request body exceeded configured size limit.`,
+    userMessage: `${input.routeLabel} request body is too large.`,
+    context: {
+      reason: input.error.reason,
+      maxBytes: input.error.maxBytes,
+      actualBytes: input.error.actualBytes ?? null,
+    },
+  });
 }
 
 function mapWorkspaceLifecycleFailureToResponseV1(input: {
@@ -540,8 +576,7 @@ function mapTaxCoreFailureToResponseV1(input: {
     input.error.code === "TASK_NOT_FOUND"
   ) {
     return createJsonErrorResponseV1({
-      status:
-        input.error.code === "EXTRACTION_NOT_CONFIRMED" ? 409 : 404,
+      status: input.error.code === "EXTRACTION_NOT_CONFIRMED" ? 409 : 404,
       code: input.error.code,
       message: input.error.message,
       userMessage: input.error.user_message,
@@ -920,9 +955,18 @@ async function handleTrialBalancePipelineRunRouteV1(
     return originValidationError;
   }
 
-  const parsedBody = TrialBalancePipelineRunHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
+  const requestBody = await readJsonBodyV1(request, {
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+  });
+  if (isJsonBodyReadErrorV1(requestBody)) {
+    return mapJsonBodyReadErrorToResponseV1({
+      error: requestBody,
+      routeLabel: "TB pipeline",
+    });
+  }
+
+  const parsedBody =
+    TrialBalancePipelineRunHttpRequestBodyV1Schema.safeParse(requestBody);
   if (!parsedBody.success) {
     return createJsonErrorResponseV1({
       status: 400,
@@ -975,9 +1019,18 @@ async function handleAnnualReportRunRouteV1(
     return originValidationError;
   }
 
-  const parsedBody = AnnualReportRunHttpRequestBodyV1Schema.safeParse(
-    await readJsonBodyV1(request),
-  );
+  const requestBody = await readJsonBodyV1(request, {
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+  });
+  if (isJsonBodyReadErrorV1(requestBody)) {
+    return mapJsonBodyReadErrorToResponseV1({
+      error: requestBody,
+      routeLabel: "Annual report",
+    });
+  }
+
+  const parsedBody =
+    AnnualReportRunHttpRequestBodyV1Schema.safeParse(requestBody);
   if (!parsedBody.success) {
     return createJsonErrorResponseV1({
       status: 400,
@@ -2201,7 +2254,12 @@ export async function handleWorkspaceRoutesV1(
     if (request.method !== "POST") {
       return createMethodNotAllowedResponseV1("POST");
     }
-    return handleRunTaxSummaryRouteV1(request, env, appBaseUrl, routeSegments[0]);
+    return handleRunTaxSummaryRouteV1(
+      request,
+      env,
+      appBaseUrl,
+      routeSegments[0],
+    );
   }
 
   if (
@@ -2308,7 +2366,12 @@ export async function handleWorkspaceRoutesV1(
       return handleListTasksRouteV1(request, env, routeSegments[0]);
     }
     if (request.method === "POST") {
-      return handleCreateTaskRouteV1(request, env, appBaseUrl, routeSegments[0]);
+      return handleCreateTaskRouteV1(
+        request,
+        env,
+        appBaseUrl,
+        routeSegments[0],
+      );
     }
 
     return createMethodNotAllowedResponseV1(["GET", "POST"]);

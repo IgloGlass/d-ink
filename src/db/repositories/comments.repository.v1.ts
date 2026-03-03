@@ -108,7 +108,9 @@ function mapCommentRowToContractV1(row: CommentRowV1): CollaborationCommentV1 {
   });
 }
 
-export function createD1CommentsRepositoryV1(db: D1Database): CommentsRepositoryV1 {
+export function createD1CommentsRepositoryV1(
+  db: D1Database,
+): CommentsRepositoryV1 {
   return {
     async create(input): Promise<CommentsRepositoryCreateResultV1> {
       try {
@@ -139,7 +141,8 @@ export function createD1CommentsRepositoryV1(db: D1Database): CommentsRepository
           return {
             ok: false,
             code: "PERSISTENCE_ERROR",
-            message: insertResult.error ?? "Failed to insert workspace comment.",
+            message:
+              insertResult.error ?? "Failed to insert workspace comment.",
           };
         }
 

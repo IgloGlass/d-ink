@@ -158,7 +158,8 @@ function applyManualSelectionToDecisionV1(input: {
     input.selectedCategoryCode,
   );
   if (
-    selectedCategory.statementType !== input.decision.proposedCategory.statementType
+    selectedCategory.statementType !==
+    input.decision.proposedCategory.statementType
   ) {
     throw new Error(
       "Selected category statement type does not match mapping decision statement type.",
@@ -641,37 +642,37 @@ export async function applyMappingOverridesV1(
 
     if (preferenceUpsertFailedMessage === null) {
       for (const preferenceEntry of preferenceEntries) {
-      const scopeTargetId =
-        preferenceEntry.scope === "return"
-          ? `${preferenceEntry.scope}:${request.workspaceId}:${preferenceEntry.sourceAccountNumber}:${preferenceEntry.statementType}`
-          : `${preferenceEntry.scope}:${actor.actorUserId}:${preferenceEntry.sourceAccountNumber}:${preferenceEntry.statementType}`;
+        const scopeTargetId =
+          preferenceEntry.scope === "return"
+            ? `${preferenceEntry.scope}:${request.workspaceId}:${preferenceEntry.sourceAccountNumber}:${preferenceEntry.statementType}`
+            : `${preferenceEntry.scope}:${actor.actorUserId}:${preferenceEntry.sourceAccountNumber}:${preferenceEntry.statementType}`;
 
-      const preferenceAuditEvent = parseAuditEventV2({
-        id: deps.generateId(),
-        tenantId: request.tenantId,
-        workspaceId: request.workspaceId,
-        actorType: "user",
-        actorUserId: actor.actorUserId,
-        eventType: "mapping.preference_saved",
-        targetType: "mapping_preference",
-        targetId: scopeTargetId,
-        after: {
-          scope: preferenceEntry.scope,
-          sourceAccountNumber: preferenceEntry.sourceAccountNumber,
-          statementType: preferenceEntry.statementType,
-          selectedCategoryCode: preferenceEntry.selectedCategoryCode,
-          reason: preferenceEntry.reason,
-        },
-        timestamp: nowIsoUtc,
-        context: {},
-      });
+        const preferenceAuditEvent = parseAuditEventV2({
+          id: deps.generateId(),
+          tenantId: request.tenantId,
+          workspaceId: request.workspaceId,
+          actorType: "user",
+          actorUserId: actor.actorUserId,
+          eventType: "mapping.preference_saved",
+          targetType: "mapping_preference",
+          targetId: scopeTargetId,
+          after: {
+            scope: preferenceEntry.scope,
+            sourceAccountNumber: preferenceEntry.sourceAccountNumber,
+            statementType: preferenceEntry.statementType,
+            selectedCategoryCode: preferenceEntry.selectedCategoryCode,
+            reason: preferenceEntry.reason,
+          },
+          timestamp: nowIsoUtc,
+          context: {},
+        });
 
-      const preferenceAuditAppend =
-        await deps.auditRepository.append(preferenceAuditEvent);
-      if (!preferenceAuditAppend.ok) {
-        // Preferences are already persisted; audit append is best-effort.
+        const preferenceAuditAppend =
+          await deps.auditRepository.append(preferenceAuditEvent);
+        if (!preferenceAuditAppend.ok) {
+          // Preferences are already persisted; audit append is best-effort.
+        }
       }
-    }
     }
 
     return parseApplyMappingOverridesResultV1({

@@ -12,7 +12,9 @@ export const CollaborationCommentV1Schema = z
     createdAt: IsoDateTimeSchema,
   })
   .strict();
-export type CollaborationCommentV1 = z.infer<typeof CollaborationCommentV1Schema>;
+export type CollaborationCommentV1 = z.infer<
+  typeof CollaborationCommentV1Schema
+>;
 
 export const CollaborationTaskStatusV1Schema = z.enum(["open", "completed"]);
 export type CollaborationTaskStatusV1 = z.infer<
@@ -70,7 +72,9 @@ export const CreateCommentRequestV1Schema = z
     createdByUserId: UuidV4Schema,
   })
   .strict();
-export type CreateCommentRequestV1 = z.infer<typeof CreateCommentRequestV1Schema>;
+export type CreateCommentRequestV1 = z.infer<
+  typeof CreateCommentRequestV1Schema
+>;
 
 export const ListTasksRequestV1Schema = z
   .object({
@@ -109,7 +113,9 @@ export const CollaborationErrorCodeV1Schema = z.enum([
   "STATE_CONFLICT",
   "PERSISTENCE_ERROR",
 ]);
-export type CollaborationErrorCodeV1 = z.infer<typeof CollaborationErrorCodeV1Schema>;
+export type CollaborationErrorCodeV1 = z.infer<
+  typeof CollaborationErrorCodeV1Schema
+>;
 
 export const CollaborationFailureV1Schema = z
   .object({
@@ -124,7 +130,9 @@ export const CollaborationFailureV1Schema = z
       .strict(),
   })
   .strict();
-export type CollaborationFailureV1 = z.infer<typeof CollaborationFailureV1Schema>;
+export type CollaborationFailureV1 = z.infer<
+  typeof CollaborationFailureV1Schema
+>;
 
 export const ListCommentsResultV1Schema = z.discriminatedUnion("ok", [
   z
@@ -181,11 +189,15 @@ export const CompleteTaskResultV1Schema = z.discriminatedUnion("ok", [
 ]);
 export type CompleteTaskResultV1 = z.infer<typeof CompleteTaskResultV1Schema>;
 
-export function parseListCommentsResultV1(input: unknown): ListCommentsResultV1 {
+export function parseListCommentsResultV1(
+  input: unknown,
+): ListCommentsResultV1 {
   return ListCommentsResultV1Schema.parse(input);
 }
 
-export function parseCreateCommentResultV1(input: unknown): CreateCommentResultV1 {
+export function parseCreateCommentResultV1(
+  input: unknown,
+): CreateCommentResultV1 {
   return CreateCommentResultV1Schema.parse(input);
 }
 
@@ -197,6 +209,8 @@ export function parseCreateTaskResultV1(input: unknown): CreateTaskResultV1 {
   return CreateTaskResultV1Schema.parse(input);
 }
 
-export function parseCompleteTaskResultV1(input: unknown): CompleteTaskResultV1 {
+export function parseCompleteTaskResultV1(
+  input: unknown,
+): CompleteTaskResultV1 {
   return CompleteTaskResultV1Schema.parse(input);
 }

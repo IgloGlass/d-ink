@@ -36,6 +36,25 @@ pnpm test
 pnpm check
 ```
 
+Portable alternative (works even when global `pnpm`/`corepack` is unavailable):
+
+```bash
+npm run dev
+npm run generate:tb-template
+npm run lint
+npm run typecheck
+npm run test
+npm run check
+```
+
+### Known test-noise policy
+
+`npm run test:server` now runs through `scripts/run-server-tests.v1.mjs`, which suppresses only known Miniflare temporary-directory cleanup `EBUSY` noise lines.
+
+- Scope: only known cleanup signatures from `@cloudflare/vitest-pool-workers` + `.wrangler/tmp/miniflare` paths.
+- Safety: non-matching stderr warnings/errors always pass through unchanged.
+- Troubleshooting: set `DINK_TEST_SERVER_SHOW_MINIFLARE_EBUSY=1` to bypass filtering and print raw stderr.
+
 Fallback (no global `pnpm`):
 
 ```bash

@@ -434,4 +434,18 @@ describe("trial balance parser v1", () => {
 
     expect(result.error.code).toBe("UNSUPPORTED_FILE_FORMAT");
   });
+
+  it("returns INPUT_INVALID when declared file type mismatches extension", () => {
+    const result = parseTrialBalanceFileV1({
+      fileName: "tb.csv",
+      fileType: "xlsx",
+      fileBytes: new TextEncoder().encode("account,opening,closing\n1000,1,1"),
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INPUT_INVALID");
+      expect(result.error.context.reason).toBe("declared_file_type_mismatch");
+    }
+  });
 });

@@ -552,9 +552,9 @@ describe("mapping override workflow v1", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("INPUT_INVALID");
-      expect(
-        Array.isArray(result.error.context.statementTypeMismatches),
-      ).toBe(true);
+      expect(Array.isArray(result.error.context.statementTypeMismatches)).toBe(
+        true,
+      );
     }
   });
 

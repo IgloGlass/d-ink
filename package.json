@@ -4,21 +4,21 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k \"corepack pnpm run dev:api\" \"corepack pnpm run dev:web\"",
+    "dev": "concurrently -k \"npm run dev:api\" \"npm run dev:web\"",
     "dev:api": "wrangler dev",
     "dev:web": "vite",
     "build:web": "vite build",
     "preview:web": "vite preview",
     "generate:tb-template": "node scripts/generate-trial-balance-template-v1.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "corepack pnpm run test:server && corepack pnpm run test:client",
-    "test:server": "vitest run --config vitest.config.ts",
+    "test": "npm run test:server && npm run test:client",
+    "test:server": "node scripts/run-server-tests.v1.mjs",
     "test:client": "vitest run --config vitest.client.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
     "lint": "biome check .",
     "lint:boundaries": "depcruise --config .dependency-cruiser.cjs --output-type err-long src",
     "format": "biome format --write .",
-    "check": "corepack pnpm run lint && corepack pnpm run lint:boundaries && corepack pnpm run typecheck && corepack pnpm run test"
+    "check": "npm run lint && npm run lint:boundaries && npm run typecheck && npm run test"
   },
   "engines": {
     "node": ">=20"

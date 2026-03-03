@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  ApplyAnnualReportExtractionOverridesRequestV1Schema,
   AnnualReportExtractionPayloadV1Schema,
+  ApplyAnnualReportExtractionOverridesRequestV1Schema,
   ConfirmAnnualReportExtractionRequestV1Schema,
   parseApplyAnnualReportExtractionOverridesResultV1,
   parseConfirmAnnualReportExtractionResultV1,
@@ -17,7 +17,11 @@ describe("annual report extraction contracts v1", () => {
       sourceFileType: "pdf",
       policyVersion: "annual-report-manual-first.v1",
       fields: {
-        companyName: { status: "extracted", confidence: 0.93, value: "Acme AB" },
+        companyName: {
+          status: "extracted",
+          confidence: 0.93,
+          value: "Acme AB",
+        },
         organizationNumber: {
           status: "needs_review",
           confidence: 0.3,
@@ -61,8 +65,16 @@ describe("annual report extraction contracts v1", () => {
       policyVersion: "annual-report-manual-first.v1",
       fields: {
         companyName: { status: "manual", confidence: 1, value: "Acme AB" },
-        organizationNumber: { status: "manual", confidence: 1, value: "556677-8899" },
-        fiscalYearStart: { status: "manual", confidence: 1, value: "2025-01-01" },
+        organizationNumber: {
+          status: "manual",
+          confidence: 1,
+          value: "556677-8899",
+        },
+        fiscalYearStart: {
+          status: "manual",
+          confidence: 1,
+          value: "2025-01-01",
+        },
         fiscalYearEnd: { status: "manual", confidence: 1, value: "2025-12-31" },
         accountingStandard: { status: "manual", confidence: 1, value: "K2" },
         profitBeforeTax: { status: "manual", confidence: 1, value: 250000 },
@@ -98,8 +110,16 @@ describe("annual report extraction contracts v1", () => {
             confidence: 1,
             value: "556677-8899",
           },
-          fiscalYearStart: { status: "manual", confidence: 1, value: "2025-01-01" },
-          fiscalYearEnd: { status: "manual", confidence: 1, value: "2025-12-31" },
+          fiscalYearStart: {
+            status: "manual",
+            confidence: 1,
+            value: "2025-01-01",
+          },
+          fiscalYearEnd: {
+            status: "manual",
+            confidence: 1,
+            value: "2025-12-31",
+          },
           accountingStandard: { status: "manual", confidence: 1, value: "K2" },
           profitBeforeTax: { status: "manual", confidence: 1, value: 250000 },
         },

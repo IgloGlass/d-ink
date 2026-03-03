@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { executeMappingReviewModelV1 } from "../../../src/server/ai/modules/mapping-review/executor.v1";
 import { loadMappingReviewModuleConfigV1 } from "../../../src/server/ai/modules/mapping-review/loader.v1";
 import { MappingDecisionSetPayloadV1Schema } from "../../../src/shared/contracts/mapping.v1";
-import { parseReconciliationResultPayloadV1 } from "../../../src/shared/contracts/reconciliation.v1";
 
 function createGoldenMappingPayloadV1() {
   return MappingDecisionSetPayloadV1Schema.parse({
@@ -112,33 +111,19 @@ describe("mapping review executor golden v1", () => {
       return;
     }
 
+    const mapping = createGoldenMappingPayloadV1();
     const result = await executeMappingReviewModelV1({
       config: configResult.config,
-      mapping: createGoldenMappingPayloadV1(),
-      reconciliation: parseReconciliationResultPayloadV1({
-        schemaVersion: "reconciliation_result_v1",
-        status: "pass",
+      projection: {
         canProceedToMapping: true,
-        blockingReasonCodes: [],
-        summary: {
-          candidateRows: 3,
-          normalizedRows: 3,
-          rejectedRows: 0,
-          materialRejectedRows: 0,
-          nonMaterialRejectedRows: 0,
-          openingBalanceTotal: 0,
-          closingBalanceTotal: 300,
-        },
-        checks: [
-          {
-            code: "candidate_rows_present",
-            status: "pass",
-            blocking: false,
-            message: "ok",
-            context: {},
-          },
-        ],
-      }),
+        decisions: mapping.decisions.map((decision) => ({
+          id: decision.id,
+          accountName: decision.accountName,
+          proposedStatementType: decision.selectedCategory.statementType,
+          selectedCategoryCode: decision.selectedCategory.code,
+          evidenceTypes: decision.evidence.map((evidence) => evidence.type),
+        })),
+      },
       requestedScope: "return",
       maxSuggestions: 10,
     });
@@ -151,7 +136,10 @@ describe("mapping review executor golden v1", () => {
     expect(result.suggestions).toHaveLength(3);
 
     const suggestionsByDecisionId = new Map(
-      result.suggestions.map((suggestion) => [suggestion.decisionId, suggestion]),
+      result.suggestions.map((suggestion) => [
+        suggestion.decisionId,
+        suggestion,
+      ]),
     );
     expect(
       suggestionsByDecisionId.get("decision-bs-group-receivable")
@@ -168,4 +156,3 @@ describe("mapping review executor golden v1", () => {
     ).toBe("607200");
   });
 });
-

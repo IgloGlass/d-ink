@@ -194,7 +194,8 @@ describe("worker mapping review route v1", () => {
         body: {
           tenantId: TENANT_ID,
           expectedActiveMapping: {
-            artifactId: runPipelinePayload.pipeline.artifacts.mapping.artifactId,
+            artifactId:
+              runPipelinePayload.pipeline.artifacts.mapping.artifactId,
             version: runPipelinePayload.pipeline.artifacts.mapping.version,
           },
           overrides: [
@@ -246,9 +247,8 @@ describe("worker mapping review route v1", () => {
     expect(reviewPayload.suggestions.suggestions[0]?.selectedCategoryCode).toBe(
       "607200",
     );
-    expect(
-      reviewPayload.suggestions.suggestions[0]?.policyRuleReference,
-    ).toBe("guideline.is.partially-deductible-representation.prudent.v1");
+    expect(reviewPayload.suggestions.suggestions[0]?.policyRuleReference).toBe(
+      "guideline.is.partially-deductible-representation.prudent.v1",
+    );
   });
 });
-

@@ -13,7 +13,8 @@ describe("tax adjustments contracts v1", () => {
       policyVersion: "tax-adjustments.v1",
       generatedFrom: {
         mappingArtifactId: "98000000-0000-4000-8000-000000000001",
-        annualReportExtractionArtifactId: "98000000-0000-4000-8000-000000000002",
+        annualReportExtractionArtifactId:
+          "98000000-0000-4000-8000-000000000002",
       },
       summary: {
         totalDecisions: 1,
@@ -48,7 +49,8 @@ describe("tax adjustments contracts v1", () => {
       policyVersion: "tax-adjustments.v1",
       generatedFrom: {
         mappingArtifactId: "98000000-0000-4000-8000-000000000001",
-        annualReportExtractionArtifactId: "98000000-0000-4000-8000-000000000002",
+        annualReportExtractionArtifactId:
+          "98000000-0000-4000-8000-000000000002",
       },
       summary: {
         totalDecisions: 1,
@@ -89,7 +91,8 @@ describe("tax adjustments contracts v1", () => {
         policyVersion: "tax-adjustments.v1",
         generatedFrom: {
           mappingArtifactId: "98000000-0000-4000-8000-000000000001",
-          annualReportExtractionArtifactId: "98000000-0000-4000-8000-000000000002",
+          annualReportExtractionArtifactId:
+            "98000000-0000-4000-8000-000000000002",
         },
         summary: {
           totalDecisions: 0,

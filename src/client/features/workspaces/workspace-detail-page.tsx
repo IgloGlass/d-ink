@@ -2,9 +2,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
+import {
+  type SilverfinTaxCategoryCodeV1,
+  listSilverfinTaxCategoriesV1,
+} from "../../../shared/contracts/mapping.v1";
+import type { TrialBalanceFileTypeV1 } from "../../../shared/contracts/trial-balance.v1";
 import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
 import { StatusPill } from "../../components/status-pill";
-import { ApiClientError, toUserFacingErrorMessage } from "../../lib/http/api-client";
+import {
+  ApiClientError,
+  toUserFacingErrorMessage,
+} from "../../lib/http/api-client";
 import {
   type ApplyAnnualReportOverridesResponseV1,
   type ApplyInk2OverridesResponseV1,
@@ -13,18 +21,18 @@ import {
   type CreateCommentResponseV1,
   type CreatePdfExportResponseV1,
   type CreateTaskResponseV1,
-  type GetActiveInk2FormResponseV1,
+  type GenerateMappingReviewSuggestionsResponseV1,
   type GetActiveAnnualReportExtractionResponseV1,
+  type GetActiveInk2FormResponseV1,
   type GetActiveTaxAdjustmentsResponseV1,
   type GetActiveTaxSummaryResponseV1,
   type ListCommentsResponseV1,
   type ListTasksResponseV1,
   type ListWorkspaceExportsResponseV1,
-  type RunInk2FormResponseV1,
   type RunAnnualReportExtractionResponseV1,
+  type RunInk2FormResponseV1,
   type RunTaxAdjustmentsResponseV1,
   type RunTaxSummaryResponseV1,
-  type GenerateMappingReviewSuggestionsResponseV1,
   type WorkspaceStatusV1,
   applyAnnualReportOverridesV1,
   applyInk2OverridesV1,
@@ -37,8 +45,8 @@ import {
   createPdfExportV1,
   createTaskV1,
   generateMappingReviewSuggestionsV1,
-  getActiveInk2FormV1,
   getActiveAnnualReportExtractionV1,
+  getActiveInk2FormV1,
   getActiveMappingDecisionsV1,
   getActiveTaxAdjustmentsV1,
   getActiveTaxSummaryV1,
@@ -46,17 +54,12 @@ import {
   listCommentsV1,
   listTasksV1,
   listWorkspaceExportsV1,
-  runInk2FormV1,
   runAnnualReportExtractionV1,
+  runInk2FormV1,
   runTaxAdjustmentsV1,
   runTaxSummaryV1,
   runTrialBalancePipelineV1,
 } from "../../lib/http/workspace-api";
-import {
-  listSilverfinTaxCategoriesV1,
-  type SilverfinTaxCategoryCodeV1,
-} from "../../../shared/contracts/mapping.v1";
-import type { TrialBalanceFileTypeV1 } from "../../../shared/contracts/trial-balance.v1";
 
 const allStatusesV1: WorkspaceStatusV1[] = [
   "draft",
@@ -198,10 +201,11 @@ export function WorkspaceDetailPage() {
   const [reviewMax, setReviewMax] = useState(30);
   const [reviewResult, setReviewResult] =
     useState<GenerateMappingReviewSuggestionsResponseV1 | null>(null);
-  const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<string[]>([]);
-  const [taxAdjustmentsPolicyVersion, setTaxAdjustmentsPolicyVersion] = useState(
-    "tax-adjustments.v1",
+  const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<string[]>(
+    [],
   );
+  const [taxAdjustmentsPolicyVersion, setTaxAdjustmentsPolicyVersion] =
+    useState("tax-adjustments.v1");
   const [adjustmentOverrideAmount, setAdjustmentOverrideAmount] = useState("");
   const [adjustmentOverrideReason, setAdjustmentOverrideReason] = useState("");
   const [ink2OverrideAmount, setInk2OverrideAmount] = useState("");
@@ -216,12 +220,16 @@ export function WorkspaceDetailPage() {
 
   const workspaceQuery = useQuery({
     queryKey: workspaceDetailKeyV1(principal.tenantId, workspaceId),
-    queryFn: () => getWorkspaceByIdV1({ tenantId: principal.tenantId, workspaceId }),
+    queryFn: () =>
+      getWorkspaceByIdV1({ tenantId: principal.tenantId, workspaceId }),
   });
   const mappingQuery = useQuery({
     queryKey: activeMappingKeyV1(principal.tenantId, workspaceId),
     queryFn: () =>
-      getActiveMappingDecisionsV1({ tenantId: principal.tenantId, workspaceId }),
+      getActiveMappingDecisionsV1({
+        tenantId: principal.tenantId,
+        workspaceId,
+      }),
   });
   const annualReportQuery = useQuery({
     queryKey: activeAnnualReportKeyV1(principal.tenantId, workspaceId),
@@ -242,7 +250,8 @@ export function WorkspaceDetailPage() {
   });
   const taxAdjustmentsQuery = useQuery({
     queryKey: activeTaxAdjustmentsKeyV1(principal.tenantId, workspaceId),
-    queryFn: () => getActiveTaxAdjustmentsV1({ tenantId: principal.tenantId, workspaceId }),
+    queryFn: () =>
+      getActiveTaxAdjustmentsV1({ tenantId: principal.tenantId, workspaceId }),
     retry: (failureCount, error) => {
       if (
         error instanceof ApiClientError &&
@@ -255,9 +264,13 @@ export function WorkspaceDetailPage() {
   });
   const taxSummaryQuery = useQuery({
     queryKey: activeTaxSummaryKeyV1(principal.tenantId, workspaceId),
-    queryFn: () => getActiveTaxSummaryV1({ tenantId: principal.tenantId, workspaceId }),
+    queryFn: () =>
+      getActiveTaxSummaryV1({ tenantId: principal.tenantId, workspaceId }),
     retry: (failureCount, error) => {
-      if (error instanceof ApiClientError && error.code === "ADJUSTMENTS_NOT_FOUND") {
+      if (
+        error instanceof ApiClientError &&
+        error.code === "ADJUSTMENTS_NOT_FOUND"
+      ) {
         return false;
       }
       return failureCount < 2;
@@ -265,7 +278,8 @@ export function WorkspaceDetailPage() {
   });
   const ink2FormQuery = useQuery({
     queryKey: activeInk2FormKeyV1(principal.tenantId, workspaceId),
-    queryFn: () => getActiveInk2FormV1({ tenantId: principal.tenantId, workspaceId }),
+    queryFn: () =>
+      getActiveInk2FormV1({ tenantId: principal.tenantId, workspaceId }),
     retry: (failureCount, error) => {
       if (error instanceof ApiClientError && error.code === "FORM_NOT_FOUND") {
         return false;
@@ -275,11 +289,13 @@ export function WorkspaceDetailPage() {
   });
   const exportsQuery = useQuery({
     queryKey: exportsKeyV1(principal.tenantId, workspaceId),
-    queryFn: () => listWorkspaceExportsV1({ tenantId: principal.tenantId, workspaceId }),
+    queryFn: () =>
+      listWorkspaceExportsV1({ tenantId: principal.tenantId, workspaceId }),
   });
   const commentsQuery = useQuery({
     queryKey: commentsKeyV1(principal.tenantId, workspaceId),
-    queryFn: () => listCommentsV1({ tenantId: principal.tenantId, workspaceId }),
+    queryFn: () =>
+      listCommentsV1({ tenantId: principal.tenantId, workspaceId }),
   });
   const tasksQuery = useQuery({
     queryKey: tasksKeyV1(principal.tenantId, workspaceId),
@@ -308,7 +324,7 @@ export function WorkspaceDetailPage() {
       }
       return next;
     });
-  }, [mappingQuery.data?.active.artifactId, mappingQuery.data?.active.version]);
+  }, [mappingQuery.data?.mapping.decisions]);
 
   useEffect(() => {
     const extraction = annualReportQuery.data?.extraction;
@@ -345,10 +361,7 @@ export function WorkspaceDetailPage() {
         reason: "",
       },
     });
-  }, [
-    annualReportQuery.data?.active.artifactId,
-    annualReportQuery.data?.active.version,
-  ]);
+  }, [annualReportQuery.data?.extraction]);
 
   const statusMutation = useMutation({
     mutationFn: () =>
@@ -363,7 +376,9 @@ export function WorkspaceDetailPage() {
         queryClient.invalidateQueries({
           queryKey: workspaceDetailKeyV1(principal.tenantId, workspaceId),
         }),
-        queryClient.invalidateQueries({ queryKey: workspaceListKeyV1(principal.tenantId) }),
+        queryClient.invalidateQueries({
+          queryKey: workspaceListKeyV1(principal.tenantId),
+        }),
       ]);
       setStatusReason("");
     },
@@ -432,7 +447,9 @@ export function WorkspaceDetailPage() {
       }
 
       const value =
-        fieldKey === "profitBeforeTax" ? Number(draft.value) : draft.value.trim();
+        fieldKey === "profitBeforeTax"
+          ? Number(draft.value)
+          : draft.value.trim();
       if (
         (fieldKey !== "profitBeforeTax" && String(value).length === 0) ||
         (fieldKey === "profitBeforeTax" && !Number.isFinite(value as number))
@@ -709,18 +726,22 @@ export function WorkspaceDetailPage() {
       }),
     onSuccess: (result) => {
       setReviewResult(result);
-      setSelectedSuggestionIds(result.suggestions.suggestions.map((s) => s.decisionId));
+      setSelectedSuggestionIds(
+        result.suggestions.suggestions.map((s) => s.decisionId),
+      );
     },
   });
 
   const applySuggestionsMutation = useMutation({
     mutationFn: async () => {
       const active = mappingQuery.data?.active;
-      if (!active || !reviewResult) throw new Error("Generate suggestions first.");
+      if (!active || !reviewResult)
+        throw new Error("Generate suggestions first.");
       const selected = reviewResult.suggestions.suggestions.filter((s) =>
         selectedSuggestionIds.includes(s.decisionId),
       );
-      if (selected.length === 0) throw new Error("Select at least one suggestion.");
+      if (selected.length === 0)
+        throw new Error("Select at least one suggestion.");
       return applyMappingOverridesV1({
         tenantId: principal.tenantId,
         workspaceId,
@@ -781,8 +802,8 @@ export function WorkspaceDetailPage() {
         <p className="eyebrow">Tax workspace</p>
         <h1>Mapping cockpit</h1>
         <p className="hint-text">
-          Upload trial balance files, run deterministic mapping, apply overrides, and
-          test advisory review suggestions.
+          Upload trial balance files, run deterministic mapping, apply
+          overrides, and test advisory review suggestions.
         </p>
         <p>
           <Link to="/app/workspaces">Back to workspace list</Link>
@@ -794,7 +815,9 @@ export function WorkspaceDetailPage() {
           <h2>Workspace snapshot</h2>
           {workspaceQuery.isPending ? <p>Loading workspace...</p> : null}
           {workspaceQuery.isError ? (
-            <p className="error-text">{toUserFacingErrorMessage(workspaceQuery.error)}</p>
+            <p className="error-text">
+              {toUserFacingErrorMessage(workspaceQuery.error)}
+            </p>
           ) : null}
           {workspaceQuery.isSuccess ? (
             <dl className="workspace-meta-grid">
@@ -853,7 +876,9 @@ export function WorkspaceDetailPage() {
             <button
               type="submit"
               className="primary"
-              disabled={runAnnualReportMutation.isPending || annualReportFile === null}
+              disabled={
+                runAnnualReportMutation.isPending || annualReportFile === null
+              }
             >
               {runAnnualReportMutation.isPending
                 ? "Extracting..."
@@ -865,7 +890,9 @@ export function WorkspaceDetailPage() {
               {toUserFacingErrorMessage(runAnnualReportMutation.error)}
             </p>
           ) : null}
-          {annualReportQuery.isPending ? <p>Loading annual extraction...</p> : null}
+          {annualReportQuery.isPending ? (
+            <p>Loading annual extraction...</p>
+          ) : null}
           {annualExtractionNotFound ? (
             <p className="hint-text">
               No annual extraction yet. Upload a PDF or DOCX file to start.
@@ -898,12 +925,17 @@ export function WorkspaceDetailPage() {
                   </thead>
                   <tbody>
                     {annualReportFieldConfigsV1.map((config) => {
-                      const field = annualReportQuery.data.extraction.fields[config.key];
+                      const field =
+                        annualReportQuery.data.extraction.fields[config.key];
                       const draft = annualOverrideDrafts[config.key];
                       return (
                         <tr key={config.key}>
                           <td>{config.label}</td>
-                          <td>{field.value !== undefined ? String(field.value) : "-"}</td>
+                          <td>
+                            {field.value !== undefined
+                              ? String(field.value)
+                              : "-"}
+                          </td>
                           <td>{field.status}</td>
                           <td>
                             {config.type === "select" ? (
@@ -914,7 +946,10 @@ export function WorkspaceDetailPage() {
                                   setAnnualOverrideDrafts((current) => ({
                                     ...current,
                                     [config.key]: {
-                                      ...(current[config.key] ?? { reason: "", value: "" }),
+                                      ...(current[config.key] ?? {
+                                        reason: "",
+                                        value: "",
+                                      }),
                                       value: event.target.value,
                                     },
                                   }))
@@ -927,13 +962,18 @@ export function WorkspaceDetailPage() {
                             ) : (
                               <input
                                 aria-label={`${config.label} override value`}
-                                type={config.type === "number" ? "number" : "text"}
+                                type={
+                                  config.type === "number" ? "number" : "text"
+                                }
                                 value={draft?.value ?? ""}
                                 onChange={(event) =>
                                   setAnnualOverrideDrafts((current) => ({
                                     ...current,
                                     [config.key]: {
-                                      ...(current[config.key] ?? { reason: "", value: "" }),
+                                      ...(current[config.key] ?? {
+                                        reason: "",
+                                        value: "",
+                                      }),
                                       value: event.target.value,
                                     },
                                   }))
@@ -950,7 +990,10 @@ export function WorkspaceDetailPage() {
                                 setAnnualOverrideDrafts((current) => ({
                                   ...current,
                                   [config.key]: {
-                                    ...(current[config.key] ?? { reason: "", value: "" }),
+                                    ...(current[config.key] ?? {
+                                      reason: "",
+                                      value: "",
+                                    }),
                                     reason: event.target.value,
                                   },
                                 }))
@@ -962,7 +1005,9 @@ export function WorkspaceDetailPage() {
                               type="button"
                               className="secondary"
                               disabled={applyAnnualOverrideMutation.isPending}
-                              onClick={() => applyAnnualOverrideMutation.mutate(config.key)}
+                              onClick={() =>
+                                applyAnnualOverrideMutation.mutate(config.key)
+                              }
                             >
                               Apply
                             </button>
@@ -1017,7 +1062,9 @@ export function WorkspaceDetailPage() {
               <input
                 type="file"
                 accept=".xlsx,.xlsm,.xls,.xlsb,.csv"
-                onChange={(event) => setUploadFile(event.currentTarget.files?.[0] ?? null)}
+                onChange={(event) =>
+                  setUploadFile(event.currentTarget.files?.[0] ?? null)
+                }
               />
             </label>
             <label>
@@ -1037,11 +1084,14 @@ export function WorkspaceDetailPage() {
             </button>
           </form>
           {runPipelineMutation.isError ? (
-            <p className="error-text">{toUserFacingErrorMessage(runPipelineMutation.error)}</p>
+            <p className="error-text">
+              {toUserFacingErrorMessage(runPipelineMutation.error)}
+            </p>
           ) : null}
           {runPipelineMutation.isSuccess ? (
             <p className="success-text">
-              Mapping v{runPipelineMutation.data.pipeline.artifacts.mapping.version} is
+              Mapping v
+              {runPipelineMutation.data.pipeline.artifacts.mapping.version} is
               now active.
             </p>
           ) : null}
@@ -1075,10 +1125,14 @@ export function WorkspaceDetailPage() {
         </div>
         {mappingQuery.isPending ? <p>Loading mapping...</p> : null}
         {mappingNotFound ? (
-          <p className="hint-text">No mapping yet. Run the trial balance pipeline first.</p>
+          <p className="hint-text">
+            No mapping yet. Run the trial balance pipeline first.
+          </p>
         ) : null}
         {mappingQuery.isError && !mappingNotFound ? (
-          <p className="error-text">{toUserFacingErrorMessage(mappingQuery.error)}</p>
+          <p className="error-text">
+            {toUserFacingErrorMessage(mappingQuery.error)}
+          </p>
         ) : null}
         {mappingQuery.isSuccess ? (
           <div className="table-wrap">
@@ -1098,21 +1152,31 @@ export function WorkspaceDetailPage() {
                   const draft = drafts[decision.id];
                   const allowedCategories = categoriesV1.filter(
                     (category) =>
-                      category.statementType === decision.proposedCategory.statementType,
+                      category.statementType ===
+                      decision.proposedCategory.statementType,
                   );
 
                   return (
                     <tr key={decision.id}>
                       <td>
-                        <div className="cell-title">{decision.sourceAccountNumber}</div>
-                        <div className="cell-subtle">{decision.accountName}</div>
+                        <div className="cell-title">
+                          {decision.sourceAccountNumber}
+                        </div>
                         <div className="cell-subtle">
-                          {Math.round(decision.confidence * 100)}% · {decision.status}
+                          {decision.accountName}
+                        </div>
+                        <div className="cell-subtle">
+                          {Math.round(decision.confidence * 100)}% ·{" "}
+                          {decision.status}
                         </div>
                       </td>
                       <td>
-                        <div className="cell-title">{decision.selectedCategory.code}</div>
-                        <div className="cell-subtle">{decision.selectedCategory.name}</div>
+                        <div className="cell-title">
+                          {decision.selectedCategory.code}
+                        </div>
+                        <div className="cell-subtle">
+                          {decision.selectedCategory.name}
+                        </div>
                       </td>
                       <td>
                         <select
@@ -1122,7 +1186,8 @@ export function WorkspaceDetailPage() {
                               ...current,
                               [decision.id]: {
                                 ...(current[decision.id] ?? {
-                                  selectedCategoryCode: decision.selectedCategory.code,
+                                  selectedCategoryCode:
+                                    decision.selectedCategory.code,
                                   reason: "",
                                   scope: "return",
                                 }),
@@ -1137,7 +1202,10 @@ export function WorkspaceDetailPage() {
                       </td>
                       <td>
                         <select
-                          value={draft?.selectedCategoryCode ?? decision.selectedCategory.code}
+                          value={
+                            draft?.selectedCategoryCode ??
+                            decision.selectedCategory.code
+                          }
                           onChange={(event) =>
                             setDrafts((current) => ({
                               ...current,
@@ -1145,7 +1213,8 @@ export function WorkspaceDetailPage() {
                                 ...(current[decision.id] ?? {
                                   scope: "return",
                                   reason: "",
-                                  selectedCategoryCode: decision.selectedCategory.code,
+                                  selectedCategoryCode:
+                                    decision.selectedCategory.code,
                                 }),
                                 selectedCategoryCode: event.target
                                   .value as SilverfinTaxCategoryCodeV1,
@@ -1171,7 +1240,8 @@ export function WorkspaceDetailPage() {
                               [decision.id]: {
                                 ...(current[decision.id] ?? {
                                   scope: "return",
-                                  selectedCategoryCode: decision.selectedCategory.code,
+                                  selectedCategoryCode:
+                                    decision.selectedCategory.code,
                                   reason: "",
                                 }),
                                 reason: event.target.value,
@@ -1185,7 +1255,9 @@ export function WorkspaceDetailPage() {
                           type="button"
                           className="secondary"
                           disabled={applyOverrideMutation.isPending}
-                          onClick={() => applyOverrideMutation.mutate(decision.id)}
+                          onClick={() =>
+                            applyOverrideMutation.mutate(decision.id)
+                          }
                         >
                           Apply
                         </button>
@@ -1198,7 +1270,9 @@ export function WorkspaceDetailPage() {
           </div>
         ) : null}
         {applyOverrideMutation.isError ? (
-          <p className="error-text">{toUserFacingErrorMessage(applyOverrideMutation.error)}</p>
+          <p className="error-text">
+            {toUserFacingErrorMessage(applyOverrideMutation.error)}
+          </p>
         ) : null}
       </article>
 
@@ -1215,7 +1289,9 @@ export function WorkspaceDetailPage() {
             Scope
             <select
               value={reviewScope}
-              onChange={(event) => setReviewScope(event.target.value as "return" | "user")}
+              onChange={(event) =>
+                setReviewScope(event.target.value as "return" | "user")
+              }
             >
               <option value="return">Return</option>
               <option value="user">User</option>
@@ -1228,7 +1304,9 @@ export function WorkspaceDetailPage() {
               min={1}
               max={500}
               value={reviewMax}
-              onChange={(event) => setReviewMax(Number(event.target.value) || 30)}
+              onChange={(event) =>
+                setReviewMax(Number(event.target.value) || 30)
+              }
             />
           </label>
           <button
@@ -1236,16 +1314,21 @@ export function WorkspaceDetailPage() {
             className="primary"
             disabled={reviewMutation.isPending || !mappingQuery.isSuccess}
           >
-            {reviewMutation.isPending ? "Generating..." : "Generate suggestions"}
+            {reviewMutation.isPending
+              ? "Generating..."
+              : "Generate suggestions"}
           </button>
         </form>
         {reviewMutation.isError ? (
-          <p className="error-text">{toUserFacingErrorMessage(reviewMutation.error)}</p>
+          <p className="error-text">
+            {toUserFacingErrorMessage(reviewMutation.error)}
+          </p>
         ) : null}
         {reviewResult ? (
           <>
             <p className="hint-text">
-              {reviewResult.suggestions.summary.suggestedOverrides} suggestions generated.
+              {reviewResult.suggestions.summary.suggestedOverrides} suggestions
+              generated.
             </p>
             <div className="table-wrap">
               <table>
@@ -1261,7 +1344,9 @@ export function WorkspaceDetailPage() {
                 <tbody>
                   {reviewResult.suggestions.suggestions.map((suggestion) => {
                     const decision = decisionById.get(suggestion.decisionId);
-                    const isChecked = selectedSuggestionIds.includes(suggestion.decisionId);
+                    const isChecked = selectedSuggestionIds.includes(
+                      suggestion.decisionId,
+                    );
                     return (
                       <tr key={suggestion.decisionId}>
                         <td>
@@ -1272,12 +1357,17 @@ export function WorkspaceDetailPage() {
                               setSelectedSuggestionIds((current) =>
                                 event.target.checked
                                   ? [...current, suggestion.decisionId]
-                                  : current.filter((id) => id !== suggestion.decisionId),
+                                  : current.filter(
+                                      (id) => id !== suggestion.decisionId,
+                                    ),
                               );
                             }}
                           />
                         </td>
-                        <td>{decision?.sourceAccountNumber ?? suggestion.decisionId}</td>
+                        <td>
+                          {decision?.sourceAccountNumber ??
+                            suggestion.decisionId}
+                        </td>
                         <td>{suggestion.selectedCategoryCode}</td>
                         <td>{Math.round(suggestion.confidence * 100)}%</td>
                         <td>{suggestion.reason}</td>
@@ -1291,7 +1381,8 @@ export function WorkspaceDetailPage() {
               type="button"
               className="primary"
               disabled={
-                applySuggestionsMutation.isPending || selectedSuggestionIds.length === 0
+                applySuggestionsMutation.isPending ||
+                selectedSuggestionIds.length === 0
               }
               onClick={() => applySuggestionsMutation.mutate()}
             >
@@ -1301,7 +1392,9 @@ export function WorkspaceDetailPage() {
             </button>
           </>
         ) : (
-          <p className="hint-text">Generate suggestions to review advisory overrides.</p>
+          <p className="hint-text">
+            Generate suggestions to review advisory overrides.
+          </p>
         )}
         {applySuggestionsMutation.isError ? (
           <p className="error-text">
@@ -1324,15 +1417,21 @@ export function WorkspaceDetailPage() {
             <input
               type="text"
               value={taxAdjustmentsPolicyVersion}
-              onChange={(event) => setTaxAdjustmentsPolicyVersion(event.target.value)}
+              onChange={(event) =>
+                setTaxAdjustmentsPolicyVersion(event.target.value)
+              }
             />
           </label>
           <button
             type="submit"
             className="primary"
-            disabled={runTaxAdjustmentsMutation.isPending || !annualExtractionConfirmed}
+            disabled={
+              runTaxAdjustmentsMutation.isPending || !annualExtractionConfirmed
+            }
           >
-            {runTaxAdjustmentsMutation.isPending ? "Running..." : "Run adjustments"}
+            {runTaxAdjustmentsMutation.isPending
+              ? "Running..."
+              : "Run adjustments"}
           </button>
         </form>
         {taxAdjustmentsQuery.isSuccess ? (
@@ -1343,10 +1442,15 @@ export function WorkspaceDetailPage() {
           </p>
         ) : null}
         {taxAdjustmentsNotFound ? (
-          <p className="hint-text">No active adjustments yet.</p>
+          <p className="hint-text">
+            No active adjustments yet. Confirm annual extraction and run trial
+            balance mapping first.
+          </p>
         ) : null}
         {taxAdjustmentsQuery.isError && !taxAdjustmentsNotFound ? (
-          <p className="error-text">{toUserFacingErrorMessage(taxAdjustmentsQuery.error)}</p>
+          <p className="error-text">
+            {toUserFacingErrorMessage(taxAdjustmentsQuery.error)}
+          </p>
         ) : null}
         <div className="form-grid form-grid--inline">
           <label>
@@ -1354,7 +1458,9 @@ export function WorkspaceDetailPage() {
             <input
               type="number"
               value={adjustmentOverrideAmount}
-              onChange={(event) => setAdjustmentOverrideAmount(event.target.value)}
+              onChange={(event) =>
+                setAdjustmentOverrideAmount(event.target.value)
+              }
             />
           </label>
           <label>
@@ -1362,7 +1468,9 @@ export function WorkspaceDetailPage() {
             <input
               type="text"
               value={adjustmentOverrideReason}
-              onChange={(event) => setAdjustmentOverrideReason(event.target.value)}
+              onChange={(event) =>
+                setAdjustmentOverrideReason(event.target.value)
+              }
             />
           </label>
           <button
@@ -1391,7 +1499,9 @@ export function WorkspaceDetailPage() {
         <button
           type="button"
           className="primary"
-          disabled={runTaxSummaryMutation.isPending || !annualExtractionConfirmed}
+          disabled={
+            runTaxSummaryMutation.isPending || !annualExtractionConfirmed
+          }
           onClick={() => runTaxSummaryMutation.mutate()}
         >
           {runTaxSummaryMutation.isPending ? "Running..." : "Run tax summary"}
@@ -1408,9 +1518,15 @@ export function WorkspaceDetailPage() {
             </div>
           </dl>
         ) : null}
-        {taxSummaryNotFound ? <p className="hint-text">No tax summary yet.</p> : null}
+        {taxSummaryNotFound ? (
+          <p className="hint-text">
+            No tax summary yet. Run tax adjustments first.
+          </p>
+        ) : null}
         {taxSummaryQuery.isError && !taxSummaryNotFound ? (
-          <p className="error-text">{toUserFacingErrorMessage(taxSummaryQuery.error)}</p>
+          <p className="error-text">
+            {toUserFacingErrorMessage(taxSummaryQuery.error)}
+          </p>
         ) : null}
       </article>
 
@@ -1436,7 +1552,9 @@ export function WorkspaceDetailPage() {
                 <input
                   type="number"
                   value={ink2OverrideAmount}
-                  onChange={(event) => setInk2OverrideAmount(event.target.value)}
+                  onChange={(event) =>
+                    setInk2OverrideAmount(event.target.value)
+                  }
                 />
               </label>
               <label>
@@ -1444,7 +1562,9 @@ export function WorkspaceDetailPage() {
                 <input
                   type="text"
                   value={ink2OverrideReason}
-                  onChange={(event) => setInk2OverrideReason(event.target.value)}
+                  onChange={(event) =>
+                    setInk2OverrideReason(event.target.value)
+                  }
                 />
               </label>
               <button
@@ -1458,12 +1578,20 @@ export function WorkspaceDetailPage() {
             </div>
           </>
         ) : null}
-        {ink2FormNotFound ? <p className="hint-text">No INK2 form yet.</p> : null}
+        {ink2FormNotFound ? (
+          <p className="hint-text">
+            No INK2 form yet. Run tax adjustments and tax summary first.
+          </p>
+        ) : null}
         {ink2FormQuery.isError && !ink2FormNotFound ? (
-          <p className="error-text">{toUserFacingErrorMessage(ink2FormQuery.error)}</p>
+          <p className="error-text">
+            {toUserFacingErrorMessage(ink2FormQuery.error)}
+          </p>
         ) : null}
         {applyInk2OverrideMutation.isError ? (
-          <p className="error-text">{toUserFacingErrorMessage(applyInk2OverrideMutation.error)}</p>
+          <p className="error-text">
+            {toUserFacingErrorMessage(applyInk2OverrideMutation.error)}
+          </p>
         ) : null}
       </article>
 
@@ -1475,13 +1603,19 @@ export function WorkspaceDetailPage() {
           disabled={createPdfExportMutation.isPending}
           onClick={() => createPdfExportMutation.mutate()}
         >
-          {createPdfExportMutation.isPending ? "Generating..." : "Generate PDF export"}
+          {createPdfExportMutation.isPending
+            ? "Generating..."
+            : "Generate PDF export"}
         </button>
         {createPdfExportMutation.isError ? (
-          <p className="error-text">{toUserFacingErrorMessage(createPdfExportMutation.error)}</p>
+          <p className="error-text">
+            {toUserFacingErrorMessage(createPdfExportMutation.error)}
+          </p>
         ) : null}
         {exportsQuery.isSuccess ? (
-          <p className="hint-text">Exports: {exportsQuery.data.exports.length}</p>
+          <p className="hint-text">
+            Exports: {exportsQuery.data.exports.length}
+          </p>
         ) : null}
       </article>
 
@@ -1502,7 +1636,11 @@ export function WorkspaceDetailPage() {
               onChange={(event) => setNewCommentBody(event.target.value)}
             />
           </label>
-          <button type="submit" className="secondary" disabled={createCommentMutation.isPending}>
+          <button
+            type="submit"
+            className="secondary"
+            disabled={createCommentMutation.isPending}
+          >
             Add comment
           </button>
         </form>
@@ -1514,7 +1652,9 @@ export function WorkspaceDetailPage() {
           </ul>
         ) : null}
         {createCommentMutation.isError ? (
-          <p className="error-text">{toUserFacingErrorMessage(createCommentMutation.error)}</p>
+          <p className="error-text">
+            {toUserFacingErrorMessage(createCommentMutation.error)}
+          </p>
         ) : null}
       </article>
 
@@ -1543,7 +1683,11 @@ export function WorkspaceDetailPage() {
               onChange={(event) => setNewTaskDescription(event.target.value)}
             />
           </label>
-          <button type="submit" className="secondary" disabled={createTaskMutation.isPending}>
+          <button
+            type="submit"
+            className="secondary"
+            disabled={createTaskMutation.isPending}
+          >
             Add task
           </button>
         </form>
@@ -1567,7 +1711,9 @@ export function WorkspaceDetailPage() {
           </ul>
         ) : null}
         {createTaskMutation.isError ? (
-          <p className="error-text">{toUserFacingErrorMessage(createTaskMutation.error)}</p>
+          <p className="error-text">
+            {toUserFacingErrorMessage(createTaskMutation.error)}
+          </p>
         ) : null}
       </article>
 
@@ -1584,7 +1730,9 @@ export function WorkspaceDetailPage() {
             Target status
             <select
               value={toStatus}
-              onChange={(event) => setToStatus(event.target.value as WorkspaceStatusV1)}
+              onChange={(event) =>
+                setToStatus(event.target.value as WorkspaceStatusV1)
+              }
             >
               {allStatusesV1.map((status) => (
                 <option key={status} value={status}>
@@ -1605,16 +1753,23 @@ export function WorkspaceDetailPage() {
           <button
             type="submit"
             className="secondary"
-            disabled={statusMutation.isPending || (requiresReason && !statusReason.trim())}
+            disabled={
+              statusMutation.isPending ||
+              (requiresReason && !statusReason.trim())
+            }
           >
             {statusMutation.isPending ? "Applying..." : "Apply transition"}
           </button>
         </form>
         {requiresReason ? (
-          <p className="hint-text">Reopening from filed to draft requires a reason.</p>
+          <p className="hint-text">
+            Reopening from filed to draft requires a reason.
+          </p>
         ) : null}
         {statusMutation.isError ? (
-          <p className="error-text">{toUserFacingErrorMessage(statusMutation.error)}</p>
+          <p className="error-text">
+            {toUserFacingErrorMessage(statusMutation.error)}
+          </p>
         ) : null}
         {statusMutation.isSuccess ? (
           <p className="success-text">Workspace status updated successfully.</p>

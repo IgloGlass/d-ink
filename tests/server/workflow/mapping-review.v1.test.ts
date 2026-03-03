@@ -15,13 +15,13 @@ import type {
 import { executeMappingReviewModelV1 } from "../../../src/server/ai/modules/mapping-review/executor.v1";
 import { loadMappingReviewModuleConfigV1 } from "../../../src/server/ai/modules/mapping-review/loader.v1";
 import { generateMappingReviewSuggestionsV1 } from "../../../src/server/workflow/mapping-review.v1";
+import type { AuditEventV2 } from "../../../src/shared/contracts/audit-event.v2";
 import {
-  MappingDecisionSetPayloadV1Schema,
   type MappingDecisionSetPayloadV1,
+  MappingDecisionSetPayloadV1Schema,
 } from "../../../src/shared/contracts/mapping.v1";
 import { parseReconciliationResultPayloadV1 } from "../../../src/shared/contracts/reconciliation.v1";
 import { parseWorkspaceV1 } from "../../../src/shared/contracts/workspace.v1";
-import type { AuditEventV2 } from "../../../src/shared/contracts/audit-event.v2";
 
 const TENANT_ID = "92000000-0000-4000-8000-000000000001";
 const WORKSPACE_ID = "92000000-0000-4000-8000-000000000002";
@@ -71,7 +71,9 @@ function createMappingPayloadV1(): MappingDecisionSetPayloadV1 {
   });
 }
 
-function createReconciliationPayloadV1(input: { canProceedToMapping: boolean }) {
+function createReconciliationPayloadV1(input: {
+  canProceedToMapping: boolean;
+}) {
   return parseReconciliationResultPayloadV1({
     schemaVersion: "reconciliation_result_v1",
     status: input.canProceedToMapping ? "pass" : "fail",
@@ -107,21 +109,27 @@ class InMemoryArtifactRepositoryV1 implements TbPipelineArtifactRepositoryV1 {
   ) {}
 
   async appendMappingAndSetActive(
-    input: Parameters<TbPipelineArtifactRepositoryV1["appendMappingAndSetActive"]>[0],
+    input: Parameters<
+      TbPipelineArtifactRepositoryV1["appendMappingAndSetActive"]
+    >[0],
   ): Promise<TbPipelineArtifactWriteResultV1<"mapping">> {
     void input;
     throw new Error("Not implemented for this test.");
   }
 
   async appendReconciliationAndSetActive(
-    input: Parameters<TbPipelineArtifactRepositoryV1["appendReconciliationAndSetActive"]>[0],
+    input: Parameters<
+      TbPipelineArtifactRepositoryV1["appendReconciliationAndSetActive"]
+    >[0],
   ): Promise<TbPipelineArtifactWriteResultV1<"reconciliation">> {
     void input;
     throw new Error("Not implemented for this test.");
   }
 
   async appendTrialBalanceAndSetActive(
-    input: Parameters<TbPipelineArtifactRepositoryV1["appendTrialBalanceAndSetActive"]>[0],
+    input: Parameters<
+      TbPipelineArtifactRepositoryV1["appendTrialBalanceAndSetActive"]
+    >[0],
   ): Promise<TbPipelineArtifactWriteResultV1<"trial_balance">> {
     void input;
     throw new Error("Not implemented for this test.");
@@ -135,14 +143,18 @@ class InMemoryArtifactRepositoryV1 implements TbPipelineArtifactRepositoryV1 {
   }
 
   async getActiveReconciliation(
-    input: Parameters<TbPipelineArtifactRepositoryV1["getActiveReconciliation"]>[0],
+    input: Parameters<
+      TbPipelineArtifactRepositoryV1["getActiveReconciliation"]
+    >[0],
   ) {
     void input;
     return this.reconciliation;
   }
 
   async getActiveTrialBalance(
-    input: Parameters<TbPipelineArtifactRepositoryV1["getActiveTrialBalance"]>[0],
+    input: Parameters<
+      TbPipelineArtifactRepositoryV1["getActiveTrialBalance"]
+    >[0],
   ) {
     void input;
     return null;
@@ -156,14 +168,18 @@ class InMemoryArtifactRepositoryV1 implements TbPipelineArtifactRepositoryV1 {
   }
 
   async listReconciliationVersions(
-    input: Parameters<TbPipelineArtifactRepositoryV1["listReconciliationVersions"]>[0],
+    input: Parameters<
+      TbPipelineArtifactRepositoryV1["listReconciliationVersions"]
+    >[0],
   ) {
     void input;
     return this.reconciliation ? [this.reconciliation] : [];
   }
 
   async listTrialBalanceVersions(
-    input: Parameters<TbPipelineArtifactRepositoryV1["listTrialBalanceVersions"]>[0],
+    input: Parameters<
+      TbPipelineArtifactRepositoryV1["listTrialBalanceVersions"]
+    >[0],
   ) {
     void input;
     return [];
@@ -221,7 +237,9 @@ class InMemoryWorkspaceRepositoryV1 implements WorkspaceRepositoryV1 {
   }
 
   async updateStatusCompareAndSetWithAudit(
-    input: Parameters<WorkspaceRepositoryV1["updateStatusCompareAndSetWithAudit"]>[0],
+    input: Parameters<
+      WorkspaceRepositoryV1["updateStatusCompareAndSetWithAudit"]
+    >[0],
   ): Promise<WorkspaceRepositoryUpdateWithAuditResultV1> {
     void input;
     throw new Error("Not implemented for this test.");
@@ -332,6 +350,58 @@ describe("mapping review workflow v1", () => {
     if (!result.ok) {
       expect(result.error.code).toBe("RECONCILIATION_BLOCKED");
     }
+  });
+
+  it("sends projected minimal input surface to model executor", async () => {
+    let capturedInput: unknown = null;
+
+    const result = await generateMappingReviewSuggestionsV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+      },
+      createDeps({
+        canProceedToMapping: true,
+        runModel: async (input) => {
+          capturedInput = input;
+          return {
+            ok: true,
+            suggestions: [],
+          };
+        },
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (
+      !capturedInput ||
+      typeof capturedInput !== "object" ||
+      !("projection" in capturedInput)
+    ) {
+      throw new Error("Expected model executor input to be captured.");
+    }
+    const projectedInput = capturedInput as {
+      projection: {
+        canProceedToMapping: boolean;
+        decisions: Array<{
+          accountName: string;
+          evidenceTypes: string[];
+          id: string;
+          proposedStatementType: "balance_sheet" | "income_statement";
+          selectedCategoryCode: string;
+        }>;
+      };
+    };
+    expect(projectedInput.projection.canProceedToMapping).toBe(true);
+    expect(projectedInput.projection.decisions).toEqual([
+      {
+        id: "Trial Balance:2:6073",
+        accountName: "Representation partially deductible",
+        proposedStatementType: "income_statement",
+        selectedCategoryCode: "607100",
+        evidenceTypes: ["tb_row"],
+      },
+    ]);
   });
 
   it("returns AI_OUTPUT_INVALID when model suggests incompatible statement type", async () => {

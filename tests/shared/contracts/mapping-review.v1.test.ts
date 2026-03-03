@@ -100,4 +100,3 @@ describe("mapping review contracts v1", () => {
     expect(badErrorCode.success).toBe(false);
   });
 });
-

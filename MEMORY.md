@@ -105,3 +105,4 @@ When a major product or architecture decision changes:
 - 2026-03-02: Locked initial V1 TB canonical columns to `Account Name`, `Account Number`, `Opening Balance`, `Closing Balance` with duplicate account-number suffixing (`.1`, `.2`, ...) for deterministic uniqueness.
 - 2026-03-02: Adopted structured AI reasoning baseline (`module-spec` + `policy-pack` + `policy-patch`) and added reference templates/examples to support auditable, patch-friendly policy updates.
 - 2026-03-03: Locked strict V1 core completion order (annual extraction -> adjustments -> summary -> INK2 -> PDF export -> comments/tasks) and kept roles as `Admin`/`Editor`.
+- 2026-03-03: Established stabilized Tickets 1-5 baseline anchor for restart/recovery and release traceability under tag `baseline-2026-03-03-tickets-1-5`.

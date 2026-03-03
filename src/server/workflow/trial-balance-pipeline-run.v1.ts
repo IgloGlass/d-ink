@@ -3,6 +3,7 @@ import type { z } from "zod";
 import type { AuditRepositoryV1 } from "../../db/repositories/audit.repository.v1";
 import type { MappingPreferenceRepositoryV1 } from "../../db/repositories/mapping-preference.repository.v1";
 import type { TbPipelineArtifactRepositoryV1 } from "../../db/repositories/tb-pipeline-artifact.repository.v1";
+import { AUDIT_EVENT_TYPES_V1 } from "../../shared/audit/audit-event-catalog.v1";
 import { parseAuditEventV2 } from "../../shared/contracts/audit-event.v2";
 import {
   ExecuteTrialBalancePipelineRequestV1Schema,
@@ -11,6 +12,7 @@ import {
 } from "../../shared/contracts/tb-pipeline-run.v1";
 import { generateDeterministicMappingDecisionsV1 } from "../mapping/deterministic-mapping.v1";
 import { parseTrialBalanceFileV1 } from "../parsing/trial-balance-parser.v1";
+import { MAX_TRIAL_BALANCE_FILE_BYTES_V1 } from "../security/payload-limits.v1";
 import { evaluateTrialBalanceReconciliationV1 } from "../validation/trial-balance-reconciliation.v1";
 import { applyMappingPreferencesToDecisionSetV1 } from "./mapping-override.v1";
 
@@ -83,6 +85,16 @@ function buildAuditActorFieldsV1(createdByUserId?: string): {
   };
 }
 
+async function appendAuditEventBestEffortV1(input: {
+  deps: TrialBalancePipelineRunDepsV1;
+  event: ReturnType<typeof parseAuditEventV2>;
+}): Promise<void> {
+  const appendResult = await input.deps.auditRepository.append(input.event);
+  if (!appendResult.ok) {
+    // Pipeline artifacts remain source of truth; audit append is best-effort.
+  }
+}
+
 /**
  * Runs the deterministic TB pipeline and persists immutable artifacts per step.
  *
@@ -109,6 +121,7 @@ export async function executeTrialBalancePipelineRunV1(
   }
 
   const request = parsedRequest.data;
+  const actorFields = buildAuditActorFieldsV1(request.createdByUserId);
   const fileBytes = decodeBase64ToUint8ArrayV1(request.fileBytesBase64);
   if (!fileBytes || fileBytes.byteLength === 0) {
     return parseExecuteTrialBalancePipelineResultV1({
@@ -125,6 +138,44 @@ export async function executeTrialBalancePipelineRunV1(
       },
     });
   }
+  if (fileBytes.byteLength > MAX_TRIAL_BALANCE_FILE_BYTES_V1) {
+    return parseExecuteTrialBalancePipelineResultV1({
+      ok: false,
+      error: {
+        code: "INPUT_INVALID",
+        message: "Decoded trial balance file exceeds configured size limit.",
+        user_message:
+          "The trial balance file is too large for V1 processing limits.",
+        context: {
+          reason: "payload_too_large",
+          maxBytes: MAX_TRIAL_BALANCE_FILE_BYTES_V1,
+          actualBytes: fileBytes.byteLength,
+          fileName: request.fileName,
+        },
+      },
+    });
+  }
+
+  await appendAuditEventBestEffortV1({
+    deps,
+    event: parseAuditEventV2({
+      id: deps.generateId(),
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      ...actorFields,
+      eventType: AUDIT_EVENT_TYPES_V1.FILE_UPLOADED,
+      targetType: "trial_balance_file",
+      targetId: request.fileName,
+      after: {
+        fileName: request.fileName,
+        fileType: request.fileType ?? null,
+        decodedBytes: fileBytes.byteLength,
+        module: "trial_balance_pipeline",
+      },
+      timestamp: deps.nowIsoUtc(),
+      context: {},
+    }),
+  });
 
   const parseResult = parseTrialBalanceFileV1({
     fileName: request.fileName,
@@ -132,6 +183,25 @@ export async function executeTrialBalancePipelineRunV1(
     fileBytes,
   });
   if (!parseResult.ok) {
+    await appendAuditEventBestEffortV1({
+      deps,
+      event: parseAuditEventV2({
+        id: deps.generateId(),
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        ...actorFields,
+        eventType: AUDIT_EVENT_TYPES_V1.PARSE_FAILED,
+        targetType: "trial_balance_file",
+        targetId: request.fileName,
+        after: {
+          fileName: request.fileName,
+          errorCode: parseResult.error.code,
+        },
+        timestamp: deps.nowIsoUtc(),
+        context: {},
+      }),
+    });
+
     return parseExecuteTrialBalancePipelineResultV1({
       ok: false,
       error: {
@@ -144,6 +214,24 @@ export async function executeTrialBalancePipelineRunV1(
       },
     });
   }
+  await appendAuditEventBestEffortV1({
+    deps,
+    event: parseAuditEventV2({
+      id: deps.generateId(),
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      ...actorFields,
+      eventType: AUDIT_EVENT_TYPES_V1.PARSE_SUCCEEDED,
+      targetType: "trial_balance_artifact",
+      targetId: parseResult.trialBalance.schemaVersion,
+      after: {
+        selectedSheetName: parseResult.trialBalance.selectedSheetName,
+        rowCount: parseResult.trialBalance.rows.length,
+      },
+      timestamp: deps.nowIsoUtc(),
+      context: {},
+    }),
+  });
 
   const trialBalancePersisted =
     await deps.artifactRepository.appendTrialBalanceAndSetActive({
@@ -179,6 +267,25 @@ export async function executeTrialBalancePipelineRunV1(
     trialBalance: parseResult.trialBalance,
   });
   if (!reconciliationResult.ok) {
+    await appendAuditEventBestEffortV1({
+      deps,
+      event: parseAuditEventV2({
+        id: deps.generateId(),
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        ...actorFields,
+        eventType: AUDIT_EVENT_TYPES_V1.RECONCILIATION_RESULT_RECORDED,
+        targetType: "reconciliation_run",
+        targetId: request.workspaceId,
+        after: {
+          status: "error",
+          errorMessage: reconciliationResult.error.message,
+        },
+        timestamp: deps.nowIsoUtc(),
+        context: {},
+      }),
+    });
+
     return parseExecuteTrialBalancePipelineResultV1({
       ok: false,
       error: {
@@ -191,6 +298,27 @@ export async function executeTrialBalancePipelineRunV1(
       },
     });
   }
+  await appendAuditEventBestEffortV1({
+    deps,
+    event: parseAuditEventV2({
+      id: deps.generateId(),
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      ...actorFields,
+      eventType: AUDIT_EVENT_TYPES_V1.RECONCILIATION_RESULT_RECORDED,
+      targetType: "reconciliation_result",
+      targetId: request.workspaceId,
+      after: {
+        status: reconciliationResult.reconciliation.status,
+        canProceedToMapping:
+          reconciliationResult.reconciliation.canProceedToMapping,
+        blockingReasonCodes:
+          reconciliationResult.reconciliation.blockingReasonCodes,
+      },
+      timestamp: deps.nowIsoUtc(),
+      context: {},
+    }),
+  });
 
   const reconciliationPersisted =
     await deps.artifactRepository.appendReconciliationAndSetActive({
@@ -337,13 +465,56 @@ export async function executeTrialBalancePipelineRunV1(
     });
   }
 
+  await appendAuditEventBestEffortV1({
+    deps,
+    event: parseAuditEventV2({
+      id: deps.generateId(),
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      ...actorFields,
+      eventType: AUDIT_EVENT_TYPES_V1.MAPPING_GENERATED,
+      targetType: "mapping_artifact",
+      targetId: mappingPersisted.artifact.id,
+      after: {
+        artifactId: mappingPersisted.artifact.id,
+        version: mappingPersisted.artifact.version,
+        decisionCount: mappingPersisted.artifact.payload.decisions.length,
+      },
+      timestamp: deps.nowIsoUtc(),
+      context: {},
+    }),
+  });
+
+  if (mappingPersisted.artifact.version > 1) {
+    await appendAuditEventBestEffortV1({
+      deps,
+      event: parseAuditEventV2({
+        id: deps.generateId(),
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        ...actorFields,
+        eventType: AUDIT_EVENT_TYPES_V1.MODULE_RERUN,
+        targetType: "pipeline_module",
+        targetId: "trial_balance_pipeline",
+        before: {
+          mappingVersion: mappingPersisted.artifact.version - 1,
+        },
+        after: {
+          mappingVersion: mappingPersisted.artifact.version,
+        },
+        timestamp: deps.nowIsoUtc(),
+        context: {},
+      }),
+    });
+  }
+
   if (mappingWithPreferences.appliedCount > 0) {
     const autoAppliedEvent = parseAuditEventV2({
       id: deps.generateId(),
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
-      ...buildAuditActorFieldsV1(request.createdByUserId),
-      eventType: "mapping.preferences_auto_applied",
+      ...actorFields,
+      eventType: AUDIT_EVENT_TYPES_V1.MAPPING_PREFERENCES_AUTO_APPLIED,
       targetType: "mapping_artifact",
       targetId: mappingPersisted.artifact.id,
       after: {

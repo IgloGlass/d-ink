@@ -3,16 +3,23 @@ import type { z } from "zod";
 import type { AuditRepositoryV1 } from "../../db/repositories/audit.repository.v1";
 import type { TbPipelineArtifactRepositoryV1 } from "../../db/repositories/tb-pipeline-artifact.repository.v1";
 import type { WorkspaceRepositoryV1 } from "../../db/repositories/workspace.repository.v1";
+import { AUDIT_EVENT_TYPES_V1 } from "../../shared/audit/audit-event-catalog.v1";
 import { parseAuditEventV2 } from "../../shared/contracts/audit-event.v2";
-import { executeMappingReviewModelV1 } from "../ai/modules/mapping-review/executor.v1";
-import { loadMappingReviewModuleConfigV1 } from "../ai/modules/mapping-review/loader.v1";
 import {
   GenerateMappingReviewSuggestionsRequestV1Schema,
-  MappingReviewSuggestionV1Schema,
   type GenerateMappingReviewSuggestionsResultV1,
+  MappingReviewSuggestionV1Schema,
   parseGenerateMappingReviewSuggestionsResultV1,
 } from "../../shared/contracts/mapping-review.v1";
-import { getSilverfinTaxCategoryByCodeV1 } from "../../shared/contracts/mapping.v1";
+import {
+  type MappingDecisionV1,
+  getSilverfinTaxCategoryByCodeV1,
+} from "../../shared/contracts/mapping.v1";
+import type {
+  MappingReviewModelInputProjectionV1,
+  executeMappingReviewModelV1,
+} from "../ai/modules/mapping-review/executor.v1";
+import type { loadMappingReviewModuleConfigV1 } from "../ai/modules/mapping-review/loader.v1";
 
 /**
  * Dependencies required for mapping-review suggestion generation.
@@ -33,6 +40,22 @@ function buildErrorContextFromZod(error: z.ZodError): Record<string, unknown> {
       code: issue.code,
       message: issue.message,
       path: issue.path.join("."),
+    })),
+  };
+}
+
+function buildMappingReviewProjectionV1(input: {
+  canProceedToMapping: boolean;
+  decisions: MappingDecisionV1[];
+}): MappingReviewModelInputProjectionV1 {
+  return {
+    canProceedToMapping: input.canProceedToMapping,
+    decisions: input.decisions.map((decision) => ({
+      id: decision.id,
+      accountName: decision.accountName,
+      proposedStatementType: decision.proposedCategory.statementType,
+      selectedCategoryCode: decision.selectedCategory.code,
+      evidenceTypes: decision.evidence.map((evidence) => evidence.type),
     })),
   };
 }
@@ -84,10 +107,11 @@ export async function generateMappingReviewSuggestionsV1(
     });
   }
 
-  const activeReconciliation = await deps.artifactRepository.getActiveReconciliation({
-    tenantId: request.tenantId,
-    workspaceId: request.workspaceId,
-  });
+  const activeReconciliation =
+    await deps.artifactRepository.getActiveReconciliation({
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+    });
   if (!activeReconciliation) {
     return parseGenerateMappingReviewSuggestionsResultV1({
       ok: false,
@@ -155,10 +179,14 @@ export async function generateMappingReviewSuggestionsV1(
     });
   }
 
+  const modelInputProjection = buildMappingReviewProjectionV1({
+    canProceedToMapping: activeReconciliation.payload.canProceedToMapping,
+    decisions: activeMapping.payload.decisions,
+  });
+
   const modelResult = await deps.runModel({
     config: moduleConfig.config,
-    mapping: activeMapping.payload,
-    reconciliation: activeReconciliation.payload,
+    projection: modelInputProjection,
     requestedScope: request.scope,
     maxSuggestions: request.maxSuggestions ?? 100,
   });
@@ -209,7 +237,14 @@ export async function generateMappingReviewSuggestionsV1(
   }
 
   const suggestions = parsedSuggestions
-    .filter((result): result is { success: true; data: z.infer<typeof MappingReviewSuggestionV1Schema> } => result.success)
+    .filter(
+      (
+        result,
+      ): result is {
+        success: true;
+        data: z.infer<typeof MappingReviewSuggestionV1Schema>;
+      } => result.success,
+    )
     .map((result) => result.data);
 
   const decisionsById = new Map(
@@ -230,7 +265,9 @@ export async function generateMappingReviewSuggestionsV1(
     const selectedCategory = getSilverfinTaxCategoryByCodeV1(
       suggestion.selectedCategoryCode,
     );
-    if (selectedCategory.statementType !== decision.proposedCategory.statementType) {
+    if (
+      selectedCategory.statementType !== decision.proposedCategory.statementType
+    ) {
       compatibilityIssues.push({
         code: "STATEMENT_TYPE_MISMATCH",
         decisionId: suggestion.decisionId,
@@ -282,7 +319,7 @@ export async function generateMappingReviewSuggestionsV1(
     tenantId: request.tenantId,
     workspaceId: request.workspaceId,
     actorType: "system",
-    eventType: "mapping.review_suggestions_generated",
+    eventType: AUDIT_EVENT_TYPES_V1.MAPPING_REVIEW_SUGGESTIONS_GENERATED,
     targetType: "mapping_artifact",
     targetId: activeMapping.id,
     after: {
@@ -294,11 +331,13 @@ export async function generateMappingReviewSuggestionsV1(
       moduleVersion: suggestionPayload.moduleVersion,
       promptVersion: moduleConfig.config.promptVersion,
       policyVersion: suggestionPayload.policyVersion,
-      activePatchVersions: moduleConfig.config.moduleSpec.policy.activePatchVersions,
+      activePatchVersions:
+        moduleConfig.config.moduleSpec.policy.activePatchVersions,
       modelProvider:
         typeof runtime?.provider === "string" ? runtime.provider : "unknown",
       modelName: typeof runtime?.model === "string" ? runtime.model : "unknown",
       suggestionCount: suggestionPayload.summary.suggestedOverrides,
+      projectedDecisionCount: modelInputProjection.decisions.length,
     },
     timestamp: deps.nowIsoUtc(),
     context: {},

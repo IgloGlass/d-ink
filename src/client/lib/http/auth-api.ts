@@ -1,10 +1,10 @@
 import { z } from "zod";
 
 import {
-  AuthSessionV1Schema,
   AuthInviteV1Schema,
   type AuthPrincipalV1,
   AuthPrincipalV1Schema,
+  AuthSessionV1Schema,
   parseLogoutSessionResultV1,
 } from "../../../shared/contracts/auth-magic-link.v1";
 import { IsoDateTimeSchema } from "../../../shared/contracts/common.v1";

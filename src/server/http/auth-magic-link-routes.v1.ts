@@ -8,8 +8,8 @@ import { UuidV4Schema } from "../../shared/contracts/common.v1";
 import type { Env } from "../../shared/types/env";
 import {
   authenticateSessionV1,
-  createDevSessionV1,
   consumeMagicLinkTokenV1,
+  createDevSessionV1,
   createMagicLinkInviteV1,
   logoutSessionV1,
   resolveSessionPrincipalByTokenV1,

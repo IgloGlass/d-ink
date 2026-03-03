@@ -1,18 +1,25 @@
 import type {
-  MappingDecisionSetPayloadV1,
-  MappingDecisionV1,
-} from "../../../../shared/contracts/mapping.v1";
-import type {
   MappingReviewSuggestionScopeV1,
   MappingReviewSuggestionV1,
 } from "../../../../shared/contracts/mapping-review.v1";
-import type { ReconciliationResultPayloadV1 } from "../../../../shared/contracts/reconciliation.v1";
 import type { MappingReviewRuntimeConfigV1 } from "./loader.v1";
+
+export type MappingReviewDecisionProjectionV1 = {
+  accountName: string;
+  evidenceTypes: string[];
+  id: string;
+  proposedStatementType: "balance_sheet" | "income_statement";
+  selectedCategoryCode: MappingReviewSuggestionV1["selectedCategoryCode"];
+};
+
+export type MappingReviewModelInputProjectionV1 = {
+  canProceedToMapping: boolean;
+  decisions: MappingReviewDecisionProjectionV1[];
+};
 
 export type ExecuteMappingReviewModelInputV1 = {
   config: MappingReviewRuntimeConfigV1;
-  mapping: MappingDecisionSetPayloadV1;
-  reconciliation: ReconciliationResultPayloadV1;
+  projection: MappingReviewModelInputProjectionV1;
   requestedScope: MappingReviewSuggestionScopeV1;
   maxSuggestions: number;
 };
@@ -41,8 +48,13 @@ function normalizeTextV1(value: string): string {
     .trim();
 }
 
-function hasAnyKeywordV1(normalized: string, keywords: readonly string[]): boolean {
-  return keywords.some((keyword) => normalized.includes(normalizeTextV1(keyword)));
+function hasAnyKeywordV1(
+  normalized: string,
+  keywords: readonly string[],
+): boolean {
+  return keywords.some((keyword) =>
+    normalized.includes(normalizeTextV1(keyword)),
+  );
 }
 
 function getGuidelineInstructionV1(input: {
@@ -57,10 +69,10 @@ function getGuidelineInstructionV1(input: {
 
 function isCategoryAllowedForDecisionStatementTypeV1(input: {
   config: MappingReviewRuntimeConfigV1;
-  decision: MappingDecisionV1;
+  decision: MappingReviewDecisionProjectionV1;
   selectedCategoryCode: MappingReviewSuggestionV1["selectedCategoryCode"];
 }): boolean {
-  const statementType = input.decision.proposedCategory.statementType;
+  const statementType = input.decision.proposedStatementType;
   const catalog =
     statementType === "balance_sheet"
       ? input.config.policyPack.categoryCatalog.balance_sheet
@@ -70,12 +82,12 @@ function isCategoryAllowedForDecisionStatementTypeV1(input: {
 
 function shouldSetReviewFlagFromPolicyV1(input: {
   config: MappingReviewRuntimeConfigV1;
-  decision: MappingDecisionV1;
+  decision: MappingReviewDecisionProjectionV1;
   confidence: number;
   baseReviewFlag: boolean;
 }): boolean {
-  const fallbackApplied = input.decision.evidence.some(
-    (evidence) => evidence.type === "fallback_category",
+  const fallbackApplied = input.decision.evidenceTypes.some(
+    (evidenceType) => evidenceType === "fallback_category",
   );
 
   let reviewFlag = input.baseReviewFlag;
@@ -111,14 +123,14 @@ function shouldSetReviewFlagFromPolicyV1(input: {
 
 function buildSuggestionV1(input: {
   config: MappingReviewRuntimeConfigV1;
-  decision: MappingDecisionV1;
+  decision: MappingReviewDecisionProjectionV1;
   requestedScope: MappingReviewSuggestionScopeV1;
   selectedCategoryCode: MappingReviewSuggestionV1["selectedCategoryCode"];
   policyRuleReference: string;
   confidence: number;
   baseReviewFlag: boolean;
 }): MappingReviewSuggestionV1 | null {
-  if (input.decision.selectedCategory.code === input.selectedCategoryCode) {
+  if (input.decision.selectedCategoryCode === input.selectedCategoryCode) {
     return null;
   }
 
@@ -158,12 +170,12 @@ function buildSuggestionV1(input: {
 
 function evaluateDecisionForSuggestionV1(input: {
   config: MappingReviewRuntimeConfigV1;
-  decision: MappingDecisionV1;
+  decision: MappingReviewDecisionProjectionV1;
   requestedScope: MappingReviewSuggestionScopeV1;
 }): MappingReviewSuggestionV1 | null {
   const normalizedName = normalizeTextV1(input.decision.accountName);
-  const statementType = input.decision.proposedCategory.statementType;
-  const selectedCode = input.decision.selectedCategory.code;
+  const statementType = input.decision.proposedStatementType;
+  const selectedCode = input.decision.selectedCategoryCode;
 
   if (
     statementType === "balance_sheet" &&
@@ -255,7 +267,11 @@ function evaluateDecisionForSuggestionV1(input: {
 
   if (
     statementType === "income_statement" &&
-    hasAnyKeywordV1(normalizedName, ["bankkostnad", "banking cost", "bankavgift"])
+    hasAnyKeywordV1(normalizedName, [
+      "bankkostnad",
+      "banking cost",
+      "bankavgift",
+    ])
   ) {
     return buildSuggestionV1({
       config: input.config,
@@ -271,7 +287,11 @@ function evaluateDecisionForSuggestionV1(input: {
 
   if (
     statementType === "income_statement" &&
-    hasAnyKeywordV1(normalizedName, ["valutakursvinst", "fx gain", "exchange gain"])
+    hasAnyKeywordV1(normalizedName, [
+      "valutakursvinst",
+      "fx gain",
+      "exchange gain",
+    ])
   ) {
     return buildSuggestionV1({
       config: input.config,
@@ -306,7 +326,11 @@ function evaluateDecisionForSuggestionV1(input: {
 
   if (
     statementType === "income_statement" &&
-    hasAnyKeywordV1(normalizedName, ["medlemsavgift", "membership fee", "membership"])
+    hasAnyKeywordV1(normalizedName, [
+      "medlemsavgift",
+      "membership fee",
+      "membership",
+    ])
   ) {
     const shouldBeDeductible = hasAnyKeywordV1(normalizedName, [
       "konflikt",
@@ -364,7 +388,10 @@ function evaluateDecisionForSuggestionV1(input: {
       "social fees",
       "sociala avgifter",
     ]) &&
-    !hasAnyKeywordV1(normalizedName, ["sarskild loneskatt", "särskild löneskatt"])
+    !hasAnyKeywordV1(normalizedName, [
+      "sarskild loneskatt",
+      "särskild löneskatt",
+    ])
   ) {
     return buildSuggestionV1({
       config: input.config,
@@ -392,15 +419,17 @@ export async function executeMappingReviewModelV1(
   input: ExecuteMappingReviewModelInputV1,
 ): Promise<ExecuteMappingReviewModelResultV1> {
   try {
-    if (!input.reconciliation.canProceedToMapping) {
+    if (!input.projection.canProceedToMapping) {
       return {
         ok: true,
         suggestions: [],
       };
     }
 
-    const hardConstraints = input.config.policyPack
-      .hardConstraints as Record<string, unknown>;
+    const hardConstraints = input.config.policyPack.hardConstraints as Record<
+      string,
+      unknown
+    >;
     const allowedOverrideScopes = hardConstraints.allowedOverrideScopes;
     if (
       Array.isArray(allowedOverrideScopes) &&
@@ -422,7 +451,7 @@ export async function executeMappingReviewModelV1(
     const suggestions: MappingReviewSuggestionV1[] = [];
     const seenDecisionIds = new Set<string>();
 
-    for (const decision of input.mapping.decisions) {
+    for (const decision of input.projection.decisions) {
       if (seenDecisionIds.has(decision.id)) {
         continue;
       }
