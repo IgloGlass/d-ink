@@ -1,12 +1,12 @@
 # AUTOPILOT_QUEUE v1
 
-Each ticket must be represented as a standalone JSON block. Keep `ticket_id` stable forever.
+Each ticket must be represented as a standalone JSON block. Keep IDs stable.
 
 ## Ticket NIGHT-001
 ```json
 {
   "ticket_id": "NIGHT-001",
-  "status": "READY",
+  "status": "DONE",
   "title": "Create nightly autopilot kickoff artifact",
   "goal": "Create a deterministic kickoff artifact proving ticket execution and branch isolation work end-to-end.",
   "files_to_edit": [
@@ -29,7 +29,7 @@ Each ticket must be represented as a standalone JSON block. Keep `ticket_id` sta
     "corepack pnpm run autopilot:validate"
   ],
   "output_summary_format": "Include changed file, metadata captured, and validation results.",
-  "notes": "Synthetic bootstrap ticket for first continuous run.",
+  "notes": "Synthetic bootstrap ticket for first continuous run.\r\nBranch: codex/ticket-night-001 | Run: run-1772498497259",
   "risk_level": "low"
 }
 ```
