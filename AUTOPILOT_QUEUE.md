@@ -1,6 +1,6 @@
 # AUTOPILOT_QUEUE v1
 
-Each ticket must be represented as a standalone JSON block. Keep `ticket_id` stable forever.
+Each ticket must be represented as a standalone JSON block. Keep IDs stable.
 
 ## Ticket NIGHT-001
 ```json
@@ -38,7 +38,7 @@ Each ticket must be represented as a standalone JSON block. Keep `ticket_id` sta
 ```json
 {
   "ticket_id": "NIGHT-002",
-  "status": "READY",
+  "status": "DONE",
   "title": "Create nightly autopilot follow-up artifact",
   "goal": "Create a second independent artifact so the same run processes multiple tickets back-to-back.",
   "files_to_edit": [
@@ -61,7 +61,7 @@ Each ticket must be represented as a standalone JSON block. Keep `ticket_id` sta
     "corepack pnpm run autopilot:validate"
   ],
   "output_summary_format": "Include changed file, JSON fields emitted, and validation results.",
-  "notes": "Synthetic bootstrap ticket to verify no downtime between tickets.",
+  "notes": "Synthetic bootstrap ticket to verify no downtime between tickets.\r\nBranch: codex/ticket-night-002 | Run: run-1772498560422\r\nCommit: 6f59136103b7443cbc80b5b131452e5200d820ff | Branch: codex/ticket-night-002 | PR: https://github.com/IgloGlass/d-ink/pull/10 | Run: run-1772498560422",
   "risk_level": "low"
 }
 ```
