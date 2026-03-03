@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { generateTaxAdjustmentsV1 } from "../../../src/server/adjustments/tax-adjustments-engine.v1";
 import { parseAnnualReportExtractionPayloadV1 } from "../../../src/shared/contracts/annual-report-extraction.v1";
 import { MappingDecisionSetPayloadV1Schema } from "../../../src/shared/contracts/mapping.v1";
 import { parseTrialBalanceNormalizedV1 } from "../../../src/shared/contracts/trial-balance.v1";
-import { generateTaxAdjustmentsV1 } from "../../../src/server/adjustments/tax-adjustments-engine.v1";
 
 describe("tax adjustments engine golden v1", () => {
   it("matches expected net adjustment totals for baseline fixture", () => {
@@ -23,8 +23,16 @@ describe("tax adjustments engine golden v1", () => {
             confidence: 1,
             value: "556677-8899",
           },
-          fiscalYearStart: { status: "manual", confidence: 1, value: "2025-01-01" },
-          fiscalYearEnd: { status: "manual", confidence: 1, value: "2025-12-31" },
+          fiscalYearStart: {
+            status: "manual",
+            confidence: 1,
+            value: "2025-01-01",
+          },
+          fiscalYearEnd: {
+            status: "manual",
+            confidence: 1,
+            value: "2025-12-31",
+          },
           accountingStandard: { status: "manual", confidence: 1, value: "K2" },
           profitBeforeTax: { status: "manual", confidence: 1, value: 1000000 },
         },

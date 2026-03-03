@@ -4,12 +4,13 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createD1AuditRepositoryV1 } from "../../../src/db/repositories/audit.repository.v1";
 import { createD1WorkspaceArtifactRepositoryV1 } from "../../../src/db/repositories/workspace-artifact.repository.v1";
 import { createD1WorkspaceRepositoryV1 } from "../../../src/db/repositories/workspace.repository.v1";
+import { MAX_ANNUAL_REPORT_FILE_BYTES_V1 } from "../../../src/server/security/payload-limits.v1";
 import {
+  type AnnualReportExtractionDepsV1,
   applyAnnualReportExtractionOverridesV1,
   confirmAnnualReportExtractionV1,
   getActiveAnnualReportExtractionV1,
   runAnnualReportExtractionV1,
-  type AnnualReportExtractionDepsV1,
 } from "../../../src/server/workflow/annual-report-extraction.v1";
 import { applyWorkspaceAuditSchemaForTests } from "../../db/test-schema";
 
@@ -200,5 +201,28 @@ describe("annual report extraction workflow v1", () => {
       deps,
     );
     expect(active.ok).toBe(true);
+  });
+
+  it("rejects oversized annual report payloads deterministically", async () => {
+    await seedWorkspace();
+    const deps = createDeps();
+    const oversizedBytes = "A".repeat(MAX_ANNUAL_REPORT_FILE_BYTES_V1 + 1);
+
+    const runResult = await runAnnualReportExtractionV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        fileName: "annual-report.pdf",
+        fileBytesBase64: btoa(oversizedBytes),
+        policyVersion: "annual-report-manual-first.v1",
+      },
+      deps,
+    );
+
+    expect(runResult.ok).toBe(false);
+    if (!runResult.ok) {
+      expect(runResult.error.code).toBe("INPUT_INVALID");
+      expect(runResult.error.context.reason).toBe("payload_too_large");
+    }
   });
 });

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
 
 import { hashTokenWithHmacV1 } from "../src/server/workflow/auth-magic-link.v1";
+import { AUDIT_EVENT_TYPES_V1 } from "../src/shared/audit/audit-event-catalog.v1";
 import type { Env } from "../src/shared/types/env";
 import worker from "../src/worker";
 import { applyWorkspaceAuditSchemaForTests } from "./db/test-schema";
@@ -253,7 +254,40 @@ describe("worker tax core routes v1", () => {
       }),
       buildWorkerEnv(),
     );
+    const adjustmentsPayload = (await adjustmentsRun.json()) as {
+      active: { artifactId: string; version: number };
+      adjustments: { decisions: Array<{ amount: number; id: string }> };
+      ok: true;
+    };
     expect(adjustmentsRun.status).toBe(200);
+    const firstAdjustmentDecision = adjustmentsPayload.adjustments.decisions[0];
+    if (!firstAdjustmentDecision) {
+      throw new Error("Expected at least one tax adjustment decision.");
+    }
+
+    const adjustmentsOverride = await worker.fetch(
+      buildJsonRequest({
+        method: "POST",
+        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/tax-adjustments/overrides`,
+        cookie,
+        body: {
+          tenantId: TENANT_ID,
+          expectedActiveAdjustments: {
+            artifactId: adjustmentsPayload.active.artifactId,
+            version: adjustmentsPayload.active.version,
+          },
+          overrides: [
+            {
+              decisionId: firstAdjustmentDecision.id,
+              amount: firstAdjustmentDecision.amount,
+              reason: "Audit smoke override",
+            },
+          ],
+        },
+      }),
+      buildWorkerEnv(),
+    );
+    expect(adjustmentsOverride.status).toBe(200);
 
     const summaryRun = await worker.fetch(
       buildJsonRequest({
@@ -276,6 +310,39 @@ describe("worker tax core routes v1", () => {
       buildWorkerEnv(),
     );
     expect(ink2Run.status).toBe(200);
+    const ink2Payload = (await ink2Run.json()) as {
+      active: { artifactId: string; version: number };
+      form: { fields: Array<{ amount: number; fieldId: string }> };
+      ok: true;
+    };
+    const firstInk2Field = ink2Payload.form.fields[0];
+    if (!firstInk2Field) {
+      throw new Error("Expected at least one INK2 form field.");
+    }
+
+    const ink2Override = await worker.fetch(
+      buildJsonRequest({
+        method: "POST",
+        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/ink2-form/overrides`,
+        cookie,
+        body: {
+          tenantId: TENANT_ID,
+          expectedActiveForm: {
+            artifactId: ink2Payload.active.artifactId,
+            version: ink2Payload.active.version,
+          },
+          overrides: [
+            {
+              fieldId: firstInk2Field.fieldId,
+              amount: firstInk2Field.amount,
+              reason: "Audit smoke override",
+            },
+          ],
+        },
+      }),
+      buildWorkerEnv(),
+    );
+    expect(ink2Override.status).toBe(200);
 
     await env.DB.prepare(
       `UPDATE workspaces SET status = 'approved_for_export' WHERE id = ?1 AND tenant_id = ?2`,
@@ -336,5 +403,48 @@ describe("worker tax core routes v1", () => {
       buildWorkerEnv(),
     );
     expect(completeTask.status).toBe(200);
+
+    const auditRows = await env.DB.prepare(
+      `
+        SELECT event_type, before_json, after_json
+        FROM audit_events
+        WHERE tenant_id = ?1 AND workspace_id = ?2
+      `,
+    )
+      .bind(TENANT_ID, WORKSPACE_ID)
+      .all<{
+        after_json: string | null;
+        before_json: string | null;
+        event_type: string;
+      }>();
+    const eventTypes = (auditRows.results ?? []).map((row) => row.event_type);
+
+    expect(eventTypes).toEqual(
+      expect.arrayContaining([
+        AUDIT_EVENT_TYPES_V1.FILE_UPLOADED,
+        AUDIT_EVENT_TYPES_V1.PARSE_SUCCEEDED,
+        AUDIT_EVENT_TYPES_V1.RECONCILIATION_RESULT_RECORDED,
+        AUDIT_EVENT_TYPES_V1.MAPPING_GENERATED,
+        AUDIT_EVENT_TYPES_V1.EXTRACTION_CREATED,
+        AUDIT_EVENT_TYPES_V1.EXTRACTION_OVERRIDDEN,
+        AUDIT_EVENT_TYPES_V1.EXTRACTION_CONFIRMED,
+        AUDIT_EVENT_TYPES_V1.ADJUSTMENT_GENERATED,
+        AUDIT_EVENT_TYPES_V1.ADJUSTMENT_OVERRIDDEN,
+        AUDIT_EVENT_TYPES_V1.SUMMARY_GENERATED,
+        AUDIT_EVENT_TYPES_V1.FORM_POPULATED,
+        AUDIT_EVENT_TYPES_V1.FORM_FIELD_EDITED,
+        AUDIT_EVENT_TYPES_V1.FORM_APPROVED,
+        AUDIT_EVENT_TYPES_V1.EXPORT_CREATED,
+        AUDIT_EVENT_TYPES_V1.COMMENT_CREATED,
+        AUDIT_EVENT_TYPES_V1.TASK_CREATED,
+        AUDIT_EVENT_TYPES_V1.TASK_COMPLETED,
+      ]),
+    );
+
+    const completedTaskAudit = (auditRows.results ?? []).find(
+      (row) => row.event_type === AUDIT_EVENT_TYPES_V1.TASK_COMPLETED,
+    );
+    expect(completedTaskAudit?.before_json).not.toBeNull();
+    expect(completedTaskAudit?.after_json).not.toBeNull();
   });
 });

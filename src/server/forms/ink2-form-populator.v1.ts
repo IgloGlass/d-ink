@@ -10,7 +10,10 @@ import {
   type TaxAdjustmentDecisionSetPayloadV1,
   parseTaxAdjustmentDecisionSetPayloadV1,
 } from "../../shared/contracts/tax-adjustments.v1";
-import { type TaxSummaryPayloadV1, parseTaxSummaryPayloadV1 } from "../../shared/contracts/tax-summary.v1";
+import {
+  type TaxSummaryPayloadV1,
+  parseTaxSummaryPayloadV1,
+} from "../../shared/contracts/tax-summary.v1";
 
 export type PopulateInk2FormInputV1 = {
   adjustments: TaxAdjustmentDecisionSetPayloadV1;
@@ -58,7 +61,9 @@ function sumAdjustmentsForFieldV1(
 /**
  * Deterministically populates V1 INK2 draft fields from extraction/adjustments/summary.
  */
-export function populateInk2FormDraftV1(input: unknown): PopulateInk2FormResultV1 {
+export function populateInk2FormDraftV1(
+  input: unknown,
+): PopulateInk2FormResultV1 {
   if (typeof input !== "object" || input === null) {
     return {
       ok: false,
@@ -103,7 +108,8 @@ export function populateInk2FormDraftV1(input: unknown): PopulateInk2FormResultV
         message: "INK2 form input contracts are invalid.",
         user_message: "INK2 form input payload is invalid.",
         context: {
-          message: error instanceof Error ? error.message : "Unknown parse failure.",
+          message:
+            error instanceof Error ? error.message : "Unknown parse failure.",
         },
       },
     };
@@ -173,7 +179,9 @@ export function populateInk2FormDraftV1(input: unknown): PopulateInk2FormResultV
           fieldId: "INK2S.representation_non_deductible",
           amount: representation,
           provenance: "adjustment",
-          sourceReferences: ["tax_adjustments:INK2S.representation_non_deductible"],
+          sourceReferences: [
+            "tax_adjustments:INK2S.representation_non_deductible",
+          ],
         },
         {
           fieldId: "INK2S.depreciation_adjustment",
@@ -224,7 +232,8 @@ export function populateInk2FormDraftV1(input: unknown): PopulateInk2FormResultV
         message: "INK2 form output failed contract validation.",
         user_message: "Generated INK2 draft is invalid.",
         context: {
-          message: error instanceof Error ? error.message : "Unknown parse failure.",
+          message:
+            error instanceof Error ? error.message : "Unknown parse failure.",
         },
       },
     };

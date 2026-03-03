@@ -12,7 +12,9 @@ import type {
   TbPipelineArtifactRepositoryV1,
   TbPipelineArtifactVersionRecordV1,
 } from "../../../src/db/repositories/tb-pipeline-artifact.repository.v1";
+import { MAX_TRIAL_BALANCE_FILE_BYTES_V1 } from "../../../src/server/security/payload-limits.v1";
 import { executeTrialBalancePipelineRunV1 } from "../../../src/server/workflow/trial-balance-pipeline-run.v1";
+import { AUDIT_EVENT_TYPES_V1 } from "../../../src/shared/audit/audit-event-catalog.v1";
 import type { AuditEventV2 } from "../../../src/shared/contracts/audit-event.v2";
 
 type PersistedByTypeV1 = {
@@ -403,6 +405,7 @@ describe("trial-balance pipeline run workflow v1", () => {
       new Set([`${tenantId}:${workspaceId}`]),
       tenantId,
     );
+    const auditRepository = new InMemoryAuditRepositoryV1();
 
     const result = await executeTrialBalancePipelineRunV1(
       {
@@ -417,7 +420,7 @@ describe("trial-balance pipeline run workflow v1", () => {
         artifactRepository: repository,
         mappingPreferenceRepository:
           new InMemoryMappingPreferenceRepositoryV1(),
-        auditRepository: new InMemoryAuditRepositoryV1(),
+        auditRepository,
       }),
     );
 
@@ -425,6 +428,12 @@ describe("trial-balance pipeline run workflow v1", () => {
     if (!result.ok) {
       expect(result.error.code).toBe("PARSE_FAILED");
     }
+    expect(auditRepository.events.map((event) => event.eventType)).toEqual(
+      expect.arrayContaining([
+        AUDIT_EVENT_TYPES_V1.FILE_UPLOADED,
+        AUDIT_EVENT_TYPES_V1.PARSE_FAILED,
+      ]),
+    );
   });
 
   it("runs parser -> reconciliation -> mapping and persists versioned artifacts", async () => {
@@ -498,6 +507,14 @@ describe("trial-balance pipeline run workflow v1", () => {
     expect(secondRun.pipeline.artifacts.trialBalance.version).toBe(2);
     expect(secondRun.pipeline.artifacts.reconciliation.version).toBe(2);
     expect(secondRun.pipeline.artifacts.mapping.version).toBe(2);
+    expect(auditRepository.events.map((event) => event.eventType)).toEqual(
+      expect.arrayContaining([
+        AUDIT_EVENT_TYPES_V1.PARSE_SUCCEEDED,
+        AUDIT_EVENT_TYPES_V1.RECONCILIATION_RESULT_RECORDED,
+        AUDIT_EVENT_TYPES_V1.MAPPING_GENERATED,
+        AUDIT_EVENT_TYPES_V1.MODULE_RERUN,
+      ]),
+    );
   });
 
   it("auto-applies saved preferences on rerun and marks decisions overridden", async () => {
@@ -651,5 +668,35 @@ describe("trial-balance pipeline run workflow v1", () => {
 
     expect(result.pipeline.artifacts.mapping.version).toBe(1);
     expect(result.pipeline.mapping.decisions[0]?.status).toBe("overridden");
+  });
+
+  it("returns INPUT_INVALID when decoded payload exceeds configured size limit", async () => {
+    const repository = new InMemoryTbPipelineArtifactRepositoryV1(
+      new Set([`${tenantId}:${workspaceId}`]),
+      tenantId,
+    );
+
+    const result = await executeTrialBalancePipelineRunV1(
+      {
+        tenantId,
+        workspaceId,
+        createdByUserId: userId,
+        fileName: "tb.xlsx",
+        fileBytesBase64: btoa("A".repeat(MAX_TRIAL_BALANCE_FILE_BYTES_V1 + 1)),
+        policyVersion: "deterministic-bas.v1",
+      },
+      createDeps({
+        artifactRepository: repository,
+        mappingPreferenceRepository:
+          new InMemoryMappingPreferenceRepositoryV1(),
+        auditRepository: new InMemoryAuditRepositoryV1(),
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INPUT_INVALID");
+      expect(result.error.context.reason).toBe("payload_too_large");
+    }
   });
 });

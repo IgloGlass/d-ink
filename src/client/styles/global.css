@@ -12,9 +12,11 @@ body {
   min-height: 100vh;
   font-family: "Open Sans", Arial, Helvetica, sans-serif;
   color: var(--color-text-primary);
-  background:
-    radial-gradient(circle at 92% 0%, rgba(134, 188, 37, 0.12), transparent 34%),
-    linear-gradient(var(--color-bg), var(--color-bg-alt));
+  background: radial-gradient(
+      circle at 92% 0%,
+      rgba(134, 188, 37, 0.12),
+      transparent 34%
+    ), linear-gradient(var(--color-bg), var(--color-bg-alt));
 }
 
 a {
@@ -41,10 +43,8 @@ button {
   color: var(--color-text-primary);
   padding: 8px 12px;
   cursor: pointer;
-  transition:
-    border-color var(--transition-fast),
-    background-color var(--transition-fast),
-    box-shadow var(--transition-fast);
+  transition: border-color var(--transition-fast), background-color
+    var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 button.primary {

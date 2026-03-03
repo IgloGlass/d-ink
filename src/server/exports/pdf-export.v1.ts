@@ -6,13 +6,22 @@ import {
   type ExportPackagePayloadV1,
   parseExportPackagePayloadV1,
 } from "../../shared/contracts/export-package.v1";
-import { type Ink2FormDraftPayloadV1, parseInk2FormDraftPayloadV1 } from "../../shared/contracts/ink2-form.v1";
+import {
+  type Ink2FormDraftPayloadV1,
+  parseInk2FormDraftPayloadV1,
+} from "../../shared/contracts/ink2-form.v1";
 import {
   type TaxAdjustmentDecisionSetPayloadV1,
   parseTaxAdjustmentDecisionSetPayloadV1,
 } from "../../shared/contracts/tax-adjustments.v1";
-import { type TaxSummaryPayloadV1, parseTaxSummaryPayloadV1 } from "../../shared/contracts/tax-summary.v1";
-import { type WorkspaceV1, parseWorkspaceV1 } from "../../shared/contracts/workspace.v1";
+import {
+  type TaxSummaryPayloadV1,
+  parseTaxSummaryPayloadV1,
+} from "../../shared/contracts/tax-summary.v1";
+import {
+  type WorkspaceV1,
+  parseWorkspaceV1,
+} from "../../shared/contracts/workspace.v1";
 
 export type GeneratePdfExportInputV1 = {
   adjustments: TaxAdjustmentDecisionSetPayloadV1;
@@ -135,7 +144,8 @@ export function generatePdfExportPackageV1(
         message: "PDF export input contracts are invalid.",
         user_message: "PDF export input payload is invalid.",
         context: {
-          message: error instanceof Error ? error.message : "Unknown parse failure.",
+          message:
+            error instanceof Error ? error.message : "Unknown parse failure.",
         },
       },
     };
@@ -198,7 +208,8 @@ export function generatePdfExportPackageV1(
         message: "PDF export output failed contract validation.",
         user_message: "Generated PDF export is invalid.",
         context: {
-          message: error instanceof Error ? error.message : "Unknown parse failure.",
+          message:
+            error instanceof Error ? error.message : "Unknown parse failure.",
         },
       },
     };

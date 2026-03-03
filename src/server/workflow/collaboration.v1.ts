@@ -4,17 +4,18 @@ import type { AuditRepositoryV1 } from "../../db/repositories/audit.repository.v
 import type { CommentsRepositoryV1 } from "../../db/repositories/comments.repository.v1";
 import type { TasksRepositoryV1 } from "../../db/repositories/tasks.repository.v1";
 import type { WorkspaceRepositoryV1 } from "../../db/repositories/workspace.repository.v1";
+import { AUDIT_EVENT_TYPES_V1 } from "../../shared/audit/audit-event-catalog.v1";
 import { parseAuditEventV2 } from "../../shared/contracts/audit-event.v2";
 import {
   CompleteTaskRequestV1Schema,
-  CreateCommentRequestV1Schema,
-  CreateTaskRequestV1Schema,
-  ListCommentsRequestV1Schema,
-  ListTasksRequestV1Schema,
   type CompleteTaskResultV1,
+  CreateCommentRequestV1Schema,
   type CreateCommentResultV1,
+  CreateTaskRequestV1Schema,
   type CreateTaskResultV1,
+  ListCommentsRequestV1Schema,
   type ListCommentsResultV1,
+  ListTasksRequestV1Schema,
   type ListTasksResultV1,
   parseCompleteTaskResultV1,
   parseCreateCommentResultV1,
@@ -80,7 +81,9 @@ export async function listCommentsV1(
     );
   }
 
-  const listed = await deps.commentsRepository.listByWorkspace(parsedRequest.data);
+  const listed = await deps.commentsRepository.listByWorkspace(
+    parsedRequest.data,
+  );
   if (!listed.ok) {
     return parseListCommentsResultV1(
       buildFailureV1({
@@ -156,9 +159,14 @@ export async function createCommentV1(
       workspaceId: request.workspaceId,
       actorType: "user",
       actorUserId: request.createdByUserId,
-      eventType: "comment.created",
+      eventType: AUDIT_EVENT_TYPES_V1.COMMENT_CREATED,
       targetType: "comment",
       targetId: created.comment.id,
+      after: {
+        commentId: created.comment.id,
+        createdByUserId: created.comment.createdByUserId,
+        createdAt: created.comment.createdAt,
+      },
       timestamp: deps.nowIsoUtc(),
       context: {},
     }),
@@ -249,9 +257,14 @@ export async function createTaskV1(
       workspaceId: request.workspaceId,
       actorType: "user",
       actorUserId: request.createdByUserId,
-      eventType: "task.created",
+      eventType: AUDIT_EVENT_TYPES_V1.TASK_CREATED,
       targetType: "task",
       targetId: created.task.id,
+      after: {
+        taskId: created.task.id,
+        status: created.task.status,
+        assignedToUserId: created.task.assignedToUserId ?? null,
+      },
       timestamp: deps.nowIsoUtc(),
       context: {},
     }),
@@ -308,9 +321,17 @@ export async function completeTaskV1(
       workspaceId: request.workspaceId,
       actorType: "user",
       actorUserId: request.completedByUserId,
-      eventType: "task.completed",
+      eventType: AUDIT_EVENT_TYPES_V1.TASK_COMPLETED,
       targetType: "task",
       targetId: completed.task.id,
+      before: {
+        status: "open",
+      },
+      after: {
+        status: completed.task.status,
+        completedByUserId: completed.task.completedByUserId,
+        completedAt: completed.task.completedAt,
+      },
       timestamp: deps.nowIsoUtc(),
       context: {},
     }),

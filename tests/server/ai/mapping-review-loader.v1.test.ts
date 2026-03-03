@@ -23,15 +23,14 @@ describe("mapping review module loader v1", () => {
       return;
     }
 
-    expect(result.config.policyPack.guidelineRules.length).toBeGreaterThanOrEqual(
-      25,
-    );
+    expect(
+      result.config.policyPack.guidelineRules.length,
+    ).toBeGreaterThanOrEqual(25);
     expect(result.config.policyPack.categoryCatalog.balance_sheet.length).toBe(
       19,
     );
-    expect(result.config.policyPack.categoryCatalog.income_statement.length).toBe(
-      48,
-    );
+    expect(
+      result.config.policyPack.categoryCatalog.income_statement.length,
+    ).toBe(48);
   });
 });
-

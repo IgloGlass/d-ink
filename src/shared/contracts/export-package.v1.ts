@@ -32,7 +32,9 @@ export const ExportPackagePayloadV1Schema = z
       .strict(),
   })
   .strict();
-export type ExportPackagePayloadV1 = z.infer<typeof ExportPackagePayloadV1Schema>;
+export type ExportPackagePayloadV1 = z.infer<
+  typeof ExportPackagePayloadV1Schema
+>;
 
 export const ActiveExportRefV1Schema = z
   .object({
@@ -50,7 +52,9 @@ export const CreatePdfExportRequestV1Schema = z
     createdByUserId: UuidV4Schema.optional(),
   })
   .strict();
-export type CreatePdfExportRequestV1 = z.infer<typeof CreatePdfExportRequestV1Schema>;
+export type CreatePdfExportRequestV1 = z.infer<
+  typeof CreatePdfExportRequestV1Schema
+>;
 
 export const ListWorkspaceExportsRequestV1Schema = z
   .object({
@@ -69,7 +73,9 @@ export const ExportPackageErrorCodeV1Schema = z.enum([
   "FORM_NOT_FOUND",
   "PERSISTENCE_ERROR",
 ]);
-export type ExportPackageErrorCodeV1 = z.infer<typeof ExportPackageErrorCodeV1Schema>;
+export type ExportPackageErrorCodeV1 = z.infer<
+  typeof ExportPackageErrorCodeV1Schema
+>;
 
 export const ExportPackageFailureV1Schema = z
   .object({
@@ -84,7 +90,9 @@ export const ExportPackageFailureV1Schema = z
       .strict(),
   })
   .strict();
-export type ExportPackageFailureV1 = z.infer<typeof ExportPackageFailureV1Schema>;
+export type ExportPackageFailureV1 = z.infer<
+  typeof ExportPackageFailureV1Schema
+>;
 
 const ExportPackageSuccessBaseV1Schema = z
   .object({
@@ -98,7 +106,9 @@ export const CreatePdfExportResultV1Schema = z.discriminatedUnion("ok", [
   ExportPackageSuccessBaseV1Schema,
   ExportPackageFailureV1Schema,
 ]);
-export type CreatePdfExportResultV1 = z.infer<typeof CreatePdfExportResultV1Schema>;
+export type CreatePdfExportResultV1 = z.infer<
+  typeof CreatePdfExportResultV1Schema
+>;
 
 export const ListWorkspaceExportsResultV1Schema = z.discriminatedUnion("ok", [
   z
@@ -120,7 +130,9 @@ export type ListWorkspaceExportsResultV1 = z.infer<
   typeof ListWorkspaceExportsResultV1Schema
 >;
 
-export function parseExportPackagePayloadV1(input: unknown): ExportPackagePayloadV1 {
+export function parseExportPackagePayloadV1(
+  input: unknown,
+): ExportPackagePayloadV1 {
   return ExportPackagePayloadV1Schema.parse(input);
 }
 

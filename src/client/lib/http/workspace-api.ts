@@ -261,7 +261,10 @@ export type RunTaxSummaryInputV1 = {
   workspaceId: string;
 };
 
-export type RunTaxSummaryResponseV1 = Extract<RunTaxSummaryResultV1, { ok: true }>;
+export type RunTaxSummaryResponseV1 = Extract<
+  RunTaxSummaryResultV1,
+  { ok: true }
+>;
 
 export type GetActiveTaxSummaryResponseV1 = Extract<
   GetActiveTaxSummaryResultV1,
@@ -322,13 +325,19 @@ export type ListWorkspaceExportsResponseV1 = Extract<
   { ok: true }
 >;
 
-export type ListCommentsResponseV1 = Extract<ListCommentsResultV1, { ok: true }>;
+export type ListCommentsResponseV1 = Extract<
+  ListCommentsResultV1,
+  { ok: true }
+>;
 export type CreateCommentInputV1 = {
   body: string;
   tenantId: string;
   workspaceId: string;
 };
-export type CreateCommentResponseV1 = Extract<CreateCommentResultV1, { ok: true }>;
+export type CreateCommentResponseV1 = Extract<
+  CreateCommentResultV1,
+  { ok: true }
+>;
 export type ListTasksResponseV1 = Extract<ListTasksResultV1, { ok: true }>;
 export type CreateTaskInputV1 = {
   assignedToUserId?: string;
@@ -343,7 +352,10 @@ export type CompleteTaskInputV1 = {
   tenantId: string;
   workspaceId: string;
 };
-export type CompleteTaskResponseV1 = Extract<CompleteTaskResultV1, { ok: true }>;
+export type CompleteTaskResponseV1 = Extract<
+  CompleteTaskResultV1,
+  { ok: true }
+>;
 
 export type RunTrialBalancePipelineInputV1 = {
   tenantId: string;
@@ -446,7 +458,9 @@ function parseGenerateMappingReviewSuggestionsHttpResponseV1(
 function parseRunTrialBalancePipelineHttpResponseV1(
   payload: unknown,
 ): RunTrialBalancePipelineResponseV1 {
-  return expectSuccessResultV1(parseExecuteTrialBalancePipelineResultV1(payload));
+  return expectSuccessResultV1(
+    parseExecuteTrialBalancePipelineResultV1(payload),
+  );
 }
 
 function parseRunAnnualReportExtractionHttpResponseV1(
@@ -494,7 +508,9 @@ function parseGetActiveTaxAdjustmentsHttpResponseV1(
 function parseApplyTaxAdjustmentsOverridesHttpResponseV1(
   payload: unknown,
 ): ApplyTaxAdjustmentsOverridesResponseV1 {
-  return expectSuccessResultV1(parseApplyTaxAdjustmentOverridesResultV1(payload));
+  return expectSuccessResultV1(
+    parseApplyTaxAdjustmentOverridesResultV1(payload),
+  );
 }
 
 function parseRunTaxSummaryHttpResponseV1(
@@ -509,7 +525,9 @@ function parseGetActiveTaxSummaryHttpResponseV1(
   return expectSuccessResultV1(parseGetActiveTaxSummaryResultV1(payload));
 }
 
-function parseRunInk2FormHttpResponseV1(payload: unknown): RunInk2FormResponseV1 {
+function parseRunInk2FormHttpResponseV1(
+  payload: unknown,
+): RunInk2FormResponseV1 {
   return expectSuccessResultV1(parseRunInk2FormResultV1(payload));
 }
 
@@ -537,7 +555,9 @@ function parseListWorkspaceExportsHttpResponseV1(
   return expectSuccessResultV1(parseListWorkspaceExportsResultV1(payload));
 }
 
-function parseListCommentsHttpResponseV1(payload: unknown): ListCommentsResponseV1 {
+function parseListCommentsHttpResponseV1(
+  payload: unknown,
+): ListCommentsResponseV1 {
   return expectSuccessResultV1(parseListCommentsResultV1(payload));
 }
 

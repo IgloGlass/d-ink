@@ -8,7 +8,9 @@ export const TaxSummaryLineItemCodeV1Schema = z.enum([
   "taxable_income",
   "corporate_tax",
 ]);
-export type TaxSummaryLineItemCodeV1 = z.infer<typeof TaxSummaryLineItemCodeV1Schema>;
+export type TaxSummaryLineItemCodeV1 = z.infer<
+  typeof TaxSummaryLineItemCodeV1Schema
+>;
 
 export const TaxSummaryLineItemV1Schema = z
   .object({
@@ -51,7 +53,9 @@ export const RunTaxSummaryRequestV1Schema = z
     createdByUserId: UuidV4Schema.optional(),
   })
   .strict();
-export type RunTaxSummaryRequestV1 = z.infer<typeof RunTaxSummaryRequestV1Schema>;
+export type RunTaxSummaryRequestV1 = z.infer<
+  typeof RunTaxSummaryRequestV1Schema
+>;
 
 export const TaxSummaryErrorCodeV1Schema = z.enum([
   "INPUT_INVALID",
@@ -104,7 +108,9 @@ export function parseTaxSummaryPayloadV1(input: unknown): TaxSummaryPayloadV1 {
   return TaxSummaryPayloadV1Schema.parse(input);
 }
 
-export function parseRunTaxSummaryResultV1(input: unknown): RunTaxSummaryResultV1 {
+export function parseRunTaxSummaryResultV1(
+  input: unknown,
+): RunTaxSummaryResultV1 {
   return RunTaxSummaryResultV1Schema.parse(input);
 }
 

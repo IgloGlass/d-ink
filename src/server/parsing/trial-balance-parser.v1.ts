@@ -1484,9 +1484,28 @@ export function parseTrialBalanceFileV1(
     );
   }
 
-  const resolvedFileType =
-    parsedRequest.data.fileType ??
-    resolveFileTypeFromNameV1(parsedRequest.data.fileName);
+  const inferredFileType = resolveFileTypeFromNameV1(
+    parsedRequest.data.fileName,
+  );
+  if (
+    parsedRequest.data.fileType &&
+    inferredFileType &&
+    parsedRequest.data.fileType !== inferredFileType
+  ) {
+    return buildFailureV1(
+      "INPUT_INVALID",
+      "Declared fileType does not match file extension.",
+      "The selected file type does not match the uploaded file name extension.",
+      {
+        reason: "declared_file_type_mismatch",
+        fileName: parsedRequest.data.fileName,
+        declaredFileType: parsedRequest.data.fileType,
+        inferredFileType,
+      },
+    );
+  }
+
+  const resolvedFileType = parsedRequest.data.fileType ?? inferredFileType;
   if (!resolvedFileType) {
     return buildFailureV1(
       "UNSUPPORTED_FILE_FORMAT",

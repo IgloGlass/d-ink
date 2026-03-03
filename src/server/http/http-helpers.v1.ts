@@ -1,3 +1,8 @@
+import {
+  type PayloadLimitReasonV1,
+  parseContentLengthHeaderV1,
+} from "../security/payload-limits.v1";
+
 /**
  * Shared JSON error envelope used by V1 HTTP routes.
  */
@@ -151,9 +156,82 @@ export function validateOriginForPostV1(input: {
   return null;
 }
 
-export async function readJsonBodyV1(request: Request): Promise<unknown> {
+export type JsonBodyReadErrorV1 = {
+  __kind: "json_body_read_error_v1";
+  actualBytes?: number;
+  contentLengthHeaderValue?: string;
+  maxBytes: number;
+  reason: PayloadLimitReasonV1;
+};
+
+export function isJsonBodyReadErrorV1(
+  value: unknown,
+): value is JsonBodyReadErrorV1 {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const candidate = value as Partial<JsonBodyReadErrorV1>;
+  return (
+    candidate.__kind === "json_body_read_error_v1" &&
+    (candidate.reason === "content_length_invalid" ||
+      candidate.reason === "payload_too_large") &&
+    typeof candidate.maxBytes === "number"
+  );
+}
+
+export async function readJsonBodyV1(
+  request: Request,
+  options?: { maxBytes?: number },
+): Promise<unknown> {
+  const maxBytes = options?.maxBytes;
+  if (typeof maxBytes === "number") {
+    const contentLengthHeaderValue = request.headers.get("Content-Length");
+    const parsedContentLength = parseContentLengthHeaderV1(
+      contentLengthHeaderValue,
+    );
+
+    if (Number.isNaN(parsedContentLength)) {
+      return {
+        __kind: "json_body_read_error_v1",
+        reason: "content_length_invalid",
+        maxBytes,
+        contentLengthHeaderValue: contentLengthHeaderValue ?? undefined,
+      } satisfies JsonBodyReadErrorV1;
+    }
+
+    if (
+      typeof parsedContentLength === "number" &&
+      parsedContentLength > maxBytes
+    ) {
+      return {
+        __kind: "json_body_read_error_v1",
+        reason: "payload_too_large",
+        maxBytes,
+        actualBytes: parsedContentLength,
+      } satisfies JsonBodyReadErrorV1;
+    }
+  }
+
   try {
-    return await request.json();
+    const rawBody = await request.text();
+    if (typeof maxBytes === "number") {
+      const actualBytes = new TextEncoder().encode(rawBody).byteLength;
+      if (actualBytes > maxBytes) {
+        return {
+          __kind: "json_body_read_error_v1",
+          reason: "payload_too_large",
+          maxBytes,
+          actualBytes,
+        } satisfies JsonBodyReadErrorV1;
+      }
+    }
+
+    if (rawBody.trim().length === 0) {
+      return null;
+    }
+
+    return JSON.parse(rawBody);
   } catch {
     return null;
   }

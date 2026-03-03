@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import { generatePdfExportPackageV1 } from "../../../src/server/exports/pdf-export.v1";
 import { parseAnnualReportExtractionPayloadV1 } from "../../../src/shared/contracts/annual-report-extraction.v1";
 import { parseInk2FormDraftPayloadV1 } from "../../../src/shared/contracts/ink2-form.v1";
 import { parseTaxAdjustmentDecisionSetPayloadV1 } from "../../../src/shared/contracts/tax-adjustments.v1";
 import { parseTaxSummaryPayloadV1 } from "../../../src/shared/contracts/tax-summary.v1";
 import { parseWorkspaceV1 } from "../../../src/shared/contracts/workspace.v1";
-import { generatePdfExportPackageV1 } from "../../../src/server/exports/pdf-export.v1";
 
 function workspace(status: "approved_for_export" | "in_review") {
   return parseWorkspaceV1({
@@ -28,7 +28,11 @@ function extraction() {
     policyVersion: "annual-report-manual-first.v1",
     fields: {
       companyName: { status: "manual", confidence: 1, value: "Acme AB" },
-      organizationNumber: { status: "manual", confidence: 1, value: "556677-8899" },
+      organizationNumber: {
+        status: "manual",
+        confidence: 1,
+        value: "556677-8899",
+      },
       fiscalYearStart: { status: "manual", confidence: 1, value: "2025-01-01" },
       fiscalYearEnd: { status: "manual", confidence: 1, value: "2025-12-31" },
       accountingStandard: { status: "manual", confidence: 1, value: "K2" },

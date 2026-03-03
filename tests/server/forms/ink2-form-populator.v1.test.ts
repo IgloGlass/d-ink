@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { populateInk2FormDraftV1 } from "../../../src/server/forms/ink2-form-populator.v1";
 import { parseAnnualReportExtractionPayloadV1 } from "../../../src/shared/contracts/annual-report-extraction.v1";
 import { parseTaxAdjustmentDecisionSetPayloadV1 } from "../../../src/shared/contracts/tax-adjustments.v1";
 import { parseTaxSummaryPayloadV1 } from "../../../src/shared/contracts/tax-summary.v1";
-import { populateInk2FormDraftV1 } from "../../../src/server/forms/ink2-form-populator.v1";
 
 function extraction() {
   return parseAnnualReportExtractionPayloadV1({
@@ -13,7 +13,11 @@ function extraction() {
     policyVersion: "annual-report-manual-first.v1",
     fields: {
       companyName: { status: "manual", confidence: 1, value: "Acme AB" },
-      organizationNumber: { status: "manual", confidence: 1, value: "556677-8899" },
+      organizationNumber: {
+        status: "manual",
+        confidence: 1,
+        value: "556677-8899",
+      },
       fiscalYearStart: { status: "manual", confidence: 1, value: "2025-01-01" },
       fiscalYearEnd: { status: "manual", confidence: 1, value: "2025-12-31" },
       accountingStandard: { status: "manual", confidence: 1, value: "K2" },
@@ -155,10 +159,16 @@ describe("INK2 form populator v1", () => {
       return;
     }
 
-    const fieldMap = new Map(result.form.fields.map((field) => [field.fieldId, field]));
-    expect(fieldMap.get("INK2R.profit_before_tax")?.provenance).toBe("extracted");
+    const fieldMap = new Map(
+      result.form.fields.map((field) => [field.fieldId, field]),
+    );
+    expect(fieldMap.get("INK2R.profit_before_tax")?.provenance).toBe(
+      "extracted",
+    );
     expect(fieldMap.get("INK2S.non_deductible_expenses")?.amount).toBe(5000);
-    expect(fieldMap.get("INK2S.representation_non_deductible")?.amount).toBe(1000);
+    expect(fieldMap.get("INK2S.representation_non_deductible")?.amount).toBe(
+      1000,
+    );
     expect(fieldMap.get("INK2S.total_adjustments")?.amount).toBe(6000);
     expect(fieldMap.get("INK2S.corporate_tax")?.amount).toBe(207236);
   });

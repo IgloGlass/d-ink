@@ -49,7 +49,9 @@ export const TaxAdjustmentEvidenceV1Schema = z
     snippet: z.string().trim().min(1).optional(),
   })
   .strict();
-export type TaxAdjustmentEvidenceV1 = z.infer<typeof TaxAdjustmentEvidenceV1Schema>;
+export type TaxAdjustmentEvidenceV1 = z.infer<
+  typeof TaxAdjustmentEvidenceV1Schema
+>;
 
 export const TaxAdjustmentOverrideV1Schema = z
   .object({
@@ -57,7 +59,9 @@ export const TaxAdjustmentOverrideV1Schema = z
     authorUserId: UuidV4Schema.optional(),
   })
   .strict();
-export type TaxAdjustmentOverrideV1 = z.infer<typeof TaxAdjustmentOverrideV1Schema>;
+export type TaxAdjustmentOverrideV1 = z.infer<
+  typeof TaxAdjustmentOverrideV1Schema
+>;
 
 export const TaxAdjustmentDecisionV1Schema = z
   .object({
@@ -79,12 +83,15 @@ export const TaxAdjustmentDecisionV1Schema = z
     if (value.status === "overridden" && !value.override) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Overridden adjustment decisions must include override metadata.",
+        message:
+          "Overridden adjustment decisions must include override metadata.",
         path: ["override"],
       });
     }
   });
-export type TaxAdjustmentDecisionV1 = z.infer<typeof TaxAdjustmentDecisionV1Schema>;
+export type TaxAdjustmentDecisionV1 = z.infer<
+  typeof TaxAdjustmentDecisionV1Schema
+>;
 
 export const TaxAdjustmentDecisionSummaryV1Schema = z
   .object({
@@ -197,7 +204,9 @@ export const TaxAdjustmentFailureV1Schema = z
       .strict(),
   })
   .strict();
-export type TaxAdjustmentFailureV1 = z.infer<typeof TaxAdjustmentFailureV1Schema>;
+export type TaxAdjustmentFailureV1 = z.infer<
+  typeof TaxAdjustmentFailureV1Schema
+>;
 
 const TaxAdjustmentSuccessBaseV1Schema = z
   .object({
@@ -211,12 +220,14 @@ export const RunTaxAdjustmentResultV1Schema = z.discriminatedUnion("ok", [
   TaxAdjustmentSuccessBaseV1Schema,
   TaxAdjustmentFailureV1Schema,
 ]);
-export type RunTaxAdjustmentResultV1 = z.infer<typeof RunTaxAdjustmentResultV1Schema>;
+export type RunTaxAdjustmentResultV1 = z.infer<
+  typeof RunTaxAdjustmentResultV1Schema
+>;
 
-export const GetActiveTaxAdjustmentsResultV1Schema = z.discriminatedUnion("ok", [
-  TaxAdjustmentSuccessBaseV1Schema,
-  TaxAdjustmentFailureV1Schema,
-]);
+export const GetActiveTaxAdjustmentsResultV1Schema = z.discriminatedUnion(
+  "ok",
+  [TaxAdjustmentSuccessBaseV1Schema, TaxAdjustmentFailureV1Schema],
+);
 export type GetActiveTaxAdjustmentsResultV1 = z.infer<
   typeof GetActiveTaxAdjustmentsResultV1Schema
 >;

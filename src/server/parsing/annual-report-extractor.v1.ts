@@ -32,7 +32,10 @@ export type ParseAnnualReportExtractionResultV1 =
   | ParseAnnualReportExtractionFailureV1;
 
 function normalizeWhitespaceV1(input: string): string {
-  return input.replace(/\r/g, "\n").replace(/[^\S\n]+/g, " ").trim();
+  return input
+    .replace(/\r/g, "\n")
+    .replace(/[^\S\n]+/g, " ")
+    .trim();
 }
 
 function parseNumberValueV1(input: string): number | null {
@@ -77,20 +80,8 @@ function parseNumberValueV1(input: string): number | null {
   return isNegativeByParentheses ? -Math.abs(value) : value;
 }
 
-function inferFileTypeV1(input: {
-  fileName: string;
-  fileType?: "pdf" | "docx";
-}): "pdf" | "docx" | null {
-  if (input.fileType) {
-    const parsed = AnnualReportFileTypeV1Schema.safeParse(input.fileType);
-    if (!parsed.success) {
-      return null;
-    }
-
-    return parsed.data;
-  }
-
-  const lowerName = input.fileName.toLowerCase();
+function resolveFileTypeFromNameV1(fileName: string): "pdf" | "docx" | null {
+  const lowerName = fileName.toLowerCase();
   if (lowerName.endsWith(".pdf")) {
     return "pdf";
   }
@@ -186,9 +177,8 @@ function buildNumberFieldV1(input: {
   snippet?: string;
   confidence: number;
 }) {
-  const status: AnnualReportExtractionFieldStatusV1 = input.value !== null
-    ? "extracted"
-    : "needs_review";
+  const status: AnnualReportExtractionFieldStatusV1 =
+    input.value !== null ? "extracted" : "needs_review";
   return {
     status,
     confidence: input.value !== null ? input.confidence : 0,
@@ -209,7 +199,10 @@ function parseAnnualReportExtractionRequestV1(
   }
 
   const candidate = input as Partial<ParseAnnualReportExtractionRequestV1>;
-  if (typeof candidate.fileName !== "string" || candidate.fileName.trim() === "") {
+  if (
+    typeof candidate.fileName !== "string" ||
+    candidate.fileName.trim() === ""
+  ) {
     return null;
   }
   if (
@@ -256,10 +249,52 @@ export function parseAnnualReportExtractionV1(
     };
   }
 
-  const resolvedFileType = inferFileTypeV1({
-    fileName: parsedRequest.fileName,
-    fileType: parsedRequest.fileType,
-  });
+  let declaredFileType: "pdf" | "docx" | null = null;
+  if (parsedRequest.fileType) {
+    const parsedDeclaredType = AnnualReportFileTypeV1Schema.safeParse(
+      parsedRequest.fileType,
+    );
+    if (!parsedDeclaredType.success) {
+      return {
+        ok: false,
+        error: {
+          code: "INPUT_INVALID",
+          message: "Annual report file type is unsupported.",
+          user_message: "Upload a PDF or DOCX annual report file.",
+          context: {
+            fileName: parsedRequest.fileName,
+          },
+        },
+      };
+    }
+
+    declaredFileType = parsedDeclaredType.data;
+  }
+
+  const inferredFileType = resolveFileTypeFromNameV1(parsedRequest.fileName);
+  if (
+    declaredFileType &&
+    inferredFileType &&
+    declaredFileType !== inferredFileType
+  ) {
+    return {
+      ok: false,
+      error: {
+        code: "INPUT_INVALID",
+        message: "Declared annual report file type does not match file name.",
+        user_message:
+          "The annual report file type does not match the uploaded file extension.",
+        context: {
+          reason: "declared_file_type_mismatch",
+          fileName: parsedRequest.fileName,
+          declaredFileType,
+          inferredFileType,
+        },
+      },
+    };
+  }
+
+  const resolvedFileType = declaredFileType ?? inferredFileType;
   if (!resolvedFileType) {
     return {
       ok: false,
@@ -288,7 +323,9 @@ export function parseAnnualReportExtractionV1(
         user_message: "The annual report could not be parsed.",
         context: {
           error:
-            error instanceof Error ? error.message : "Unknown decoding failure.",
+            error instanceof Error
+              ? error.message
+              : "Unknown decoding failure.",
         },
       },
     };
@@ -301,7 +338,8 @@ export function parseAnnualReportExtractionV1(
       error: {
         code: "PARSE_FAILED",
         message: "Annual report file did not contain readable text.",
-        user_message: "The annual report could not be parsed into readable text.",
+        user_message:
+          "The annual report could not be parsed into readable text.",
         context: {
           fileName: parsedRequest.fileName,
         },
@@ -333,7 +371,8 @@ export function parseAnnualReportExtractionV1(
   const profitBeforeTaxMatch =
     extractWithPatternV1({
       text,
-      pattern: /\b(?:profit before tax|resultat före skatt)\s*[:\-]?\s*(-?[0-9().,\s]+)/i,
+      pattern:
+        /\b(?:profit before tax|resultat före skatt)\s*[:\-]?\s*(-?[0-9().,\s]+)/i,
     }) ??
     extractWithPatternV1({
       text,
@@ -418,11 +457,15 @@ export function parseAnnualReportExtractionV1(
       ok: false,
       error: {
         code: "INPUT_INVALID",
-        message: "Extracted annual report payload did not pass contract validation.",
+        message:
+          "Extracted annual report payload did not pass contract validation.",
         user_message:
           "The report was read but extracted values could not be validated.",
         context: {
-          message: error instanceof Error ? error.message : "Unknown validation error.",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Unknown validation error.",
         },
       },
     };

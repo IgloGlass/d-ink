@@ -56,7 +56,11 @@ function annualExtractionPayload() {
     policyVersion: "annual-report-manual-first.v1",
     fields: {
       companyName: { status: "manual", confidence: 1, value: "Acme AB" },
-      organizationNumber: { status: "manual", confidence: 1, value: "556677-8899" },
+      organizationNumber: {
+        status: "manual",
+        confidence: 1,
+        value: "556677-8899",
+      },
       fiscalYearStart: { status: "manual", confidence: 1, value: "2025-01-01" },
       fiscalYearEnd: { status: "manual", confidence: 1, value: "2025-12-31" },
       accountingStandard: { status: "manual", confidence: 1, value: "K2" },

@@ -3,22 +3,24 @@ import type { z } from "zod";
 import type { AuditRepositoryV1 } from "../../db/repositories/audit.repository.v1";
 import type { WorkspaceArtifactRepositoryV1 } from "../../db/repositories/workspace-artifact.repository.v1";
 import type { WorkspaceRepositoryV1 } from "../../db/repositories/workspace.repository.v1";
-import { parseAuditEventV2 } from "../../shared/contracts/audit-event.v2";
+import { AUDIT_EVENT_TYPES_V1 } from "../../shared/audit/audit-event-catalog.v1";
 import {
   type AnnualReportExtractionPayloadV1,
   ApplyAnnualReportExtractionOverridesRequestV1Schema,
   type ApplyAnnualReportExtractionOverridesResultV1,
   ConfirmAnnualReportExtractionRequestV1Schema,
   type ConfirmAnnualReportExtractionResultV1,
-  GetActiveAnnualReportExtractionResultV1Schema,
   type GetActiveAnnualReportExtractionResultV1,
+  GetActiveAnnualReportExtractionResultV1Schema,
   RunAnnualReportExtractionRequestV1Schema,
   type RunAnnualReportExtractionResultV1,
   parseApplyAnnualReportExtractionOverridesResultV1,
   parseConfirmAnnualReportExtractionResultV1,
   parseRunAnnualReportExtractionResultV1,
 } from "../../shared/contracts/annual-report-extraction.v1";
+import { parseAuditEventV2 } from "../../shared/contracts/audit-event.v2";
 import { parseAnnualReportExtractionV1 } from "../parsing/annual-report-extractor.v1";
+import { MAX_ANNUAL_REPORT_FILE_BYTES_V1 } from "../security/payload-limits.v1";
 
 export interface AnnualReportExtractionDepsV1 {
   artifactRepository: WorkspaceArtifactRepositoryV1;
@@ -59,6 +61,16 @@ function buildFailureV1(input: {
       context: input.context,
     },
   };
+}
+
+async function appendAuditEventBestEffortV1(input: {
+  deps: AnnualReportExtractionDepsV1;
+  event: ReturnType<typeof parseAuditEventV2>;
+}): Promise<void> {
+  const appendResult = await input.deps.auditRepository.append(input.event);
+  if (!appendResult.ok) {
+    // Extraction artifacts remain source of truth; audit append is best-effort.
+  }
 }
 
 function decodeBase64ToUint8ArrayV1(base64Value: string): Uint8Array | null {
@@ -117,8 +129,9 @@ function recalculateSummaryV1(extraction: AnnualReportExtractionPayloadV1) {
   return {
     autoDetectedFieldCount: statuses.filter((status) => status === "extracted")
       .length,
-    needsReviewFieldCount: statuses.filter((status) => status === "needs_review")
-      .length,
+    needsReviewFieldCount: statuses.filter(
+      (status) => status === "needs_review",
+    ).length,
   };
 }
 
@@ -152,7 +165,9 @@ function applyExtractionOverridesV1(input: {
       case "organizationNumber": {
         const value = String(override.value).trim();
         if (value.length === 0) {
-          throw new Error(`Override for ${override.fieldKey} must be non-empty text.`);
+          throw new Error(
+            `Override for ${override.fieldKey} must be non-empty text.`,
+          );
         }
         next.fields[override.fieldKey] = {
           status: "manual",
@@ -212,7 +227,9 @@ function applyExtractionOverridesV1(input: {
       }
       default: {
         const exhaustiveCheck: never = override.fieldKey;
-        throw new Error(`Unsupported override field: ${String(exhaustiveCheck)}`);
+        throw new Error(
+          `Unsupported override field: ${String(exhaustiveCheck)}`,
+        );
       }
     }
   }
@@ -250,7 +267,8 @@ export async function runAnnualReportExtractionV1(
   input: unknown,
   deps: AnnualReportExtractionDepsV1,
 ): Promise<RunAnnualReportExtractionResultV1> {
-  const parsedRequest = RunAnnualReportExtractionRequestV1Schema.safeParse(input);
+  const parsedRequest =
+    RunAnnualReportExtractionRequestV1Schema.safeParse(input);
   if (!parsedRequest.success) {
     return parseRunAnnualReportExtractionResultV1(
       buildFailureV1({
@@ -263,6 +281,7 @@ export async function runAnnualReportExtractionV1(
     );
   }
   const request = parsedRequest.data;
+  const actorType = request.createdByUserId ? "user" : "system";
 
   const workspace = await deps.workspaceRepository.getById({
     tenantId: request.tenantId,
@@ -289,13 +308,52 @@ export async function runAnnualReportExtractionV1(
         code: "INPUT_INVALID",
         message:
           "fileBytesBase64 could not be decoded into non-empty annual report bytes.",
-        userMessage: "The annual report bytes are invalid. Upload the file again.",
+        userMessage:
+          "The annual report bytes are invalid. Upload the file again.",
         context: {
           fileName: request.fileName,
         },
       }),
     );
   }
+  if (fileBytes.byteLength > MAX_ANNUAL_REPORT_FILE_BYTES_V1) {
+    return parseRunAnnualReportExtractionResultV1(
+      buildFailureV1({
+        code: "INPUT_INVALID",
+        message: "Decoded annual report file exceeds configured size limit.",
+        userMessage:
+          "The annual report file is too large for V1 processing limits.",
+        context: {
+          reason: "payload_too_large",
+          maxBytes: MAX_ANNUAL_REPORT_FILE_BYTES_V1,
+          actualBytes: fileBytes.byteLength,
+          fileName: request.fileName,
+        },
+      }),
+    );
+  }
+
+  await appendAuditEventBestEffortV1({
+    deps,
+    event: parseAuditEventV2({
+      id: deps.generateId(),
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      actorType,
+      actorUserId: request.createdByUserId,
+      eventType: AUDIT_EVENT_TYPES_V1.FILE_UPLOADED,
+      targetType: "annual_report_file",
+      targetId: request.fileName,
+      after: {
+        fileName: request.fileName,
+        fileType: request.fileType ?? null,
+        decodedBytes: fileBytes.byteLength,
+        module: "annual_report_extraction",
+      },
+      timestamp: deps.nowIsoUtc(),
+      context: {},
+    }),
+  });
 
   const extractionResult = parseAnnualReportExtractionV1({
     fileName: request.fileName,
@@ -304,6 +362,26 @@ export async function runAnnualReportExtractionV1(
     policyVersion: request.policyVersion,
   });
   if (!extractionResult.ok) {
+    await appendAuditEventBestEffortV1({
+      deps,
+      event: parseAuditEventV2({
+        id: deps.generateId(),
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        actorType,
+        actorUserId: request.createdByUserId,
+        eventType: AUDIT_EVENT_TYPES_V1.PARSE_FAILED,
+        targetType: "annual_report_file",
+        targetId: request.fileName,
+        after: {
+          fileName: request.fileName,
+          errorCode: extractionResult.error.code,
+        },
+        timestamp: deps.nowIsoUtc(),
+        context: {},
+      }),
+    });
+
     return parseRunAnnualReportExtractionResultV1(
       buildFailureV1({
         code: extractionResult.error.code,
@@ -313,17 +391,37 @@ export async function runAnnualReportExtractionV1(
       }),
     );
   }
+  await appendAuditEventBestEffortV1({
+    deps,
+    event: parseAuditEventV2({
+      id: deps.generateId(),
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      actorType,
+      actorUserId: request.createdByUserId,
+      eventType: AUDIT_EVENT_TYPES_V1.PARSE_SUCCEEDED,
+      targetType: "annual_report_extraction",
+      targetId: request.fileName,
+      after: {
+        extractedFieldCount:
+          extractionResult.extraction.summary.autoDetectedFieldCount,
+        needsReviewFieldCount:
+          extractionResult.extraction.summary.needsReviewFieldCount,
+      },
+      timestamp: deps.nowIsoUtc(),
+      context: {},
+    }),
+  });
 
-  const writeResult = await deps.artifactRepository.appendAnnualReportExtractionAndSetActive(
-    {
+  const writeResult =
+    await deps.artifactRepository.appendAnnualReportExtractionAndSetActive({
       artifactId: deps.generateId(),
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
       createdAt: deps.nowIsoUtc(),
       createdByUserId: request.createdByUserId,
       extraction: extractionResult.extraction,
-    },
-  );
+    });
   if (!writeResult.ok) {
     return parseRunAnnualReportExtractionResultV1(
       buildFailureV1({
@@ -347,21 +445,49 @@ export async function runAnnualReportExtractionV1(
     id: deps.generateId(),
     tenantId: request.tenantId,
     workspaceId: request.workspaceId,
-    actorType: request.createdByUserId ? "user" : "system",
+    actorType,
     actorUserId: request.createdByUserId,
-    eventType: "annual_report.extracted",
+    eventType: AUDIT_EVENT_TYPES_V1.EXTRACTION_CREATED,
     targetType: "annual_report_extraction_artifact",
     targetId: writeResult.artifact.id,
     after: {
       artifactId: writeResult.artifact.id,
       version: writeResult.artifact.version,
-      autoDetectedFieldCount: writeResult.artifact.payload.summary.autoDetectedFieldCount,
-      needsReviewFieldCount: writeResult.artifact.payload.summary.needsReviewFieldCount,
+      autoDetectedFieldCount:
+        writeResult.artifact.payload.summary.autoDetectedFieldCount,
+      needsReviewFieldCount:
+        writeResult.artifact.payload.summary.needsReviewFieldCount,
     },
     timestamp: deps.nowIsoUtc(),
     context: {},
   });
-  await deps.auditRepository.append(auditEvent);
+  await appendAuditEventBestEffortV1({
+    deps,
+    event: auditEvent,
+  });
+  if (writeResult.artifact.version > 1) {
+    await appendAuditEventBestEffortV1({
+      deps,
+      event: parseAuditEventV2({
+        id: deps.generateId(),
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        actorType,
+        actorUserId: request.createdByUserId,
+        eventType: AUDIT_EVENT_TYPES_V1.MODULE_RERUN,
+        targetType: "pipeline_module",
+        targetId: "annual_report_extraction",
+        before: {
+          extractionVersion: writeResult.artifact.version - 1,
+        },
+        after: {
+          extractionVersion: writeResult.artifact.version,
+        },
+        timestamp: deps.nowIsoUtc(),
+        context: {},
+      }),
+    });
+  }
 
   return parseRunAnnualReportExtractionResultV1({
     ok: true,
@@ -389,8 +515,10 @@ export async function getActiveAnnualReportExtractionV1(
     return GetActiveAnnualReportExtractionResultV1Schema.parse(
       buildFailureV1({
         code: "EXTRACTION_NOT_FOUND",
-        message: "No active annual report extraction exists for this workspace.",
-        userMessage: "No annual report extraction was found for this workspace.",
+        message:
+          "No active annual report extraction exists for this workspace.",
+        userMessage:
+          "No annual report extraction was found for this workspace.",
         context: {
           tenantId: input.tenantId,
           workspaceId: input.workspaceId,
@@ -455,8 +583,10 @@ export async function applyAnnualReportExtractionOverridesV1(
     return parseApplyAnnualReportExtractionOverridesResultV1(
       buildFailureV1({
         code: "EXTRACTION_NOT_FOUND",
-        message: "No active annual report extraction exists for this workspace.",
-        userMessage: "No annual report extraction was found for this workspace.",
+        message:
+          "No active annual report extraction exists for this workspace.",
+        userMessage:
+          "No annual report extraction was found for this workspace.",
         context: {
           tenantId: request.tenantId,
           workspaceId: request.workspaceId,
@@ -497,7 +627,8 @@ export async function applyAnnualReportExtractionOverridesV1(
     return parseApplyAnnualReportExtractionOverridesResultV1(
       buildFailureV1({
         code: "INPUT_INVALID",
-        message: error instanceof Error ? error.message : "Invalid override payload.",
+        message:
+          error instanceof Error ? error.message : "Invalid override payload.",
         userMessage: "One or more override values are invalid.",
         context: {
           overrideValues: request.overrides.map((override) => ({
@@ -509,16 +640,15 @@ export async function applyAnnualReportExtractionOverridesV1(
     );
   }
 
-  const persisted = await deps.artifactRepository.appendAnnualReportExtractionAndSetActive(
-    {
+  const persisted =
+    await deps.artifactRepository.appendAnnualReportExtractionAndSetActive({
       artifactId: deps.generateId(),
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
       createdAt: deps.nowIsoUtc(),
       createdByUserId: request.authorUserId,
       extraction: updatedExtraction,
-    },
-  );
+    });
   if (!persisted.ok) {
     return parseApplyAnnualReportExtractionOverridesResultV1(
       buildFailureV1({
@@ -527,7 +657,8 @@ export async function applyAnnualReportExtractionOverridesV1(
             ? "WORKSPACE_NOT_FOUND"
             : "PERSISTENCE_ERROR",
         message: persisted.message,
-        userMessage: "Extraction overrides could not be saved due to a storage error.",
+        userMessage:
+          "Extraction overrides could not be saved due to a storage error.",
         context: {
           operation: "annual_report.override.persist",
         },
@@ -541,7 +672,7 @@ export async function applyAnnualReportExtractionOverridesV1(
     workspaceId: request.workspaceId,
     actorType: request.authorUserId ? "user" : "system",
     actorUserId: request.authorUserId,
-    eventType: "annual_report.extraction_field_overridden",
+    eventType: AUDIT_EVENT_TYPES_V1.EXTRACTION_OVERRIDDEN,
     targetType: "annual_report_extraction_artifact",
     targetId: persisted.artifact.id,
     before: {
@@ -558,7 +689,10 @@ export async function applyAnnualReportExtractionOverridesV1(
       overriddenFields: request.overrides.map((override) => override.fieldKey),
     },
   });
-  await deps.auditRepository.append(auditEvent);
+  await appendAuditEventBestEffortV1({
+    deps,
+    event: auditEvent,
+  });
 
   return parseApplyAnnualReportExtractionOverridesResultV1({
     ok: true,
@@ -576,7 +710,8 @@ export async function confirmAnnualReportExtractionV1(
   input: unknown,
   deps: AnnualReportExtractionDepsV1,
 ): Promise<ConfirmAnnualReportExtractionResultV1> {
-  const parsedRequest = ConfirmAnnualReportExtractionRequestV1Schema.safeParse(input);
+  const parsedRequest =
+    ConfirmAnnualReportExtractionRequestV1Schema.safeParse(input);
   if (!parsedRequest.success) {
     return parseConfirmAnnualReportExtractionResultV1(
       buildFailureV1({
@@ -598,8 +733,10 @@ export async function confirmAnnualReportExtractionV1(
     return parseConfirmAnnualReportExtractionResultV1(
       buildFailureV1({
         code: "EXTRACTION_NOT_FOUND",
-        message: "No active annual report extraction exists for this workspace.",
-        userMessage: "No annual report extraction was found for this workspace.",
+        message:
+          "No active annual report extraction exists for this workspace.",
+        userMessage:
+          "No annual report extraction was found for this workspace.",
         context: {
           tenantId: request.tenantId,
           workspaceId: request.workspaceId,
@@ -630,7 +767,9 @@ export async function confirmAnnualReportExtractionV1(
     );
   }
 
-  const missingRequiredFields = listMissingRequiredExtractionFieldsV1(active.payload);
+  const missingRequiredFields = listMissingRequiredExtractionFieldsV1(
+    active.payload,
+  );
   if (missingRequiredFields.length > 0) {
     return parseConfirmAnnualReportExtractionResultV1(
       buildFailureV1({
@@ -655,16 +794,15 @@ export async function confirmAnnualReportExtractionV1(
   } satisfies AnnualReportExtractionPayloadV1;
   confirmedExtraction.summary = recalculateSummaryV1(confirmedExtraction);
 
-  const persisted = await deps.artifactRepository.appendAnnualReportExtractionAndSetActive(
-    {
+  const persisted =
+    await deps.artifactRepository.appendAnnualReportExtractionAndSetActive({
       artifactId: deps.generateId(),
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
       createdAt: deps.nowIsoUtc(),
       createdByUserId: request.confirmedByUserId,
       extraction: confirmedExtraction,
-    },
-  );
+    });
   if (!persisted.ok) {
     return parseConfirmAnnualReportExtractionResultV1(
       buildFailureV1({
@@ -688,7 +826,7 @@ export async function confirmAnnualReportExtractionV1(
     workspaceId: request.workspaceId,
     actorType: "user",
     actorUserId: request.confirmedByUserId,
-    eventType: "annual_report.extraction_confirmed",
+    eventType: AUDIT_EVENT_TYPES_V1.EXTRACTION_CONFIRMED,
     targetType: "annual_report_extraction_artifact",
     targetId: persisted.artifact.id,
     before: {
@@ -703,7 +841,10 @@ export async function confirmAnnualReportExtractionV1(
     timestamp: deps.nowIsoUtc(),
     context: {},
   });
-  await deps.auditRepository.append(auditEvent);
+  await appendAuditEventBestEffortV1({
+    deps,
+    event: auditEvent,
+  });
 
   return parseConfirmAnnualReportExtractionResultV1({
     ok: true,

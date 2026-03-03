@@ -5,11 +5,11 @@ import { parseAuditEventV2 } from "../../shared/contracts/audit-event.v2";
 import {
   type AuthErrorCodeV1,
   type AuthFailureV1,
+  AuthInviteV1Schema,
+  AuthMagicLinkTokenV1Schema,
   type AuthPrincipalV1,
   AuthRoleV1Schema,
   type AuthSessionV1,
-  AuthInviteV1Schema,
-  AuthMagicLinkTokenV1Schema,
   AuthenticateSessionRequestV1Schema,
   type AuthenticateSessionResultV1,
   ConsumeMagicLinkTokenRequestV1Schema,

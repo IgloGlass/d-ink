@@ -6,9 +6,9 @@ import { createD1TasksRepositoryV1 } from "../../db/repositories/tasks.repositor
 import { createD1TbPipelineArtifactRepositoryV1 } from "../../db/repositories/tb-pipeline-artifact.repository.v1";
 import { createD1WorkspaceArtifactRepositoryV1 } from "../../db/repositories/workspace-artifact.repository.v1";
 import { createD1WorkspaceRepositoryV1 } from "../../db/repositories/workspace.repository.v1";
+import type { Env } from "../../shared/types/env";
 import { executeMappingReviewModelV1 } from "../ai/modules/mapping-review/executor.v1";
 import { loadMappingReviewModuleConfigV1 } from "../ai/modules/mapping-review/loader.v1";
-import type { Env } from "../../shared/types/env";
 import type { AnnualReportExtractionDepsV1 } from "./annual-report-extraction.v1";
 import type {
   AuthMagicLinkDepsV1,

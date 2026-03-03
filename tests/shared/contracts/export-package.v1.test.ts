@@ -17,7 +17,8 @@ describe("export package contracts v1", () => {
       createdAt: "2026-03-03T08:00:00.000Z",
       createdByUserId: "99200000-0000-4000-8000-000000000001",
       artifactReferences: {
-        annualReportExtractionArtifactId: "99200000-0000-4000-8000-000000000010",
+        annualReportExtractionArtifactId:
+          "99200000-0000-4000-8000-000000000010",
         adjustmentsArtifactId: "99200000-0000-4000-8000-000000000011",
         summaryArtifactId: "99200000-0000-4000-8000-000000000012",
         ink2FormArtifactId: "99200000-0000-4000-8000-000000000013",
@@ -47,7 +48,8 @@ describe("export package contracts v1", () => {
         contentBase64: "JVBERi0xLjQK",
         createdAt: "2026-03-03T08:00:00.000Z",
         artifactReferences: {
-          annualReportExtractionArtifactId: "99200000-0000-4000-8000-000000000010",
+          annualReportExtractionArtifactId:
+            "99200000-0000-4000-8000-000000000010",
           adjustmentsArtifactId: "99200000-0000-4000-8000-000000000011",
           summaryArtifactId: "99200000-0000-4000-8000-000000000012",
           ink2FormArtifactId: "99200000-0000-4000-8000-000000000013",

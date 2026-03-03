@@ -25,7 +25,9 @@ describe("annual report extractor v1", () => {
       return;
     }
     expect(result.extraction.fields.companyName.value).toBe("Acme AB");
-    expect(result.extraction.fields.organizationNumber.value).toBe("556677-8899");
+    expect(result.extraction.fields.organizationNumber.value).toBe(
+      "556677-8899",
+    );
     expect(result.extraction.fields.accountingStandard.value).toBe("K2");
     expect(result.extraction.fields.profitBeforeTax.value).toBe(1250000);
   });
@@ -44,7 +46,9 @@ describe("annual report extractor v1", () => {
     }
     expect(result.extraction.sourceFileType).toBe("docx");
     expect(result.extraction.fields.companyName.status).toBe("extracted");
-    expect(result.extraction.fields.profitBeforeTax.status).toBe("needs_review");
+    expect(result.extraction.fields.profitBeforeTax.status).toBe(
+      "needs_review",
+    );
   });
 
   it("fails on unsupported extension", () => {
@@ -57,6 +61,21 @@ describe("annual report extractor v1", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("INPUT_INVALID");
+    }
+  });
+
+  it("fails when declared file type mismatches file name extension", () => {
+    const result = parseAnnualReportExtractionV1({
+      fileName: "annual-report.pdf",
+      fileType: "docx",
+      fileBytes: toBytes("Company Name: Acme AB"),
+      policyVersion: "annual-report-manual-first.v1",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INPUT_INVALID");
+      expect(result.error.context.reason).toBe("declared_file_type_mismatch");
     }
   });
 

@@ -3,8 +3,8 @@ import {
   parseAnnualReportExtractionPayloadV1,
 } from "../../shared/contracts/annual-report-extraction.v1";
 import {
-  MappingDecisionSetPayloadV1Schema,
   type MappingDecisionSetPayloadV1,
+  MappingDecisionSetPayloadV1Schema,
 } from "../../shared/contracts/mapping.v1";
 import {
   type TaxAdjustmentDecisionSetPayloadV1,
@@ -150,7 +150,8 @@ export function generateTaxAdjustmentsV1(
         message: "Tax-adjustment input contracts are invalid.",
         user_message: "Adjustment input payload is invalid.",
         context: {
-          message: error instanceof Error ? error.message : "Unknown parse failure.",
+          message:
+            error instanceof Error ? error.message : "Unknown parse failure.",
         },
       },
     };
@@ -161,8 +162,10 @@ export function generateTaxAdjustmentsV1(
       ok: false,
       error: {
         code: "INPUT_INVALID",
-        message: "Annual report extraction must be confirmed before adjustments.",
-        user_message: "Confirm annual report extraction before running adjustments.",
+        message:
+          "Annual report extraction must be confirmed before adjustments.",
+        user_message:
+          "Confirm annual report extraction before running adjustments.",
         context: {},
       },
     };
@@ -285,7 +288,8 @@ export function generateTaxAdjustmentsV1(
       policyVersion: candidate.policyVersion,
       generatedFrom: {
         mappingArtifactId: candidate.mappingArtifactId,
-        annualReportExtractionArtifactId: candidate.annualReportExtractionArtifactId,
+        annualReportExtractionArtifactId:
+          candidate.annualReportExtractionArtifactId,
       },
       summary: {
         totalDecisions: decisions.length,
@@ -308,10 +312,12 @@ export function generateTaxAdjustmentsV1(
       ok: false,
       error: {
         code: "INPUT_INVALID",
-        message: "Generated adjustment payload did not pass contract validation.",
+        message:
+          "Generated adjustment payload did not pass contract validation.",
         user_message: "Generated adjustments are invalid.",
         context: {
-          message: error instanceof Error ? error.message : "Unknown parse failure.",
+          message:
+            error instanceof Error ? error.message : "Unknown parse failure.",
         },
       },
     };

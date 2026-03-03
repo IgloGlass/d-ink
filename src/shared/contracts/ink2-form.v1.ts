@@ -48,7 +48,8 @@ export const Ink2FormDraftPayloadV1Schema = z
   })
   .strict()
   .superRefine((value, ctx) => {
-    const uniqueFieldCount = new Set(value.fields.map((field) => field.fieldId)).size;
+    const uniqueFieldCount = new Set(value.fields.map((field) => field.fieldId))
+      .size;
     if (uniqueFieldCount !== value.fields.length) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -57,7 +58,9 @@ export const Ink2FormDraftPayloadV1Schema = z
       });
     }
   });
-export type Ink2FormDraftPayloadV1 = z.infer<typeof Ink2FormDraftPayloadV1Schema>;
+export type Ink2FormDraftPayloadV1 = z.infer<
+  typeof Ink2FormDraftPayloadV1Schema
+>;
 
 export const ActiveInk2FormRefV1Schema = z
   .object({
@@ -164,7 +167,9 @@ export type ApplyInk2FormOverridesResultV1 = z.infer<
   typeof ApplyInk2FormOverridesResultV1Schema
 >;
 
-export function parseInk2FormDraftPayloadV1(input: unknown): Ink2FormDraftPayloadV1 {
+export function parseInk2FormDraftPayloadV1(
+  input: unknown,
+): Ink2FormDraftPayloadV1 {
   return Ink2FormDraftPayloadV1Schema.parse(input);
 }
 

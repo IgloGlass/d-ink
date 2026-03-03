@@ -26,7 +26,10 @@ const CORPORATE_TAX_RATE_PERCENT_V1 = 20.6;
 export function resolveCorporateTaxRateByFiscalYearEndV1(input: {
   fiscalYearEnd: string;
 }): ResolveCorporateTaxRateResultV1 {
-  if (typeof input.fiscalYearEnd !== "string" || input.fiscalYearEnd.length !== 10) {
+  if (
+    typeof input.fiscalYearEnd !== "string" ||
+    input.fiscalYearEnd.length !== 10
+  ) {
     return {
       ok: false,
       error: {

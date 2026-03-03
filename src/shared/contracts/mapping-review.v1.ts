@@ -227,4 +227,3 @@ export function safeParseGenerateMappingReviewSuggestionsResultV1(
 ): z.SafeParseReturnType<unknown, GenerateMappingReviewSuggestionsResultV1> {
   return GenerateMappingReviewSuggestionsResultV1Schema.safeParse(input);
 }
-

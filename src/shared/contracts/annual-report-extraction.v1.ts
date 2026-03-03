@@ -1,10 +1,6 @@
 import { z } from "zod";
 
-import {
-  IsoDateSchema,
-  IsoDateTimeSchema,
-  UuidV4Schema,
-} from "./common.v1";
+import { IsoDateSchema, IsoDateTimeSchema, UuidV4Schema } from "./common.v1";
 
 export const AnnualReportFileTypeV1Schema = z.enum(["pdf", "docx"]);
 export type AnnualReportFileTypeV1 = z.infer<
@@ -71,7 +67,9 @@ export const AnnualReportDateFieldV1Schema = z
   })
   .merge(AnnualReportFieldMetaV1Schema)
   .strict();
-export type AnnualReportDateFieldV1 = z.infer<typeof AnnualReportDateFieldV1Schema>;
+export type AnnualReportDateFieldV1 = z.infer<
+  typeof AnnualReportDateFieldV1Schema
+>;
 
 export const AnnualReportEnumFieldV1Schema = z
   .object({
@@ -79,7 +77,9 @@ export const AnnualReportEnumFieldV1Schema = z
   })
   .merge(AnnualReportFieldMetaV1Schema)
   .strict();
-export type AnnualReportEnumFieldV1 = z.infer<typeof AnnualReportEnumFieldV1Schema>;
+export type AnnualReportEnumFieldV1 = z.infer<
+  typeof AnnualReportEnumFieldV1Schema
+>;
 
 export const AnnualReportNumberFieldV1Schema = z
   .object({
@@ -194,7 +194,9 @@ export const ApplyAnnualReportExtractionOverridesRequestV1Schema = z
         schemaVersion: z.literal("annual_report_extraction_v1").optional(),
       })
       .strict(),
-    overrides: z.array(AnnualReportExtractionOverrideInstructionV1Schema).min(1),
+    overrides: z
+      .array(AnnualReportExtractionOverrideInstructionV1Schema)
+      .min(1),
     authorUserId: UuidV4Schema.optional(),
   })
   .strict();
@@ -262,7 +264,10 @@ export type RunAnnualReportExtractionSuccessV1 = z.infer<
 
 export const RunAnnualReportExtractionResultV1Schema = z.discriminatedUnion(
   "ok",
-  [RunAnnualReportExtractionSuccessV1Schema, AnnualReportExtractionFailureV1Schema],
+  [
+    RunAnnualReportExtractionSuccessV1Schema,
+    AnnualReportExtractionFailureV1Schema,
+  ],
 );
 export type RunAnnualReportExtractionResultV1 = z.infer<
   typeof RunAnnualReportExtractionResultV1Schema
@@ -279,13 +284,11 @@ export type GetActiveAnnualReportExtractionSuccessV1 = z.infer<
   typeof GetActiveAnnualReportExtractionSuccessV1Schema
 >;
 
-export const GetActiveAnnualReportExtractionResultV1Schema = z.discriminatedUnion(
-  "ok",
-  [
+export const GetActiveAnnualReportExtractionResultV1Schema =
+  z.discriminatedUnion("ok", [
     GetActiveAnnualReportExtractionSuccessV1Schema,
     AnnualReportExtractionFailureV1Schema,
-  ],
-);
+  ]);
 export type GetActiveAnnualReportExtractionResultV1 = z.infer<
   typeof GetActiveAnnualReportExtractionResultV1Schema
 >;
@@ -324,7 +327,10 @@ export type ConfirmAnnualReportExtractionSuccessV1 = z.infer<
 
 export const ConfirmAnnualReportExtractionResultV1Schema = z.discriminatedUnion(
   "ok",
-  [ConfirmAnnualReportExtractionSuccessV1Schema, AnnualReportExtractionFailureV1Schema],
+  [
+    ConfirmAnnualReportExtractionSuccessV1Schema,
+    AnnualReportExtractionFailureV1Schema,
+  ],
 );
 export type ConfirmAnnualReportExtractionResultV1 = z.infer<
   typeof ConfirmAnnualReportExtractionResultV1Schema
