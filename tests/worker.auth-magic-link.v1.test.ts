@@ -14,11 +14,12 @@ const TENANT_B = "70000000-0000-4000-8000-000000000002";
 const ADMIN_USER_ID = "70000000-0000-4000-8000-000000000003";
 const EDITOR_USER_ID = "70000000-0000-4000-8000-000000000004";
 
-function buildWorkerEnv(): Env {
+function buildWorkerEnv(overrides: Partial<Env> = {}): Env {
   return {
     DB: env.DB,
     AUTH_TOKEN_HMAC_SECRET,
     APP_BASE_URL,
+    ...overrides,
   };
 }
 
@@ -466,6 +467,124 @@ describe("worker auth magic-link routes v1", () => {
     expect(response.status).toBe(401);
     expect(payload.ok).toBe(false);
     expect(payload.error.code).toBe("SESSION_INVALID_OR_EXPIRED");
+  });
+
+  it("POST dev login returns 404 when bypass is disabled", async () => {
+    const request = buildJsonRequest({
+      method: "POST",
+      url: `${APP_BASE_URL}/v1/auth/dev-login`,
+      body: {},
+    });
+
+    const response = await worker.fetch(request, buildWorkerEnv());
+    const payload = (await response.json()) as {
+      error: { code: string };
+      ok: false;
+    };
+
+    expect(response.status).toBe(404);
+    expect(payload.ok).toBe(false);
+    expect(payload.error.code).toBe("NOT_FOUND");
+  });
+
+  it("POST dev login creates a session from env defaults when bypass is enabled", async () => {
+    const request = buildJsonRequest({
+      method: "POST",
+      url: `${APP_BASE_URL}/v1/auth/dev-login`,
+      body: {},
+    });
+
+    const response = await worker.fetch(
+      request,
+      buildWorkerEnv({
+        DEV_AUTH_BYPASS_ENABLED: "true",
+        DEV_AUTH_DEFAULT_TENANT_ID: TENANT_A,
+        DEV_AUTH_DEFAULT_EMAIL: "devtester@example.com",
+        DEV_AUTH_DEFAULT_ROLE: "Admin",
+      }),
+    );
+    const payload = (await response.json()) as {
+      ok: true;
+      principal: {
+        emailNormalized: string;
+        role: string;
+        tenantId: string;
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(payload.principal.tenantId).toBe(TENANT_A);
+    expect(payload.principal.emailNormalized).toBe("devtester@example.com");
+    expect(payload.principal.role).toBe("Admin");
+
+    const setCookies = getSetCookieValues(response);
+    const sessionCookie = setCookies.find((value) =>
+      value.startsWith("dink_session_v1="),
+    );
+    expect(sessionCookie).toBeTruthy();
+
+    const sessionToken = decodeURIComponent(
+      sessionCookie?.split(";")[0].split("=")[1] ?? "",
+    );
+    const currentSessionResponse = await worker.fetch(
+      new Request(`${APP_BASE_URL}/v1/auth/session/current`, {
+        method: "GET",
+        headers: {
+          Cookie: buildSessionCookie(sessionToken),
+        },
+      }),
+      buildWorkerEnv({
+        DEV_AUTH_BYPASS_ENABLED: "true",
+      }),
+    );
+    const currentSessionPayload = (await currentSessionResponse.json()) as {
+      ok: true;
+      principal: {
+        tenantId: string;
+      };
+    };
+
+    expect(currentSessionResponse.status).toBe(200);
+    expect(currentSessionPayload.ok).toBe(true);
+    expect(currentSessionPayload.principal.tenantId).toBe(TENANT_A);
+  });
+
+  it("POST dev login accepts numeric tenant IDs and loopback origin aliases", async () => {
+    const localAppBaseUrl = "http://127.0.0.1:5173";
+
+    const request = buildJsonRequest({
+      method: "POST",
+      url: `${localAppBaseUrl}/v1/auth/dev-login`,
+      origin: "http://localhost:5173",
+      body: {
+        tenantId: "5335",
+        email: "devnumeric@example.com",
+        role: "Admin",
+      },
+    });
+
+    const response = await worker.fetch(
+      request,
+      buildWorkerEnv({
+        APP_BASE_URL: localAppBaseUrl,
+        DEV_AUTH_BYPASS_ENABLED: "true",
+      }),
+    );
+    const payload = (await response.json()) as {
+      ok: true;
+      principal: {
+        emailNormalized: string;
+        tenantId: string;
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(payload.principal.emailNormalized).toBe("devnumeric@example.com");
+    expect(payload.principal.tenantId).toBe(
+      "00000000-0000-4000-8000-000000005335",
+    );
   });
 
   it("method mismatch on /v1/auth/session/current returns 405 with Allow GET", async () => {

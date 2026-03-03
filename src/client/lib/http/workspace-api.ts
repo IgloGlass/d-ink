@@ -12,6 +12,11 @@ import {
 } from "../../../shared/contracts/mapping-review.v1";
 import type { SilverfinTaxCategoryCodeV1 } from "../../../shared/contracts/mapping.v1";
 import {
+  type ExecuteTrialBalancePipelineResultV1,
+  parseExecuteTrialBalancePipelineResultV1,
+} from "../../../shared/contracts/tb-pipeline-run.v1";
+import type { TrialBalanceFileTypeV1 } from "../../../shared/contracts/trial-balance.v1";
+import {
   type ApplyWorkspaceTransitionResultV1,
   type CreateWorkspaceResultV1,
   type GetWorkspaceByIdResultV1,
@@ -103,6 +108,20 @@ export type GenerateMappingReviewSuggestionsResponseV1 = Extract<
   { ok: true }
 >;
 
+export type RunTrialBalancePipelineInputV1 = {
+  tenantId: string;
+  workspaceId: string;
+  fileName: string;
+  fileBytesBase64: string;
+  fileType?: TrialBalanceFileTypeV1;
+  policyVersion: string;
+};
+
+export type RunTrialBalancePipelineResponseV1 = Extract<
+  ExecuteTrialBalancePipelineResultV1,
+  { ok: true }
+>;
+
 function expectSuccessResultV1<
   TResult extends
     | { ok: true }
@@ -185,6 +204,12 @@ function parseGenerateMappingReviewSuggestionsHttpResponseV1(
   return expectSuccessResultV1(
     parseGenerateMappingReviewSuggestionsResultV1(payload),
   );
+}
+
+function parseRunTrialBalancePipelineHttpResponseV1(
+  payload: unknown,
+): RunTrialBalancePipelineResponseV1 {
+  return expectSuccessResultV1(parseExecuteTrialBalancePipelineResultV1(payload));
 }
 
 export async function listWorkspacesByTenantV1(input: {
@@ -281,5 +306,22 @@ export async function generateMappingReviewSuggestionsV1(input: {
       maxSuggestions: input.maxSuggestions,
     },
     parseResponse: parseGenerateMappingReviewSuggestionsHttpResponseV1,
+  });
+}
+
+export async function runTrialBalancePipelineV1(
+  input: RunTrialBalancePipelineInputV1,
+): Promise<RunTrialBalancePipelineResponseV1> {
+  return apiRequest<RunTrialBalancePipelineResponseV1>({
+    path: `/v1/workspaces/${input.workspaceId}/tb-pipeline-runs`,
+    method: "POST",
+    body: {
+      tenantId: input.tenantId,
+      fileName: input.fileName,
+      fileBytesBase64: input.fileBytesBase64,
+      fileType: input.fileType,
+      policyVersion: input.policyVersion,
+    },
+    parseResponse: parseRunTrialBalancePipelineHttpResponseV1,
   });
 }

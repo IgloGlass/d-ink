@@ -8,6 +8,7 @@ import { UuidV4Schema } from "../../shared/contracts/common.v1";
 import type { Env } from "../../shared/types/env";
 import {
   authenticateSessionV1,
+  createDevSessionV1,
   consumeMagicLinkTokenV1,
   createMagicLinkInviteV1,
   logoutSessionV1,
@@ -34,6 +35,7 @@ const CONSUME_ROUTE_PATH_V1 = "/v1/auth/magic-link/consume";
 const AUTHENTICATE_ROUTE_PATH_V1 = "/v1/auth/session/authenticate";
 const CURRENT_SESSION_ROUTE_PATH_V1 = "/v1/auth/session/current";
 const LOGOUT_ROUTE_PATH_V1 = "/v1/auth/session/logout";
+const DEV_LOGIN_ROUTE_PATH_V1 = "/v1/auth/dev-login";
 
 const InviteHttpRequestBodyV1Schema = z
   .object({
@@ -46,6 +48,14 @@ const InviteHttpRequestBodyV1Schema = z
 const AuthenticateHttpRequestBodyV1Schema = z
   .object({
     tenantId: UuidV4Schema,
+  })
+  .strict();
+
+const DevLoginHttpRequestBodyV1Schema = z
+  .object({
+    tenantId: z.string().trim().min(1).optional(),
+    email: z.string().trim().email().optional(),
+    role: AuthRoleV1Schema.optional(),
   })
   .strict();
 
@@ -161,6 +171,37 @@ function buildMagicLinkUrlV1(input: {
   magicLinkUrl.searchParams.set("token", input.token);
 
   return magicLinkUrl.toString();
+}
+
+function isEnvFlagEnabledV1(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+function isDevAuthBypassEnabledV1(env: Env): boolean {
+  return isEnvFlagEnabledV1(env.DEV_AUTH_BYPASS_ENABLED);
+}
+
+function normalizeDevTenantIdV1(value: string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const trimmedValue = value.trim();
+  const directUuidResult = UuidV4Schema.safeParse(trimmedValue);
+  if (directUuidResult.success) {
+    return directUuidResult.data;
+  }
+
+  if (/^\d{1,12}$/.test(trimmedValue)) {
+    return `00000000-0000-4000-8000-${trimmedValue.padStart(12, "0")}`;
+  }
+
+  return null;
 }
 
 type SessionPrincipalGuardSuccessV1 = {
@@ -523,6 +564,141 @@ async function handleAuthenticateSessionRouteV1(
   );
 }
 
+async function handleDevLoginRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+
+  if (!isDevAuthBypassEnabledV1(env)) {
+    return createJsonErrorResponseV1({
+      status: 404,
+      code: "NOT_FOUND",
+      message: "Auth route not found.",
+    });
+  }
+
+  const parsedBody = DevLoginHttpRequestBodyV1Schema.safeParse(
+    await readJsonBodyV1(request),
+  );
+  if (!parsedBody.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Dev login request body is invalid.",
+    });
+  }
+
+  const tenantIdCandidate =
+    parsedBody.data.tenantId ?? env.DEV_AUTH_DEFAULT_TENANT_ID;
+  const normalizedTenantId = normalizeDevTenantIdV1(tenantIdCandidate);
+  if (!normalizedTenantId) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message:
+        "Dev login requires tenantId as UUIDv4 or short numeric ID (e.g. 5335).",
+    });
+  }
+
+  const emailCandidate =
+    parsedBody.data.email ??
+    env.DEV_AUTH_DEFAULT_EMAIL ??
+    "dev.user@example.com";
+  const emailResult = z.string().trim().email().safeParse(emailCandidate);
+  if (!emailResult.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message:
+        "Dev login email is invalid. Provide email in body or DEV_AUTH_DEFAULT_EMAIL.",
+    });
+  }
+
+  const roleCandidate = parsedBody.data.role ?? env.DEV_AUTH_DEFAULT_ROLE;
+  const roleResult = AuthRoleV1Schema.safeParse(roleCandidate ?? "Admin");
+  if (!roleResult.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message:
+        "Dev login role is invalid. Use Admin/Editor via body or DEV_AUTH_DEFAULT_ROLE.",
+    });
+  }
+
+  const devSessionResult = await createDevSessionV1(
+    {
+      tenantId: normalizedTenantId,
+      email: emailResult.data,
+      role: roleResult.data,
+    },
+    createAuthMagicLinkDepsV1(env),
+  );
+  if (!devSessionResult.ok) {
+    if (devSessionResult.error.code === "INPUT_INVALID") {
+      return createJsonErrorResponseV1({
+        status: 400,
+        code: devSessionResult.error.code,
+        message: devSessionResult.error.message,
+        userMessage: devSessionResult.error.user_message,
+        context: devSessionResult.error.context,
+      });
+    }
+
+    return createJsonErrorResponseV1({
+      status: 500,
+      code: devSessionResult.error.code,
+      message: devSessionResult.error.message,
+      userMessage: devSessionResult.error.user_message,
+      context: devSessionResult.error.context,
+    });
+  }
+
+  const isSecureRequest = new URL(request.url).protocol === "https:";
+  const setCookies = [
+    serializeCookieV1({
+      name: SESSION_COOKIE_NAME_V1,
+      value: devSessionResult.sessionToken,
+      maxAgeSeconds: SESSION_COOKIE_MAX_AGE_SECONDS_V1,
+      httpOnly: true,
+      secure: isSecureRequest,
+    }),
+    serializeCookieV1({
+      name: SESSION_TENANT_COOKIE_NAME_V1,
+      value: devSessionResult.principal.tenantId,
+      maxAgeSeconds: SESSION_COOKIE_MAX_AGE_SECONDS_V1,
+      httpOnly: true,
+      secure: isSecureRequest,
+    }),
+  ];
+
+  const headers = new Headers();
+  headers.set("Cache-Control", "no-store");
+  headers.set("Content-Type", "application/json; charset=utf-8");
+  for (const cookieValue of setCookies) {
+    headers.append("Set-Cookie", cookieValue);
+  }
+
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      principal: devSessionResult.principal,
+      session: devSessionResult.session,
+    }),
+    {
+      status: 200,
+      headers,
+    },
+  );
+}
+
 async function handleCurrentSessionRouteV1(
   request: Request,
   env: Env,
@@ -647,6 +823,14 @@ export async function handleAuthMagicLinkRoutesV1(
     }
 
     return handleAuthenticateSessionRouteV1(request, env, appBaseUrl);
+  }
+
+  if (pathname === DEV_LOGIN_ROUTE_PATH_V1) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+
+    return handleDevLoginRouteV1(request, env, appBaseUrl);
   }
 
   if (pathname === CURRENT_SESSION_ROUTE_PATH_V1) {

@@ -70,6 +70,44 @@ export function createMethodNotAllowedResponseV1(
   );
 }
 
+const LOOPBACK_HOSTNAME_SET_V1 = new Set([
+  "localhost",
+  "127.0.0.1",
+  "[::1]",
+  "::1",
+]);
+
+function resolveOriginPortV1(originUrl: URL): string {
+  if (originUrl.port.length > 0) {
+    return originUrl.port;
+  }
+
+  return originUrl.protocol === "https:" ? "443" : "80";
+}
+
+function isEquivalentLoopbackOriginV1(input: {
+  appBaseUrl: URL;
+  requestOriginUrl: URL;
+}): boolean {
+  const appHostname = input.appBaseUrl.hostname.toLowerCase();
+  const requestHostname = input.requestOriginUrl.hostname.toLowerCase();
+  if (
+    !LOOPBACK_HOSTNAME_SET_V1.has(appHostname) ||
+    !LOOPBACK_HOSTNAME_SET_V1.has(requestHostname)
+  ) {
+    return false;
+  }
+
+  if (input.requestOriginUrl.protocol !== input.appBaseUrl.protocol) {
+    return false;
+  }
+
+  return (
+    resolveOriginPortV1(input.requestOriginUrl) ===
+    resolveOriginPortV1(input.appBaseUrl)
+  );
+}
+
 /**
  * CSRF boundary: reject browser POST requests from untrusted origins.
  */
@@ -86,9 +124,9 @@ export function validateOriginForPostV1(input: {
     return null;
   }
 
-  let requestOrigin: string;
+  let requestOriginUrl: URL;
   try {
-    requestOrigin = new URL(originHeader).origin;
+    requestOriginUrl = new URL(originHeader);
   } catch {
     return createJsonErrorResponseV1({
       status: 403,
@@ -97,7 +135,12 @@ export function validateOriginForPostV1(input: {
     });
   }
 
-  if (requestOrigin !== input.appBaseUrl.origin) {
+  const isSameOrigin = requestOriginUrl.origin === input.appBaseUrl.origin;
+  const isEquivalentLocalOrigin = isEquivalentLoopbackOriginV1({
+    requestOriginUrl,
+    appBaseUrl: input.appBaseUrl,
+  });
+  if (!isSameOrigin && !isEquivalentLocalOrigin) {
     return createJsonErrorResponseV1({
       status: 403,
       code: "ORIGIN_FORBIDDEN",

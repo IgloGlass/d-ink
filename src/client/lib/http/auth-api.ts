@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  AuthSessionV1Schema,
   AuthInviteV1Schema,
   type AuthPrincipalV1,
   AuthPrincipalV1Schema,
@@ -33,6 +34,14 @@ const CreateInviteResponseV1Schema = z
   })
   .strict();
 
+const DevSessionResponseV1Schema = z
+  .object({
+    ok: z.literal(true),
+    principal: AuthPrincipalV1Schema,
+    session: AuthSessionV1Schema,
+  })
+  .strict();
+
 export type CurrentSessionResponseV1 = z.infer<
   typeof CurrentSessionResponseV1Schema
 >;
@@ -46,6 +55,13 @@ export type CreateInviteInputV1 = {
 export type CreateInviteResponseV1 = z.infer<
   typeof CreateInviteResponseV1Schema
 >;
+export type CreateDevSessionInputV1 = {
+  email?: string;
+  role?: "Admin" | "Editor";
+  tenantId?: string;
+};
+
+export type DevSessionResponseV1 = z.infer<typeof DevSessionResponseV1Schema>;
 
 export type LogoutResponseV1 = {
   ok: true;
@@ -78,6 +94,10 @@ function parseLogoutResponseV1(payload: unknown): LogoutResponseV1 {
   return result;
 }
 
+function parseDevSessionResponseV1(payload: unknown): DevSessionResponseV1 {
+  return DevSessionResponseV1Schema.parse(payload);
+}
+
 export async function fetchCurrentSessionV1(): Promise<CurrentSessionResponseV1> {
   return apiRequest<CurrentSessionResponseV1>({
     path: "/v1/auth/session/current",
@@ -103,5 +123,16 @@ export async function logoutSessionV1(): Promise<LogoutResponseV1> {
     method: "POST",
     body: {},
     parseResponse: parseLogoutResponseV1,
+  });
+}
+
+export async function startDevSessionV1(
+  input: CreateDevSessionInputV1 = {},
+): Promise<DevSessionResponseV1> {
+  return apiRequest<DevSessionResponseV1>({
+    path: "/v1/auth/dev-login",
+    method: "POST",
+    body: input,
+    parseResponse: parseDevSessionResponseV1,
   });
 }

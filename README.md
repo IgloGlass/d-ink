@@ -47,6 +47,21 @@ corepack pnpm test
 corepack pnpm check
 ```
 
+## Local dev auth bypass (optional)
+
+For faster local iteration without magic links, set the following in `.dev.vars`:
+
+```bash
+DEV_AUTH_BYPASS_ENABLED=true
+DEV_AUTH_DEFAULT_TENANT_ID=<tenant-uuid-v4>
+DEV_AUTH_DEFAULT_EMAIL=dev.user@example.com
+DEV_AUTH_DEFAULT_ROLE=Admin
+```
+
+`DEV_AUTH_DEFAULT_TENANT_ID` can be either a UUIDv4 or a short numeric ID (for example `5335`) for local testing.
+
+When enabled, the `/` sign-in screen on `localhost` shows a "Quick dev sign-in" form that creates a local session cookie.
+
 ## Trial balance template
 
 - Static download path: `/templates/trial-balance-template-v1.xlsx`

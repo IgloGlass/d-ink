@@ -151,6 +151,9 @@ function createFailingRepositoryV1(message: string): AuthRepositoryV1 {
     async getMembershipByTenantAndUser() {
       return { ok: false, code: "PERSISTENCE_ERROR", message } as const;
     },
+    async createDevSessionWithAuditAtomic() {
+      return { ok: false, code: "PERSISTENCE_ERROR", message } as const;
+    },
     async createInviteAndIssueTokenWithAuditAtomic() {
       return { ok: false, code: "PERSISTENCE_ERROR", message } as const;
     },

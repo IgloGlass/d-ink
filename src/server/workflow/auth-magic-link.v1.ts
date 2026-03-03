@@ -1,10 +1,13 @@
-import type { z } from "zod";
+import { z } from "zod";
 
 import type { AuthRepositoryV1 } from "../../db/repositories/auth.repository.v1";
 import { parseAuditEventV2 } from "../../shared/contracts/audit-event.v2";
 import {
   type AuthErrorCodeV1,
   type AuthFailureV1,
+  type AuthPrincipalV1,
+  AuthRoleV1Schema,
+  type AuthSessionV1,
   AuthInviteV1Schema,
   AuthMagicLinkTokenV1Schema,
   AuthenticateSessionRequestV1Schema,
@@ -24,10 +27,19 @@ import {
   parseLogoutSessionResultV1,
   parseResolveSessionPrincipalByTokenResultV1,
 } from "../../shared/contracts/auth-magic-link.v1";
+import { UuidV4Schema } from "../../shared/contracts/common.v1";
 
 const MAGIC_LINK_TOKEN_TTL_MS = 15 * 60 * 1000;
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+
+const CreateDevSessionRequestV1Schema = z
+  .object({
+    tenantId: UuidV4Schema,
+    email: z.string().trim().email(),
+    role: AuthRoleV1Schema,
+  })
+  .strict();
 
 function resolveAuthAuditScopeWorkspaceIdV1(tenantId: string): string {
   // Auth events are tenant-scoped in V1; use tenantId as the scope key.
@@ -352,6 +364,121 @@ export async function createMagicLinkInviteV1(
           operation: "auth.createMagicLinkInviteV1",
         },
       ),
+    );
+  }
+}
+
+export type CreateDevSessionSuccessV1 = {
+  ok: true;
+  principal: AuthPrincipalV1;
+  session: AuthSessionV1;
+  sessionToken: string;
+};
+
+export type CreateDevSessionResultV1 =
+  | CreateDevSessionSuccessV1
+  | AuthFailureV1;
+
+/**
+ * Creates a development-only authenticated session without magic-link exchange.
+ */
+export async function createDevSessionV1(
+  input: unknown,
+  deps: AuthMagicLinkDepsV1,
+): Promise<CreateDevSessionResultV1> {
+  const parsed = CreateDevSessionRequestV1Schema.safeParse(input);
+  if (!parsed.success) {
+    return buildFailure(
+      "INPUT_INVALID",
+      "Create dev session payload is invalid.",
+      "The development sign-in request is invalid.",
+      buildErrorContextFromZod(parsed.error),
+    );
+  }
+
+  const nowIsoUtc = deps.nowIsoUtc();
+  const sessionExpiresAt = addDurationToIsoUtc(nowIsoUtc, SESSION_TTL_MS);
+  if (!sessionExpiresAt) {
+    return buildFailure(
+      "PERSISTENCE_ERROR",
+      "Failed to compute auth session expiry timestamp from nowIsoUtc.",
+      "Development sign-in could not be completed right now.",
+      {
+        nowIsoUtc,
+      },
+    );
+  }
+
+  try {
+    const emailNormalized = normalizeEmailV1(parsed.data.email);
+    const rawSessionToken = deps.generateToken();
+    const sessionTokenHash = await hashTokenWithHmacV1(
+      deps.hmacSecret,
+      rawSessionToken,
+    );
+
+    const sessionId = deps.generateId();
+    const sessionCreatedAuditEvent = parseAuditEventV2({
+      id: deps.generateId(),
+      tenantId: parsed.data.tenantId,
+      workspaceId: resolveAuthAuditScopeWorkspaceIdV1(parsed.data.tenantId),
+      actorType: "system",
+      eventType: "auth.dev_session_created",
+      targetType: "session",
+      targetId: sessionId,
+      after: {
+        expiresAt: sessionExpiresAt,
+      },
+      timestamp: nowIsoUtc,
+      context: {
+        emailNormalized,
+        role: parsed.data.role,
+        source: "dev_auth_bypass_v1",
+      },
+    });
+
+    const persistResult =
+      await deps.authRepository.createDevSessionWithAuditAtomic({
+        tenantId: parsed.data.tenantId,
+        emailNormalized,
+        role: parsed.data.role,
+        userId: deps.generateId(),
+        membershipId: deps.generateId(),
+        session: {
+          id: sessionId,
+          tokenHash: sessionTokenHash,
+          createdAt: nowIsoUtc,
+          expiresAt: sessionExpiresAt,
+        },
+        sessionCreatedAuditEvent,
+      });
+
+    if (!persistResult.ok) {
+      return buildFailure(
+        "PERSISTENCE_ERROR",
+        persistResult.message,
+        "Development sign-in could not be completed due to a storage error.",
+        {
+          operation: "auth.createDevSessionWithAuditAtomic",
+          tenantId: parsed.data.tenantId,
+        },
+      );
+    }
+
+    return {
+      ok: true,
+      principal: persistResult.principal,
+      session: persistResult.session,
+      sessionToken: rawSessionToken,
+    };
+  } catch (error) {
+    return buildFailure(
+      "PERSISTENCE_ERROR",
+      toUnknownErrorMessage(error),
+      "Development sign-in could not be completed due to an unexpected error.",
+      {
+        operation: "auth.createDevSessionV1",
+      },
     );
   }
 }

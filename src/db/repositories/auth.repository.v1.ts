@@ -161,6 +161,31 @@ export type AuthRepositoryConsumeTokenResultV1 =
   | AuthRepositoryConsumeTokenFailureV1;
 
 /**
+ * Input contract for development-only session bootstrap writes.
+ */
+export type CreateDevSessionWithAuditAtomicInputV1 = {
+  emailNormalized: string;
+  membershipId: string;
+  role: "Admin" | "Editor";
+  session: {
+    createdAt: string;
+    expiresAt: string;
+    id: string;
+    tokenHash: string;
+  };
+  sessionCreatedAuditEvent: AuditEventV2;
+  tenantId: string;
+  userId: string;
+};
+
+/**
+ * Result payload for development-only session bootstrap writes.
+ */
+export type AuthRepositoryCreateDevSessionResultV1 =
+  | AuthRepositoryConsumeTokenSuccessV1
+  | AuthRepositoryFailureV1;
+
+/**
  * Input contract for invite+token+audit atomic writes.
  */
 export type CreateInviteAndIssueTokenWithAuditAtomicInputV1 = {
@@ -200,6 +225,9 @@ export interface AuthRepositoryV1 {
   consumeTokenAndCreateSessionWithAuditAtomic(
     input: ConsumeTokenAndCreateSessionWithAuditAtomicInputV1,
   ): Promise<AuthRepositoryConsumeTokenResultV1>;
+  createDevSessionWithAuditAtomic(
+    input: CreateDevSessionWithAuditAtomicInputV1,
+  ): Promise<AuthRepositoryCreateDevSessionResultV1>;
   createInviteAndIssueTokenWithAuditAtomic(
     input: CreateInviteAndIssueTokenWithAuditAtomicInputV1,
   ): Promise<AuthRepositoryCreateInviteResultV1>;
@@ -471,6 +499,73 @@ WHERE users.email_normalized = ?6
       AND invite.revoked_at IS NULL
       AND invite.expires_at > ?4
   )
+`;
+
+const INSERT_USER_IF_MISSING_SQL = `
+INSERT OR IGNORE INTO users (
+  id,
+  email_normalized,
+  created_at
+)
+VALUES (?1, ?2, ?3)
+`;
+
+const INSERT_MEMBERSHIP_IF_MISSING_BY_EMAIL_SQL = `
+INSERT OR IGNORE INTO tenant_memberships (
+  id,
+  tenant_id,
+  user_id,
+  role,
+  created_at,
+  updated_at
+)
+SELECT
+  ?1, ?2, users.id, ?3, ?4, ?4
+FROM users
+WHERE users.email_normalized = ?5
+`;
+
+const UPDATE_MEMBERSHIP_ROLE_BY_EMAIL_SQL = `
+UPDATE tenant_memberships
+SET
+  role = ?1,
+  updated_at = ?2
+WHERE tenant_id = ?3
+  AND user_id = (
+    SELECT id
+    FROM users
+    WHERE email_normalized = ?4
+  )
+`;
+
+const REVOKE_ACTIVE_SESSIONS_BY_TENANT_AND_EMAIL_SQL = `
+UPDATE auth_sessions
+SET
+  revoked_at = ?1
+WHERE tenant_id = ?2
+  AND revoked_at IS NULL
+  AND user_id = (
+    SELECT id
+    FROM users
+    WHERE email_normalized = ?3
+  )
+`;
+
+const INSERT_SESSION_BY_EMAIL_SQL = `
+INSERT INTO auth_sessions (
+  id,
+  tenant_id,
+  user_id,
+  token_hash,
+  created_at,
+  expires_at,
+  revoked_at,
+  last_seen_at
+)
+SELECT
+  ?1, ?2, users.id, ?3, ?4, ?5, NULL, ?4
+FROM users
+WHERE users.email_normalized = ?6
 `;
 
 const UPDATE_MAGIC_LINK_TOKEN_TO_CONSUMED_SQL = `
@@ -786,6 +881,109 @@ export function createD1AuthRepositoryV1(db: D1Database): AuthRepositoryV1 {
         return {
           ok: true,
           membership: membershipRow ? mapMembershipRow(membershipRow) : null,
+        };
+      } catch (error) {
+        return toFailure(toErrorMessage(error));
+      }
+    },
+
+    async createDevSessionWithAuditAtomic(
+      input: CreateDevSessionWithAuditAtomicInputV1,
+    ): Promise<AuthRepositoryCreateDevSessionResultV1> {
+      try {
+        const sessionCreatedAuditEvent = parseAuditEventV2(
+          input.sessionCreatedAuditEvent,
+        );
+
+        if (
+          sessionCreatedAuditEvent.tenantId !== input.tenantId ||
+          sessionCreatedAuditEvent.targetType !== "session" ||
+          sessionCreatedAuditEvent.targetId !== input.session.id
+        ) {
+          return toFailure(
+            "Audit event tenant/session identifiers must match dev session identifiers.",
+          );
+        }
+
+        const batchResult = await db.batch([
+          db
+            .prepare(INSERT_USER_IF_MISSING_SQL)
+            .bind(input.userId, input.emailNormalized, input.session.createdAt),
+          db
+            .prepare(INSERT_MEMBERSHIP_IF_MISSING_BY_EMAIL_SQL)
+            .bind(
+              input.membershipId,
+              input.tenantId,
+              input.role,
+              input.session.createdAt,
+              input.emailNormalized,
+            ),
+          db
+            .prepare(UPDATE_MEMBERSHIP_ROLE_BY_EMAIL_SQL)
+            .bind(
+              input.role,
+              input.session.createdAt,
+              input.tenantId,
+              input.emailNormalized,
+            ),
+          db
+            .prepare(REVOKE_ACTIVE_SESSIONS_BY_TENANT_AND_EMAIL_SQL)
+            .bind(
+              input.session.createdAt,
+              input.tenantId,
+              input.emailNormalized,
+            ),
+          db
+            .prepare(INSERT_SESSION_BY_EMAIL_SQL)
+            .bind(
+              input.session.id,
+              input.tenantId,
+              input.session.tokenHash,
+              input.session.createdAt,
+              input.session.expiresAt,
+              input.emailNormalized,
+            ),
+          db
+            .prepare(INSERT_AUDIT_EVENT_SQL_V1)
+            .bind(...toAuditDbValuesV1(sessionCreatedAuditEvent)),
+        ]);
+
+        const insertSessionResult = batchResult[4];
+        const insertAuditResult = batchResult[5];
+        if (!insertSessionResult?.success || !insertAuditResult?.success) {
+          return toFailure(
+            "Failed to atomically bootstrap development session and audit event.",
+          );
+        }
+
+        const insertedSessionRows = Number(
+          insertSessionResult.meta.changes ?? 0,
+        );
+        const insertedAuditRows = Number(insertAuditResult.meta.changes ?? 0);
+        if (insertedSessionRows !== 1 || insertedAuditRows !== 1) {
+          return toFailure(
+            "Development session bootstrap produced inconsistent write counts.",
+          );
+        }
+
+        const sessionLookupResult = await findActiveSessionByHashInternal({
+          tenantId: input.tenantId,
+          tokenHash: input.session.tokenHash,
+          nowIsoUtc: input.session.createdAt,
+        });
+        if (!sessionLookupResult.ok) {
+          return toFailure(sessionLookupResult.message);
+        }
+        if (!sessionLookupResult.sessionLookup) {
+          return toFailure(
+            "Development session was created but could not be reloaded.",
+          );
+        }
+
+        return {
+          ok: true,
+          principal: sessionLookupResult.sessionLookup.principal,
+          session: sessionLookupResult.sessionLookup.session,
         };
       } catch (error) {
         return toFailure(toErrorMessage(error));
