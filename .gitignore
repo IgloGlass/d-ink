@@ -4,5 +4,6 @@ node_modules/
 coverage/
 dist/
 .dev.vars
+.autopilot/
 pnpm-debug.log*
 .DS_Store
