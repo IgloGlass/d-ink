@@ -6,7 +6,10 @@ import { useGlobalAppContextV1 } from "../../app/app-context.v1";
 import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
 import { ButtonV1 } from "../../components/button-v1";
 import { CardV1 } from "../../components/card-v1";
+import { EmptyStateV1 } from "../../components/empty-state-v1";
+import { GuidanceBannerV1 } from "../../components/guidance-banner-v1";
 import { InputV1 } from "../../components/input-v1";
+import { SkeletonV1 } from "../../components/skeleton-v1";
 import { StatusPill } from "../../components/status-pill";
 import { toUserFacingErrorMessage } from "../../lib/http/api-client";
 import { listWorkspacesByTenantV1 } from "../../lib/http/workspace-api";
@@ -145,6 +148,12 @@ export function CompanySelectorPageV1() {
     normalizedSearch.length > 0 ? "search results" : "directory";
   const topResultWorkspaceId =
     normalizedSearch.length > 0 ? filteredWorkspaces[0]?.id : undefined;
+  const enterSuggestion =
+    normalizedSearch.length > 0
+      ? shouldShowSuggestions
+        ? suggestionList[activeIndex]
+        : filteredWorkspaces[0]
+      : undefined;
   const quickSuggestionLabel =
     normalizedSearch.length > 0
       ? hasSuggestions
@@ -258,14 +267,9 @@ export function CompanySelectorPageV1() {
                 setActiveIndex(suggestionList.length - 1);
               }
               if (event.key === "Enter") {
-                const selectedSuggestion = shouldShowSuggestions
-                  ? suggestionList[activeIndex]
-                  : normalizedSearch.length > 0
-                    ? suggestionList[0]
-                    : undefined;
-                if (selectedSuggestion) {
+                if (enterSuggestion) {
                   event.preventDefault();
-                  selectWorkspace(selectedSuggestion);
+                  selectWorkspace(enterSuggestion);
                 }
               }
               if (event.key === "Escape") {
@@ -312,7 +316,7 @@ export function CompanySelectorPageV1() {
                     key={workspace.id}
                     type="button"
                     className="search-combobox-option"
-                    aria-selected={index === activeIndex}
+                    aria-pressed={index === activeIndex}
                     tabIndex={-1}
                     data-active={index === activeIndex ? "true" : "false"}
                     data-option-id={workspace.id}
@@ -334,9 +338,9 @@ export function CompanySelectorPageV1() {
                   </button>
                 ))
               ) : (
-                <p className="search-combobox-empty">
+                <GuidanceBannerV1 tone="advisory">
                   {t("workspace.selector.empty")}
-                </p>
+                </GuidanceBannerV1>
               )}
             </div>
           ) : null}
@@ -350,18 +354,37 @@ export function CompanySelectorPageV1() {
             {resultCountLabel} in {resultScopeLabel}
           </p>
         </div>
-        {listQuery.isPending ? <p>{t("workspace.selector.loading")}</p> : null}
+        {listQuery.isPending ? (
+          <div className="panel-stack">
+            <SkeletonV1 height={40} />
+            <SkeletonV1 height={40} />
+            <SkeletonV1 height={40} />
+            <SkeletonV1 height={40} />
+          </div>
+        ) : null}
         {listQuery.isError ? (
-          <p className="error-text" role="alert">
-            {toUserFacingErrorMessage(listQuery.error)}
-          </p>
+          <EmptyStateV1
+            title="Workspace directory unavailable"
+            description={toUserFacingErrorMessage(listQuery.error)}
+            tone="error"
+            role="alert"
+            action={
+              <ButtonV1 onClick={() => listQuery.refetch()}>Retry</ButtonV1>
+            }
+          />
         ) : null}
         {listQuery.isSuccess ? (
           filteredWorkspaces.length === 0 ? (
-            <p>{t("workspace.selector.empty")}</p>
+            <EmptyStateV1
+              title="No matching workspaces"
+              description={t("workspace.selector.empty")}
+            />
           ) : (
             <div className="table-wrap">
               <table className="company-selector-table">
+                <caption className="company-selector-table-caption">
+                  Workspace directory with status and continue action
+                </caption>
                 <thead>
                   <tr>
                     <th scope="col">Workspace</th>
@@ -385,20 +408,24 @@ export function CompanySelectorPageV1() {
                         }
                       >
                         <th scope="row">
-                          <p className="company-selector-cell-primary">
-                            {formatCompactId(workspace.id)}
-                          </p>
-                          <p className="company-selector-cell-meta">
-                            Updated {workspace.updatedAt.slice(0, 10)}
-                          </p>
+                          <div className="company-selector-cell-stack">
+                            <p className="company-selector-cell-primary">
+                              {formatCompactId(workspace.id)}
+                            </p>
+                            <p className="company-selector-cell-meta">
+                              Updated {workspace.updatedAt.slice(0, 10)}
+                            </p>
+                          </div>
                         </th>
                         <td>
-                          <p className="company-selector-cell-primary">
-                            {formatCompactId(workspace.companyId)}
-                          </p>
-                          <p className="company-selector-cell-meta">
-                            {workspace.companyId}
-                          </p>
+                          <div className="company-selector-cell-stack">
+                            <p className="company-selector-cell-primary">
+                              {formatCompactId(workspace.companyId)}
+                            </p>
+                            <p className="company-selector-cell-meta">
+                              {workspace.companyId}
+                            </p>
+                          </div>
                         </td>
                         <td className="company-selector-cell-fiscal">
                           {fiscalYear}

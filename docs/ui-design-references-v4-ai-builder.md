@@ -203,3 +203,10 @@ This is the most important component in the app. It must look like a high-end fi
 - Ensure all text respects the typography scale in 2.3.
 - Keep all radii at `4px` or `8px`.
 - Assume all layout is meant for a high-resolution desktop screen (no hamburger menus or mobile stacking required for V1).
+
+## 6. Final Consistency Cutover (FEP-12)
+
+- The selector -> workbench -> module-shell route sequence is the mandatory premium validation path before sign-off.
+- Native semantic elements must be used as-is; do not add redundant ARIA roles to `<ul>`, `<li>`, or button-based option lists.
+- Keyboard access is required on all route-critical controls (launcher/search suggestions/module rows) using native focus behavior and `:focus-visible` token ring.
+- Final gate command for this cutover: `node scripts/ralph/check-frontend-premium-gates.v1.mjs`.

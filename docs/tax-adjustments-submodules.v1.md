@@ -92,7 +92,9 @@ Note:
 - `Final Tax Calculation` remains the final sidebar item.
 - Group A should be expanded by default.
 - Groups B and C should be collapsed by default under `Advanced`.
-- Group D should be visually pinned near the bottom as the calculation chain.
+- Group D should be visually pinned near the bottom as the `Calculation Chain` section.
+- Sidebar body should remain independently scrollable while the pinned `Calculation Chain` block stays visible.
+- Final calculation summary card in the main panel should stay sticky and readable during vertical scroll.
 - Core module tab label remains `Tax Adjustments`.
 
 ## Explicit Deferrals (Do Not Implement Yet)

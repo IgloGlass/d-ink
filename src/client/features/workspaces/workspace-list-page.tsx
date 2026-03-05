@@ -5,7 +5,9 @@ import { Link } from "react-router-dom";
 import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
 import { ButtonV1 } from "../../components/button-v1";
 import { CardV1 } from "../../components/card-v1";
+import { EmptyStateV1 } from "../../components/empty-state-v1";
 import { InputV1 } from "../../components/input-v1";
+import { SkeletonV1 } from "../../components/skeleton-v1";
 import { StatusPill } from "../../components/status-pill";
 import { toUserFacingErrorMessage } from "../../lib/http/api-client";
 import {
@@ -123,16 +125,31 @@ export function WorkspaceListPage() {
       <CardV1>
         <h2>Tenant workspace list</h2>
 
-        {listQuery.isPending ? <p>Loading workspaces...</p> : null}
+        {listQuery.isPending ? (
+          <div className="panel-stack">
+            <SkeletonV1 height={40} />
+            <SkeletonV1 height={40} />
+            <SkeletonV1 height={40} />
+          </div>
+        ) : null}
         {listQuery.isError ? (
-          <p className="error-text" role="alert">
-            {toUserFacingErrorMessage(listQuery.error)}
-          </p>
+          <EmptyStateV1
+            title="Workspace list unavailable"
+            description={toUserFacingErrorMessage(listQuery.error)}
+            tone="error"
+            role="alert"
+            action={
+              <ButtonV1 onClick={() => listQuery.refetch()}>Retry</ButtonV1>
+            }
+          />
         ) : null}
 
         {listQuery.isSuccess ? (
           listQuery.data.workspaces.length === 0 ? (
-            <p>No workspaces yet.</p>
+            <EmptyStateV1
+              title="No workspaces yet"
+              description="Create your first workspace to start the tax workflow."
+            />
           ) : (
             <div className="table-wrap">
               <table>

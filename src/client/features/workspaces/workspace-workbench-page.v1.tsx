@@ -6,7 +6,9 @@ import { useGlobalAppContextV1 } from "../../app/app-context.v1";
 import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
 import { ButtonV1 } from "../../components/button-v1";
 import { CardV1 } from "../../components/card-v1";
+import { EmptyStateV1 } from "../../components/empty-state-v1";
 import { GuidanceBannerV1 } from "../../components/guidance-banner-v1";
+import { SkeletonV1 } from "../../components/skeleton-v1";
 import {
   StatusBadgeV1,
   type StatusToneV1,
@@ -188,6 +190,19 @@ export function WorkspaceWorkbenchPageV1() {
     ],
     [adjustmentsQuery, annualQuery, formQuery, mappingQuery, t],
   );
+  const nextRecommendedOrder = useMemo(() => {
+    const firstIncomplete = moduleCards.find(
+      (module) => module.signal.status !== "ready",
+    );
+    return firstIncomplete?.order;
+  }, [moduleCards]);
+  const nextRecommendedModule = useMemo(
+    () =>
+      nextRecommendedOrder
+        ? moduleCards.find((module) => module.order === nextRecommendedOrder)
+        : undefined,
+    [moduleCards, nextRecommendedOrder],
+  );
 
   useEffect(() => {
     if (!workspaceQuery.data?.workspace) {
@@ -201,7 +216,34 @@ export function WorkspaceWorkbenchPageV1() {
   }, [setActiveContext, workspaceQuery.data?.workspace]);
 
   if (!workspaceId) {
-    return <CardV1>{t("module.notFound")}</CardV1>;
+    return (
+      <EmptyStateV1
+        title={t("module.notFound")}
+        description="Select a workspace from the directory to continue."
+      />
+    );
+  }
+
+  if (workspaceQuery.isPending) {
+    return (
+      <section className="page-wrap">
+        <CardV1 className="workbench-hero-card">
+          <SkeletonV1 width={180} height={12} />
+          <SkeletonV1 width={340} height={32} />
+          <SkeletonV1 width="72%" height={16} />
+          <div className="workbench-hero-meta">
+            <SkeletonV1 height={60} />
+            <SkeletonV1 height={60} />
+          </div>
+        </CardV1>
+        <CardV1 className="module-card-grid-skeleton">
+          <SkeletonV1 height={188} />
+          <SkeletonV1 height={188} />
+          <SkeletonV1 height={188} />
+          <SkeletonV1 height={188} />
+        </CardV1>
+      </section>
+    );
   }
 
   return (
@@ -229,23 +271,50 @@ export function WorkspaceWorkbenchPageV1() {
         ) : null}
       </CardV1>
 
-      <GuidanceBannerV1>{t("workbench.sequenceGuidance")}</GuidanceBannerV1>
+      <GuidanceBannerV1
+        tone={nextRecommendedModule ? "active" : "neutral"}
+        title={
+          nextRecommendedModule ? "Suggested next step" : "Sequence guidance"
+        }
+      >
+        {nextRecommendedModule
+          ? `${nextRecommendedModule.order}. ${nextRecommendedModule.label} is recommended next. You can still open every module manually.`
+          : t("workbench.sequenceGuidance")}
+      </GuidanceBannerV1>
 
       {workspaceQuery.isError ? (
-        <CardV1>
-          <p className="error-text">
-            {toUserFacingErrorMessage(workspaceQuery.error)}
-          </p>
-        </CardV1>
+        <EmptyStateV1
+          title="Workspace data unavailable"
+          description={toUserFacingErrorMessage(workspaceQuery.error)}
+          tone="error"
+          role="alert"
+          action={
+            <ButtonV1 onClick={() => workspaceQuery.refetch()}>Retry</ButtonV1>
+          }
+        />
       ) : null}
 
       <div className="module-card-grid">
         {moduleCards.map((module) => {
           const moduleStatus = getModuleStatusBadgeV1(module.signal);
+          const isRecommended = module.order === nextRecommendedOrder;
+          const isOutOfOrder =
+            nextRecommendedOrder !== undefined &&
+            module.order > nextRecommendedOrder;
           return (
-            <article key={module.key} className="module-card">
+            <article
+              key={module.key}
+              className="module-card"
+              data-recommended={isRecommended ? "true" : "false"}
+              data-out-of-order={isOutOfOrder ? "true" : "false"}
+            >
               <div className="module-card-head">
-                <span className="module-order">{module.order}</span>
+                <div className="module-sequence">
+                  <span className="module-order">{module.order}</span>
+                  <p className="module-sequence-label">
+                    {isRecommended ? "Recommended next" : "Manual access"}
+                  </p>
+                </div>
                 <StatusBadgeV1
                   label={moduleStatus.label}
                   tone={moduleStatus.tone}
@@ -261,9 +330,15 @@ export function WorkspaceWorkbenchPageV1() {
                   {module.signal.artifact}
                 </p>
               </div>
+              {isOutOfOrder ? (
+                <GuidanceBannerV1 tone="advisory">
+                  Sequence suggests completing earlier modules first, but this
+                  module stays available now.
+                </GuidanceBannerV1>
+              ) : null}
               <div className="module-card-actions">
                 <ButtonV1
-                  variant="primary"
+                  variant={isRecommended ? "primary" : "secondary"}
                   onClick={() =>
                     navigate(
                       `/app/workspaces/${resolvedWorkspaceId}/${module.key}`,

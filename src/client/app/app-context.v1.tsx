@@ -1,6 +1,7 @@
 import {
   type ReactNode,
   createContext,
+  useCallback,
   useContext,
   useMemo,
   useState,
@@ -11,8 +12,15 @@ export type GlobalAppContextStateV1 = {
   activeWorkspaceId: string | null;
 };
 
+const emptyGlobalAppContextStateV1: GlobalAppContextStateV1 = {
+  activeWorkspaceId: null,
+  activeFiscalYear: null,
+};
+
+type GlobalAppContextUpdateV1 = Partial<GlobalAppContextStateV1>;
+
 type GlobalAppContextValueV1 = GlobalAppContextStateV1 & {
-  setActiveContext: (input: GlobalAppContextStateV1) => void;
+  setActiveContext: (input: GlobalAppContextUpdateV1) => void;
 };
 
 const GlobalAppContextV1 = createContext<GlobalAppContextValueV1 | null>(null);
@@ -23,16 +31,53 @@ export function GlobalAppContextProviderV1({
   children: ReactNode;
 }) {
   const [state, setState] = useState<GlobalAppContextStateV1>({
-    activeWorkspaceId: null,
-    activeFiscalYear: null,
+    ...emptyGlobalAppContextStateV1,
   });
+
+  const setActiveContext = useCallback((input: GlobalAppContextUpdateV1) => {
+    setState((current) => {
+      const hasWorkspaceId = Object.prototype.hasOwnProperty.call(
+        input,
+        "activeWorkspaceId",
+      );
+      const hasFiscalYear = Object.prototype.hasOwnProperty.call(
+        input,
+        "activeFiscalYear",
+      );
+
+      const nextWorkspaceId = hasWorkspaceId
+        ? (input.activeWorkspaceId ?? null)
+        : current.activeWorkspaceId;
+
+      // Workspace changes without an explicit fiscal year should clear stale badges.
+      const nextFiscalYear = hasFiscalYear
+        ? (input.activeFiscalYear ?? null)
+        : hasWorkspaceId && nextWorkspaceId !== current.activeWorkspaceId
+          ? null
+          : current.activeFiscalYear;
+
+      const next: GlobalAppContextStateV1 = {
+        activeWorkspaceId: nextWorkspaceId,
+        activeFiscalYear: nextFiscalYear,
+      };
+
+      if (
+        next.activeWorkspaceId === current.activeWorkspaceId &&
+        next.activeFiscalYear === current.activeFiscalYear
+      ) {
+        return current;
+      }
+
+      return next;
+    });
+  }, []);
 
   const value = useMemo<GlobalAppContextValueV1>(
     () => ({
       ...state,
-      setActiveContext: (input) => setState(input),
+      setActiveContext,
     }),
-    [state],
+    [setActiveContext, state],
   );
 
   return (

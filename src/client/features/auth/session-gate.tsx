@@ -4,7 +4,9 @@ import { Navigate, useLocation } from "react-router-dom";
 
 import { ButtonV1 } from "../../components/button-v1";
 import { CardV1 } from "../../components/card-v1";
+import { EmptyStateV1 } from "../../components/empty-state-v1";
 import { InputV1 } from "../../components/input-v1";
+import { SkeletonV1 } from "../../components/skeleton-v1";
 import {
   ApiClientError,
   toUserFacingErrorMessage,
@@ -101,7 +103,16 @@ export function SessionGate() {
   });
 
   if (sessionQuery.isPending) {
-    return <CardV1 className="auth-card">Checking your session...</CardV1>;
+    return (
+      <CardV1 className="auth-card">
+        <div className="panel-stack">
+          <SkeletonV1 width={120} height={24} />
+          <SkeletonV1 width="80%" height={16} />
+          <SkeletonV1 width="72%" height={16} />
+          <SkeletonV1 height={36} />
+        </div>
+      </CardV1>
+    );
   }
 
   if (sessionQuery.isSuccess) {
@@ -121,14 +132,20 @@ export function SessionGate() {
       <p>AI-powered Swedish tax return assistant for accountants.</p>
       <p>Open your invite magic link to sign in.</p>
       {authErrorHint ? (
-        <p className="error-text" role="alert">
-          {authErrorHint}
-        </p>
+        <EmptyStateV1
+          title="Sign-in error"
+          description={authErrorHint}
+          tone="error"
+          role="alert"
+        />
       ) : null}
       {shouldShowApiMessage ? (
-        <p className="error-text" role="alert">
-          {defaultMessage}
-        </p>
+        <EmptyStateV1
+          title="Session unavailable"
+          description={defaultMessage}
+          tone="error"
+          role="alert"
+        />
       ) : null}
       {shouldShowDevLogin ? (
         <form

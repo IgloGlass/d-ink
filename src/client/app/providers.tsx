@@ -25,13 +25,14 @@ function createQueryClient(): QueryClient {
 }
 
 export function AppProviders({ children }: { children: ReactNode }) {
-  const [queryClient] = useState(() => createQueryClient());
+  const [queryClient] = useState(createQueryClient);
 
   return (
     <QueryClientProvider client={queryClient}>
-      <I18nProviderV1>
-        <GlobalAppContextProviderV1>{children}</GlobalAppContextProviderV1>
-      </I18nProviderV1>
+      {/* Keep app context outside locale wiring so navigation state survives i18n updates. */}
+      <GlobalAppContextProviderV1>
+        <I18nProviderV1>{children}</I18nProviderV1>
+      </GlobalAppContextProviderV1>
     </QueryClientProvider>
   );
 }

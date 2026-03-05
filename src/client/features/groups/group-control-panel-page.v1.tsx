@@ -5,41 +5,18 @@ import { useGlobalAppContextV1 } from "../../app/app-context.v1";
 import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
 import { ButtonV1 } from "../../components/button-v1";
 import { CardV1 } from "../../components/card-v1";
+import { EmptyStateV1 } from "../../components/empty-state-v1";
+import { SkeletonV1 } from "../../components/skeleton-v1";
 import {
   StatusBadgeV1,
-  type StatusToneV1,
+  getWorkspaceStatusBadgeMetaV1,
 } from "../../components/status-badge-v1";
 import { groupControlPanelAdapterV1 } from "../../lib/adapters/group-control-panel-adapter.v1";
 import { toUserFacingErrorMessage } from "../../lib/http/api-client";
-import {
-  type WorkspaceStatusV1,
-  listWorkspacesByTenantV1,
-} from "../../lib/http/workspace-api";
+import { listWorkspacesByTenantV1 } from "../../lib/http/workspace-api";
 import { useI18nV1 } from "../../lib/i18n/use-i18n.v1";
 
 const workspaceListQueryKeyV1 = (tenantId: string) => ["workspaces", tenantId];
-
-const statusLabelByValueV1: Record<WorkspaceStatusV1, string> = {
-  draft: "Draft",
-  in_review: "In review",
-  changes_requested: "Changes requested",
-  ready_for_approval: "Ready for approval",
-  approved_for_export: "Approved for export",
-  exported: "Exported",
-  client_accepted: "Client accepted",
-  filed: "Filed",
-};
-
-const statusToneByValueV1: Record<WorkspaceStatusV1, StatusToneV1> = {
-  draft: "warning",
-  in_review: "warning",
-  changes_requested: "attention",
-  ready_for_approval: "neutral",
-  approved_for_export: "success",
-  exported: "success",
-  client_accepted: "success",
-  filed: "success",
-};
 
 export function GroupControlPanelPageV1() {
   const navigate = useNavigate();
@@ -63,24 +40,60 @@ export function GroupControlPanelPageV1() {
   return (
     <section className="page-wrap">
       <CardV1 className="group-panel-hero-card">
-        <p className="micro-label">{t("group.panel.title")}</p>
-        <h1 className="page-title">{t("group.panel.title")}</h1>
-        <p className="hint-text">{t("group.panel.subtitle")}</p>
+        <div className="group-panel-hero-content">
+          <p className="micro-label">{t("group.panel.title")}</p>
+          <h1 className="page-title">{t("group.panel.title")}</h1>
+          <p className="hint-text">{t("group.panel.subtitle")}</p>
+        </div>
       </CardV1>
 
+      {listQuery.isPending ? (
+        <div className="panel-grid panel-grid--2 group-panel-overview-grid">
+          <CardV1 className="group-profile-card">
+            <SkeletonV1 width={140} height={12} />
+            <SkeletonV1 width={280} height={30} />
+            <SkeletonV1 height={72} />
+            <SkeletonV1 height={72} />
+          </CardV1>
+          <CardV1 className="group-summary-card">
+            <SkeletonV1 width={140} height={12} />
+            <SkeletonV1 width="68%" height={16} />
+            <div className="panel-grid panel-grid--4 group-summary-grid">
+              <SkeletonV1 height={88} />
+              <SkeletonV1 height={88} />
+              <SkeletonV1 height={88} />
+              <SkeletonV1 height={88} />
+            </div>
+          </CardV1>
+        </div>
+      ) : null}
+
       {listQuery.isError ? (
-        <CardV1>
-          <p className="error-text">
-            {toUserFacingErrorMessage(listQuery.error)}
-          </p>
-        </CardV1>
+        <EmptyStateV1
+          title="Group overview unavailable"
+          description={toUserFacingErrorMessage(listQuery.error)}
+          tone="error"
+          role="alert"
+          action={
+            <ButtonV1 onClick={() => listQuery.refetch()}>Retry</ButtonV1>
+          }
+        />
+      ) : null}
+
+      {listQuery.isSuccess && !overview ? (
+        <EmptyStateV1
+          title="No workspace group found"
+          description="Add workspaces first, then return to this group overview."
+        />
       ) : null}
 
       {overview ? (
         <div className="panel-grid panel-grid--2 group-panel-overview-grid">
           <CardV1 className="group-profile-card">
-            <p className="micro-label">{t("group.panel.profile")}</p>
-            <h2 className="section-title">{overview.profile.legalName}</h2>
+            <header className="group-panel-section-header">
+              <p className="micro-label">{t("group.panel.profile")}</p>
+              <h2 className="section-title">{overview.profile.legalName}</h2>
+            </header>
             <div className="group-profile-meta">
               <div>
                 <p className="micro-label">Org no</p>
@@ -98,7 +111,12 @@ export function GroupControlPanelPageV1() {
           </CardV1>
 
           <CardV1 className="group-summary-card">
-            <p className="micro-label">{t("group.panel.summary")}</p>
+            <header className="group-panel-section-header">
+              <p className="micro-label">{t("group.panel.summary")}</p>
+              <p className="group-summary-caption">
+                Current pipeline position across all active workspaces.
+              </p>
+            </header>
             <div className="panel-grid panel-grid--4 group-summary-grid">
               {overview.stageSummary.map((item) => (
                 <div key={item.label} className="group-summary-metric">
@@ -117,6 +135,9 @@ export function GroupControlPanelPageV1() {
             <div>
               <p className="micro-label">{t("group.panel.directory")}</p>
               <h2 className="section-title">Company workspace directory</h2>
+              <p className="group-directory-caption">
+                Quick-open each workspace while preserving active context.
+              </p>
             </div>
             <StatusBadgeV1
               label={`${overview.companies.length} companies`}
@@ -124,7 +145,10 @@ export function GroupControlPanelPageV1() {
             />
           </div>
           <div className="table-wrap">
-            <table>
+            <table className="group-directory-table">
+              <caption className="group-directory-table-caption">
+                Group company workspace directory.
+              </caption>
               <thead>
                 <tr>
                   <th>Company</th>
@@ -135,38 +159,54 @@ export function GroupControlPanelPageV1() {
                 </tr>
               </thead>
               <tbody>
-                {overview.companies.map((company) => (
-                  <tr key={company.workspaceId}>
-                    <td>{company.companyId.slice(0, 8)}</td>
-                    <td>{company.workspaceId.slice(0, 8)}</td>
-                    <td>
-                      {company.fiscalYearStart} to {company.fiscalYearEnd}
-                    </td>
-                    <td>
-                      <StatusBadgeV1
-                        label={statusLabelByValueV1[company.latestStatus]}
-                        tone={statusToneByValueV1[company.latestStatus]}
-                      />
-                    </td>
-                    <td>
-                      <ButtonV1
-                        variant="primary"
-                        className="group-directory-action"
-                        onClick={() => {
-                          setActiveContext({
-                            activeWorkspaceId: company.workspaceId,
-                            activeFiscalYear: `${company.fiscalYearStart} to ${company.fiscalYearEnd}`,
-                          });
-                          navigate(
-                            `/app/workspaces/${company.workspaceId}/workbench`,
-                          );
-                        }}
-                      >
-                        {t("workspace.selector.continue")}
-                      </ButtonV1>
-                    </td>
-                  </tr>
-                ))}
+                {overview.companies.map((company) => {
+                  const statusMeta = getWorkspaceStatusBadgeMetaV1(
+                    company.latestStatus,
+                  );
+
+                  return (
+                    <tr key={company.workspaceId}>
+                      <td>
+                        <p className="group-directory-cell-value">
+                          {company.companyId.slice(0, 8)}
+                        </p>
+                      </td>
+                      <td>
+                        <p className="group-directory-cell-value">
+                          {company.workspaceId.slice(0, 8)}
+                        </p>
+                      </td>
+                      <td>
+                        <p className="group-directory-cell-value group-directory-cell-value--mono">
+                          {company.fiscalYearStart} to {company.fiscalYearEnd}
+                        </p>
+                      </td>
+                      <td>
+                        <StatusBadgeV1
+                          label={statusMeta.label}
+                          tone={statusMeta.tone}
+                        />
+                      </td>
+                      <td>
+                        <ButtonV1
+                          variant="primary"
+                          className="group-directory-action"
+                          onClick={() => {
+                            setActiveContext({
+                              activeWorkspaceId: company.workspaceId,
+                              activeFiscalYear: `${company.fiscalYearStart} to ${company.fiscalYearEnd}`,
+                            });
+                            navigate(
+                              `/app/workspaces/${company.workspaceId}/workbench`,
+                            );
+                          }}
+                        >
+                          {t("workspace.selector.continue")}
+                        </ButtonV1>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

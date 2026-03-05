@@ -303,6 +303,38 @@ function main() {
     }
   });
 
+  runScenario("default loop command template uses unquoted runner path", () => {
+    const { prdPath, tempDir } = createPrdFixture({ storyCount: 1 });
+    const progressFile = path.join(tempDir, "progress.txt");
+    try {
+      const result = runNodeScript({
+        scriptPath: genericScript,
+        args: [
+          ...genericBaseArgs({
+            consecutiveGreen: 1,
+            maxPerSweep: 1,
+            prdPath,
+            progressFile,
+            sweeps: 1,
+          }),
+          "--dry-run",
+        ],
+        env: {
+          DINK_RALPH_GATES_COMMAND: "",
+        },
+      });
+
+      assertExitCode(
+        result,
+        0,
+        "default loop command template uses unquoted runner path",
+      );
+      assert.doesNotMatch(result.stdout, /node "/);
+    } finally {
+      rmSync(tempDir, { force: true, recursive: true });
+    }
+  });
+
   runScenario("custom progress file is honored", () => {
     const { prdPath, tempDir } = createPrdFixture({ storyCount: 1 });
     const progressFile = path.join(tempDir, "custom-progress.txt");

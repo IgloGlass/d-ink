@@ -48,6 +48,9 @@ const coreModuleOrderV1: CoreModuleSlugV1[] = [
   "tax-return-ink2",
 ];
 
+const mappingGridRowHeightV1 = 44;
+const mappingGridViewportHeightV1 = 520;
+const mappingGridOverscanV1 = 10;
 const mappingGridTemplateColumnsV1 = "56px 1.2fr 2fr 1fr 1.6fr 1fr 1.2fr";
 
 const taxAdjustmentGroupsV1 = {
@@ -163,6 +166,7 @@ export function CoreModuleShellPageV1() {
   const [commandPreview, setCommandPreview] = useState<string | null>(null);
   const [mappingScrollTop, setMappingScrollTop] = useState(0);
   const mappingScrollRef = useRef<HTMLDivElement | null>(null);
+  const mappingScrollRafRef = useRef<number | null>(null);
 
   function setRowSelectedV1(decisionId: string, shouldSelect: boolean) {
     setSelectedRowIds((current) => {
@@ -174,6 +178,15 @@ export function CoreModuleShellPageV1() {
         return current.filter((id) => id !== decisionId);
       }
       return current;
+    });
+  }
+
+  function toggleRowSelectionV1(decisionId: string) {
+    setSelectedRowIds((current) => {
+      if (current.includes(decisionId)) {
+        return current.filter((id) => id !== decisionId);
+      }
+      return [...current, decisionId];
     });
   }
 
@@ -320,29 +333,43 @@ export function CoreModuleShellPageV1() {
   }, [mappingQuery.data?.mapping.decisions, mappingViewMode]);
 
   const mappingVirtualRows = useMemo(() => {
-    const rowHeight = 40;
-    const viewportHeight = 520;
-    const overscan = 8;
     const startIndex = Math.max(
       0,
-      Math.floor(mappingScrollTop / rowHeight) - overscan,
+      Math.floor(mappingScrollTop / mappingGridRowHeightV1) -
+        mappingGridOverscanV1,
     );
     const endIndex = Math.min(
       mappingRows.length,
-      Math.ceil((mappingScrollTop + viewportHeight) / rowHeight) + overscan,
+      Math.ceil(
+        (mappingScrollTop + mappingGridViewportHeightV1) /
+          mappingGridRowHeightV1,
+      ) + mappingGridOverscanV1,
     );
     return {
-      totalSize: mappingRows.length * rowHeight,
+      totalSize: mappingRows.length * mappingGridRowHeightV1,
       rows: mappingRows.slice(startIndex, endIndex).map((row, index) => {
         const absoluteIndex = startIndex + index;
         return {
           index: absoluteIndex,
-          start: absoluteIndex * rowHeight,
+          start: absoluteIndex * mappingGridRowHeightV1,
           row,
         };
       }),
     };
   }, [mappingRows, mappingScrollTop]);
+
+  const selectedRowIdSet = useMemo(
+    () => new Set(selectedRowIds),
+    [selectedRowIds],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (mappingScrollRafRef.current !== null) {
+        cancelAnimationFrame(mappingScrollRafRef.current);
+      }
+    };
+  }, []);
 
   const categoryOptions = useMemo(() => {
     const allCategories = listSilverfinTaxCategoriesV1();
@@ -405,7 +432,7 @@ export function CoreModuleShellPageV1() {
   }
 
   return (
-    <section className="page-wrap">
+    <section className="page-wrap module-shell-v1">
       <CardV1>
         <TabsV1
           items={moduleTabs}
@@ -423,7 +450,7 @@ export function CoreModuleShellPageV1() {
       ) : null}
 
       {normalizedCoreModule === "annual-report-analysis" ? (
-        <CardV1>
+        <CardV1 id="module-panel-annual-report-analysis" role="tabpanel">
           <p className="micro-label">{t("module.annualReport")}</p>
           <h1 className="page-title">{t("module.annualReport")}</h1>
           <p className="hint-text">
@@ -444,7 +471,7 @@ export function CoreModuleShellPageV1() {
       ) : null}
 
       {normalizedCoreModule === "account-mapping" ? (
-        <CardV1>
+        <CardV1 id="module-panel-account-mapping" role="tabpanel">
           <div className="section-heading-row">
             <div>
               <p className="micro-label">{t("module.accountMapping")}</p>
@@ -453,6 +480,7 @@ export function CoreModuleShellPageV1() {
             <div className="inline-row" style={{ width: "340px" }}>
               <ButtonV1
                 variant={mappingViewMode === "all" ? "primary" : "secondary"}
+                pressed={mappingViewMode === "all"}
                 onClick={() => setMappingViewMode("all")}
               >
                 {t("mapping.viewAll")}
@@ -461,6 +489,7 @@ export function CoreModuleShellPageV1() {
                 variant={
                   mappingViewMode === "exceptions" ? "primary" : "secondary"
                 }
+                pressed={mappingViewMode === "exceptions"}
                 onClick={() => setMappingViewMode("exceptions")}
               >
                 {t("mapping.exceptionsOnly")}
@@ -482,11 +511,31 @@ export function CoreModuleShellPageV1() {
               <EmptyStateV1
                 title={t("mapping.empty")}
                 description="Run trial-balance mapping to populate this grid."
+                action={
+                  <ButtonV1
+                    variant="secondary"
+                    onClick={() =>
+                      navigate(
+                        `/app/workspaces/${resolvedWorkspaceId}/annual-report-analysis`,
+                      )
+                    }
+                  >
+                    Open annual report
+                  </ButtonV1>
+                }
               />
             ) : (
-              <p className="error-text">
-                {toUserFacingErrorMessage(mappingQuery.error)}
-              </p>
+              <EmptyStateV1
+                title="Mapping data unavailable"
+                description={toUserFacingErrorMessage(mappingQuery.error)}
+                tone="error"
+                role="alert"
+                action={
+                  <ButtonV1 onClick={() => mappingQuery.refetch()}>
+                    Retry
+                  </ButtonV1>
+                }
+              />
             )
           ) : null}
 
@@ -557,6 +606,9 @@ export function CoreModuleShellPageV1() {
                 <InputV1
                   value={commandText}
                   placeholder={t("mapping.inlineCommandPlaceholder")}
+                  invalid={
+                    commandText.trim().length > 0 && selectedRowIds.length === 0
+                  }
                   onChange={(event) => setCommandText(event.target.value)}
                 />
                 <ButtonV1
@@ -567,7 +619,10 @@ export function CoreModuleShellPageV1() {
                     });
                     setCommandPreview(preview.previewMessage);
                   }}
-                  disabled={commandText.trim().length === 0}
+                  disabled={
+                    commandText.trim().length === 0 ||
+                    selectedRowIds.length === 0
+                  }
                 >
                   {t("mapping.applyCommand")}
                 </ButtonV1>
@@ -579,10 +634,20 @@ export function CoreModuleShellPageV1() {
               <section
                 className="table-wrap mapping-grid-wrap"
                 ref={mappingScrollRef}
-                style={{ height: "520px", minWidth: "980px" }}
+                style={{
+                  height: `${mappingGridViewportHeightV1}px`,
+                  minWidth: "980px",
+                }}
                 aria-label="Account mapping grid"
                 onScroll={(event) => {
-                  setMappingScrollTop(event.currentTarget.scrollTop);
+                  const nextTop = event.currentTarget.scrollTop;
+                  if (mappingScrollRafRef.current !== null) {
+                    cancelAnimationFrame(mappingScrollRafRef.current);
+                  }
+                  mappingScrollRafRef.current = requestAnimationFrame(() => {
+                    setMappingScrollTop(nextTop);
+                    mappingScrollRafRef.current = null;
+                  });
                 }}
               >
                 <div
@@ -592,7 +657,7 @@ export function CoreModuleShellPageV1() {
                     gridTemplateColumns: mappingGridTemplateColumnsV1,
                     position: "sticky",
                     top: 0,
-                    minHeight: "40px",
+                    minHeight: `${mappingGridRowHeightV1}px`,
                     alignItems: "center",
                   }}
                 >
@@ -622,10 +687,11 @@ export function CoreModuleShellPageV1() {
                 >
                   {mappingVirtualRows.rows.map((virtualRow) => {
                     const row = virtualRow.row;
-                    const selected = selectedRowIds.includes(row.id);
+                    const selected = selectedRowIdSet.has(row.id);
                     const isManualOverride = row.status === "overridden";
                     const isAiHighlighted = row.confidence >= 0.9;
                     const isException = isMappingExceptionV1(row);
+                    const stateLabel = toMappingStateLabelV1(row);
                     return (
                       <div
                         key={row.id}
@@ -645,7 +711,7 @@ export function CoreModuleShellPageV1() {
                           transform: `translateY(${virtualRow.start}px)`,
                           display: "grid",
                           gridTemplateColumns: mappingGridTemplateColumnsV1,
-                          minHeight: "40px",
+                          minHeight: `${mappingGridRowHeightV1}px`,
                           alignItems: "center",
                           width: "100%",
                         }}
@@ -654,7 +720,6 @@ export function CoreModuleShellPageV1() {
                           type="checkbox"
                           checked={selected}
                           className="mapping-grid-row-checkbox"
-                          onClick={(event) => event.stopPropagation()}
                           onChange={(event) => {
                             setRowSelectedV1(row.id, event.target.checked);
                           }}
@@ -665,7 +730,16 @@ export function CoreModuleShellPageV1() {
                         <div className="numeric">{row.accountNumber}</div>
                         <div>{row.selectedCategory.code}</div>
                         <div>{Math.round(row.confidence * 100)}%</div>
-                        <div>{toMappingStateLabelV1(row)}</div>
+                        <div>
+                          <span
+                            className="mapping-grid-state"
+                            data-state={stateLabel
+                              .toLowerCase()
+                              .replace(/\s+/g, "-")}
+                          >
+                            {stateLabel}
+                          </span>
+                        </div>
                       </div>
                     );
                   })}
@@ -683,15 +757,20 @@ export function CoreModuleShellPageV1() {
       ) : null}
 
       {normalizedCoreModule === "tax-adjustments" ? (
-        <section className="workspace-layout workspace-layout--tax">
+        <section
+          id="module-panel-tax-adjustments"
+          role="tabpanel"
+          className="workspace-layout workspace-layout--tax"
+        >
           <div className="workspace-layout-sidebar">
             <SidebarNavV1
               sections={taxSidebarSections}
               pinnedItems={taxPinnedItems}
+              pinnedTitle="Calculation Chain"
             />
           </div>
 
-          <div className="panel-stack">
+          <div className="module-shell-v1-main">
             <CardV1>
               <p className="micro-label">{t("module.taxAdjustments")}</p>
               <h1 className="page-title">
@@ -703,6 +782,13 @@ export function CoreModuleShellPageV1() {
                 Use the left navigation to work through common and advanced tax
                 adjustment modules.
               </p>
+              {taxAdjustmentsQuery.isPending ? (
+                <div className="panel-stack">
+                  <SkeletonV1 width={240} height={16} />
+                  <SkeletonV1 width={200} height={16} />
+                  <SkeletonV1 width={260} height={16} />
+                </div>
+              ) : null}
               {taxAdjustmentsQuery.isSuccess ? (
                 <p className="hint-text">
                   Active adjustments version{" "}
@@ -712,26 +798,38 @@ export function CoreModuleShellPageV1() {
               {taxAdjustmentsQuery.isError ? (
                 taxAdjustmentsQuery.error instanceof ApiClientError &&
                 taxAdjustmentsQuery.error.code === "ADJUSTMENTS_NOT_FOUND" ? (
-                  <p className="hint-text">
-                    No active adjustment artifact yet. Run adjustments to unlock
-                    calculated outputs.
-                  </p>
+                  <EmptyStateV1
+                    title="No adjustment artifact yet"
+                    description="Run annual report and account mapping first, then return here for adjustments."
+                  />
                 ) : (
-                  <p className="error-text">
-                    {toUserFacingErrorMessage(taxAdjustmentsQuery.error)}
-                  </p>
+                  <EmptyStateV1
+                    title="Tax adjustments unavailable"
+                    description={toUserFacingErrorMessage(
+                      taxAdjustmentsQuery.error,
+                    )}
+                    tone="error"
+                    role="alert"
+                    action={
+                      <ButtonV1 onClick={() => taxAdjustmentsQuery.refetch()}>
+                        Retry
+                      </ButtonV1>
+                    }
+                  />
                 )
               ) : null}
             </CardV1>
 
-            <CardV1
-              style={{
-                position: "sticky",
-                top: "16px",
-                boxShadow: "0 -4px 12px rgba(0,0,0,0.05)",
-              }}
-            >
+            <CardV1 className="module-shell-v1-summary-card">
               <p className="micro-label">{t("module.sidebar.finalTax")}</p>
+              {taxSummaryQuery.isPending ? (
+                <div className="panel-stack">
+                  <SkeletonV1 width={160} height={28} />
+                  <SkeletonV1 width={120} height={14} />
+                  <SkeletonV1 width={160} height={28} />
+                  <SkeletonV1 width={120} height={14} />
+                </div>
+              ) : null}
               {taxSummaryQuery.isSuccess ? (
                 <>
                   <p className="section-title numeric">
@@ -743,55 +841,104 @@ export function CoreModuleShellPageV1() {
                   </p>
                   <p className="hint-text">Corporate tax</p>
                 </>
-              ) : (
-                <p className="hint-text">No final summary available yet.</p>
-              )}
+              ) : null}
+              {taxSummaryQuery.isError ? (
+                taxSummaryQuery.error instanceof ApiClientError &&
+                taxSummaryQuery.error.code === "ADJUSTMENTS_NOT_FOUND" ? (
+                  <EmptyStateV1
+                    title="Summary pending"
+                    description="No final summary available yet."
+                  />
+                ) : (
+                  <EmptyStateV1
+                    title="Final summary unavailable"
+                    description={toUserFacingErrorMessage(
+                      taxSummaryQuery.error,
+                    )}
+                    tone="error"
+                    role="alert"
+                    action={
+                      <ButtonV1 onClick={() => taxSummaryQuery.refetch()}>
+                        Retry
+                      </ButtonV1>
+                    }
+                  />
+                )
+              ) : null}
             </CardV1>
           </div>
         </section>
       ) : null}
 
       {normalizedCoreModule === "tax-return-ink2" ? (
-        <CardV1>
+        <CardV1 id="module-panel-tax-return-ink2" role="tabpanel">
           <p className="micro-label">{t("ink2.title")}</p>
           <h1 className="page-title">{t("ink2.title")}</h1>
           <p className="hint-text">{t("ink2.subtitle")}</p>
-          <div className="ink2-canvas">
-            <div className="ink2-grid">
-              <div className="micro-label">Code</div>
-              <div className="micro-label">Field</div>
-              <div className="micro-label numeric">Amount</div>
-              {(ink2Query.data?.form.fields ?? []).map((field) => (
-                <div key={field.fieldId} style={{ display: "contents" }}>
-                  <div className="ink2-code">
-                    {field.fieldId.split(".")[1]?.toUpperCase() ??
-                      field.fieldId}
-                  </div>
-                  <div
-                    style={{
-                      background:
-                        field.provenance === "manual"
-                          ? "#ffffff"
-                          : "var(--color-ai-highlight)",
-                    }}
-                  >
-                    {field.fieldId}
-                  </div>
-                  <div className="numeric">{field.amount}</div>
-                </div>
-              ))}
+          {ink2Query.isPending ? (
+            <div className="ink2-canvas">
+              <div className="panel-stack">
+                <SkeletonV1 height={36} />
+                <SkeletonV1 height={36} />
+                <SkeletonV1 height={36} />
+                <SkeletonV1 height={36} />
+                <SkeletonV1 height={36} />
+              </div>
             </div>
-          </div>
+          ) : null}
+          {ink2Query.isSuccess ? (
+            ink2Query.data.form.fields.length === 0 ? (
+              <EmptyStateV1
+                title="INK2 draft is empty"
+                description="Run tax summary and populate the form to show values here."
+              />
+            ) : (
+              <div className="ink2-canvas">
+                <div className="ink2-grid">
+                  <div className="micro-label ink2-grid-header">Code</div>
+                  <div className="micro-label ink2-grid-header">Field</div>
+                  <div className="micro-label numeric ink2-grid-header">
+                    Amount
+                  </div>
+                  {ink2Query.data.form.fields.map((field) => (
+                    <div key={field.fieldId} style={{ display: "contents" }}>
+                      <div className="ink2-code">
+                        {field.fieldId.split(".")[1]?.toUpperCase() ??
+                          field.fieldId}
+                      </div>
+                      <div
+                        className={
+                          field.provenance === "manual"
+                            ? "ink2-field"
+                            : "ink2-field ink2-field--ai"
+                        }
+                      >
+                        {field.fieldId}
+                      </div>
+                      <div className="numeric ink2-amount">{field.amount}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          ) : null}
           {ink2Query.isError ? (
             ink2Query.error instanceof ApiClientError &&
             ink2Query.error.code === "FORM_NOT_FOUND" ? (
-              <p className="hint-text">
-                No INK2 draft yet. Run summary + form first.
-              </p>
+              <EmptyStateV1
+                title="No INK2 draft yet"
+                description="Run tax summary and INK2 form generation first."
+              />
             ) : (
-              <p className="error-text">
-                {toUserFacingErrorMessage(ink2Query.error)}
-              </p>
+              <EmptyStateV1
+                title="INK2 draft unavailable"
+                description={toUserFacingErrorMessage(ink2Query.error)}
+                tone="error"
+                role="alert"
+                action={
+                  <ButtonV1 onClick={() => ink2Query.refetch()}>Retry</ButtonV1>
+                }
+              />
             )
           ) : null}
         </CardV1>

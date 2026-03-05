@@ -1,4 +1,4 @@
-import { execSync, spawnSync } from "node:child_process";
+import { execSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -7,6 +7,7 @@ function parseArgs(argv) {
   let max = 3;
   let prd = "scripts/ralph/prd.ui-ux-polish.v1.json";
   let model = "";
+  let reasoningEffort = "";
   let progressFile = "";
   let promptsDir = "";
   let outputsDir = "";
@@ -24,6 +25,11 @@ function parseArgs(argv) {
     }
     if (arg === "--model" && argv[i + 1]) {
       model = argv[i + 1];
+      i += 1;
+      continue;
+    }
+    if (arg === "--reasoning-effort" && argv[i + 1]) {
+      reasoningEffort = argv[i + 1];
       i += 1;
       continue;
     }
@@ -52,6 +58,7 @@ function parseArgs(argv) {
     prd,
     progressFile,
     promptsDir,
+    reasoningEffort,
   };
 }
 
@@ -84,7 +91,7 @@ function sortedOpenStories(stories) {
 
 function runCommand(command, cwd) {
   const comspec = process.env.ComSpec || "cmd.exe";
-  return spawnSync(comspec, ["/d", "/s", "/c", command], {
+  return spawnSync(comspec, ["/d", "/c", command], {
     cwd,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
@@ -106,7 +113,23 @@ function runVerifyCommands(commands, cwd) {
   return results;
 }
 
-function runCodexIteration({ codexPath, cwd, model, outputPath, prompt }) {
+function getHeartbeatIntervalMs() {
+  const raw = Number(process.env.DINK_RALPH_HEARTBEAT_MS ?? "30000");
+  if (!Number.isInteger(raw) || raw <= 0) {
+    return 30_000;
+  }
+  return raw;
+}
+
+function runCodexIteration({
+  codexPath,
+  cwd,
+  model,
+  outputPath,
+  prompt,
+  reasoningEffort,
+  storyId,
+}) {
   const args = [
     "exec",
     "--dangerously-bypass-approvals-and-sandbox",
@@ -116,14 +139,57 @@ function runCodexIteration({ codexPath, cwd, model, outputPath, prompt }) {
   if (model) {
     args.push("--model", model);
   }
+  if (reasoningEffort) {
+    args.push("-c", `model_reasoning_effort="${reasoningEffort}"`);
+  }
   args.push("-o", outputPath, "-");
-  return spawnSync(codexPath, args, {
-    cwd,
-    encoding: "utf8",
-    // Agent responses and tool transcripts can exceed default spawnSync buffers.
-    maxBuffer: 64 * 1024 * 1024,
-    stdio: "pipe",
-    input: `${prompt}\n`,
+  return new Promise((resolve) => {
+    const child = spawn(codexPath, args, {
+      cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const startedAt = Date.now();
+    const heartbeat = setInterval(() => {
+      const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+      process.stdout.write(
+        `[ralph-codex] Story ${storyId} still running (${elapsedSeconds}s elapsed)\n`,
+      );
+    }, getHeartbeatIntervalMs());
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk) => {
+      const text = chunk.toString();
+      stdout += text;
+      process.stdout.write(text);
+    });
+    child.stderr.on("data", (chunk) => {
+      const text = chunk.toString();
+      stderr += text;
+      process.stderr.write(text);
+    });
+    child.on("error", (error) => {
+      clearInterval(heartbeat);
+      resolve({
+        error,
+        status: 1,
+        stderr,
+        stdout,
+      });
+    });
+    child.on("close", (status) => {
+      clearInterval(heartbeat);
+      resolve({
+        error: undefined,
+        status: status ?? 1,
+        stderr,
+        stdout,
+      });
+    });
+
+    child.stdin.write(`${prompt}\n`);
+    child.stdin.end();
   });
 }
 
@@ -198,7 +264,7 @@ ${story.verificationCommands.map((command) => `- ${command}`).join("\n")}
 `.trim();
 }
 
-function main() {
+async function main() {
   const workspaceRoot = process.cwd();
   const args = parseArgs(process.argv.slice(2));
   const prdPath = path.resolve(workspaceRoot, args.prd);
@@ -269,15 +335,18 @@ function main() {
       `\n=== Ralph iteration ${iteration}/${args.max} -> ${story.id} ${story.title}`,
     );
 
-    const codexRun = runCodexIteration({
+    const codexRun = await runCodexIteration({
       codexPath,
       cwd: workspaceRoot,
       model: args.model,
       outputPath,
       prompt,
+      reasoningEffort:
+        args.reasoningEffort.trim() ||
+        process.env.DINK_RALPH_REASONING_EFFORT?.trim() ||
+        "",
+      storyId: story.id,
     });
-    process.stdout.write(codexRun.stdout ?? "");
-    process.stderr.write(codexRun.stderr ?? "");
 
     const codexStatus = codexRun.status ?? 1;
     const codexError = codexRun.error ? String(codexRun.error) : "";
@@ -342,6 +411,14 @@ function main() {
     }
   }
 
+  const finalPrd = readJson(prdPath);
+  const remainingStories = sortedOpenStories(finalPrd.userStories).length;
+  if (remainingStories === 0) {
+    console.log("Ralph complete: all stories passed.");
+    appendProgress(progressPath, "All stories complete.");
+    return;
+  }
+
   console.log("Reached max iterations.");
   appendProgress(
     progressPath,
@@ -350,4 +427,7 @@ function main() {
   process.exit(1);
 }
 
-main();
+main().catch((error) => {
+  process.stderr.write(`${String(error)}\n`);
+  process.exit(1);
+});

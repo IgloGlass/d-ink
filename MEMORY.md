@@ -1,7 +1,7 @@
 # D.ink Project Memory
 
 Status: Living project memory for AI-assisted development  
-Last updated: 2026-03-03
+Last updated: 2026-03-05
 
 ## Current Product Snapshot
 
@@ -149,3 +149,4 @@ When a major product or architecture decision changes:
 - 2026-03-03: Corrected UI precedence after clarification: V4 is newest and now has final precedence over V3 on overlap; V3 is retained as fallback where V4 is silent.
 - 2026-03-03: Implemented frontend overhaul cutover for primary V1 shell: V4 tokenized light theme foundation, fixed 56px global header, Ctrl+J workspace context launcher, i18n scaffolding (English active), new IA routes (selector, group control panel, workbench, module shell), compatibility redirects, tax-adjustments grouped sidebar with pinned final-calculation panel, and premium INK2 replica canvas. Added client integration tests for selector/workbench/module shell navigation.
 - 2026-03-03: Account-mapping module now uses virtualized row rendering in the new shell with `View All`/`Exceptions Only`, search-first category override UI, and inline AI command preview adapter. `@tanstack/react-virtual` package installation was blocked locally by npm auth/runtime constraints, so V1 ships with an internal deterministic virtualizer implementation pending dependency-install remediation.
+- 2026-03-05: Completed final frontend consistency and cutover sweep (FEP-12). UI gate now enforces coherent V4 token usage, selector -> workbench -> module flow stability, and semantic keyboard-accessible interaction cleanup (removed redundant ARIA roles on native list/button controls).

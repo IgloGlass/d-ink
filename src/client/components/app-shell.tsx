@@ -1,5 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 
 import { useGlobalAppContextV1 } from "../app/app-context.v1";
@@ -20,6 +27,22 @@ type WorkspaceSummaryV1 = Awaited<
   ReturnType<typeof listWorkspacesByTenantV1>
 >["workspaces"][number];
 
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  const selectors = [
+    "a[href]",
+    "button:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    "[tabindex]:not([tabindex='-1'])",
+  ];
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(selectors.join(",")),
+  ).filter(
+    (element) => !element.hasAttribute("hidden") && element.tabIndex >= 0,
+  );
+}
+
 export function AppShell({
   children,
   principal,
@@ -35,6 +58,22 @@ export function AppShell({
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [launcherQuery, setLauncherQuery] = useState("");
   const [launcherActiveIndex, setLauncherActiveIndex] = useState(0);
+  const launcherDialogRef = useRef<HTMLDialogElement | null>(null);
+  const launcherCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const launcherInputRef = useRef<HTMLInputElement | null>(null);
+  const activeLauncherOptionRef = useRef<HTMLButtonElement | null>(null);
+  const previousFocusedElementRef = useRef<HTMLElement | null>(null);
+  const shouldFocusLauncherOptionRef = useRef(false);
+  const launcherDialogId = useId();
+  const launcherListboxId = useId();
+  const launcherShortcutHintId = useId();
+  const launcherTitleId = useId();
+
+  const focusActiveLauncherOption = useCallback(() => {
+    queueMicrotask(() => {
+      activeLauncherOptionRef.current?.focus();
+    });
+  }, []);
 
   const logoutMutation = useMutation({
     mutationFn: logoutSessionV1,
@@ -51,25 +90,103 @@ export function AppShell({
     queryFn: () => listWorkspacesByTenantV1({ tenantId: principal.tenantId }),
   });
 
+  const closeLauncher = useCallback(() => {
+    shouldFocusLauncherOptionRef.current = false;
+    setLauncherOpen(false);
+  }, []);
+
+  const toggleLauncher = useCallback(() => {
+    setLauncherOpen((current) => !current);
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "j") {
         event.preventDefault();
-        setLauncherOpen((current) => !current);
+        toggleLauncher();
+        return;
       }
-      if (event.key === "Escape") {
-        setLauncherOpen(false);
+
+      if (event.key === "Escape" && launcherOpen) {
+        event.preventDefault();
+        closeLauncher();
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [closeLauncher, launcherOpen, toggleLauncher]);
 
   useEffect(() => {
     if (!launcherOpen) {
-      setLauncherQuery("");
-      setLauncherActiveIndex(0);
+      return;
+    }
+
+    const dialogElement = launcherDialogRef.current;
+    if (!dialogElement) {
+      return;
+    }
+
+    const onDialogKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const focusableElements = getFocusableElements(dialogElement);
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+      const activeElement =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      const activeInsideDialog =
+        activeElement !== null && dialogElement.contains(activeElement);
+
+      if (event.shiftKey) {
+        if (!activeInsideDialog || activeElement === firstElement) {
+          event.preventDefault();
+          lastElement.focus();
+        }
+        return;
+      }
+
+      if (!activeInsideDialog || activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    };
+
+    dialogElement.addEventListener("keydown", onDialogKeyDown);
+    return () => dialogElement.removeEventListener("keydown", onDialogKeyDown);
+  }, [launcherOpen]);
+
+  useEffect(() => {
+    if (launcherOpen) {
+      previousFocusedElementRef.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      queueMicrotask(() => {
+        launcherInputRef.current?.focus();
+      });
+      return;
+    }
+
+    setLauncherQuery("");
+    setLauncherActiveIndex(0);
+    shouldFocusLauncherOptionRef.current = false;
+
+    const previousFocusedElement = previousFocusedElementRef.current;
+    previousFocusedElementRef.current = null;
+    if (previousFocusedElement) {
+      queueMicrotask(() => {
+        previousFocusedElement.focus();
+      });
     }
   }, [launcherOpen]);
 
@@ -109,9 +226,17 @@ export function AppShell({
     });
   }, [filteredWorkspaces.length, launcherOpen]);
 
-  const closeLauncher = () => {
-    setLauncherOpen(false);
-  };
+  useEffect(() => {
+    if (!launcherOpen || launcherActiveIndex < 0) {
+      return;
+    }
+    const activeLauncherOption = activeLauncherOptionRef.current;
+    activeLauncherOption?.scrollIntoView({ block: "nearest" });
+    if (shouldFocusLauncherOptionRef.current) {
+      activeLauncherOption?.focus();
+      shouldFocusLauncherOptionRef.current = false;
+    }
+  }, [launcherActiveIndex, launcherOpen]);
 
   const switchWorkspace = (workspace: WorkspaceSummaryV1) => {
     setActiveContext({
@@ -122,15 +247,61 @@ export function AppShell({
     closeLauncher();
   };
 
-  const handleLauncherKeyDown = (
-    event: React.KeyboardEvent<HTMLInputElement>,
+  const handleLauncherNavigation = (
+    event: React.KeyboardEvent<HTMLElement>,
   ) => {
+    const eventTarget = event.currentTarget;
+    const navigationStartsFromInput = eventTarget === launcherInputRef.current;
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeLauncher();
+      return;
+    }
+
+    if (!navigationStartsFromInput) {
+      const isTypeaheadKey =
+        event.key.length === 1 &&
+        event.key !== " " &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey;
+      if (isTypeaheadKey) {
+        event.preventDefault();
+        launcherInputRef.current?.focus();
+        setLauncherQuery((current) => `${current}${event.key}`);
+        setLauncherActiveIndex(0);
+        return;
+      }
+
+      if (event.key === "Backspace") {
+        event.preventDefault();
+        launcherInputRef.current?.focus();
+        setLauncherQuery((current) => current.slice(0, -1));
+        setLauncherActiveIndex(0);
+        return;
+      }
+    }
+
     if (filteredWorkspaces.length === 0) {
+      if (event.key === "Tab" && !event.shiftKey && navigationStartsFromInput) {
+        event.preventDefault();
+        launcherCloseButtonRef.current?.focus();
+      }
       return;
     }
 
     if (event.key === "ArrowDown") {
       event.preventDefault();
+      if (navigationStartsFromInput) {
+        if (launcherActiveIndex < 0) {
+          shouldFocusLauncherOptionRef.current = true;
+          setLauncherActiveIndex(0);
+          return;
+        }
+        focusActiveLauncherOption();
+        return;
+      }
       setLauncherActiveIndex((current) =>
         current >= filteredWorkspaces.length - 1 ? 0 : current + 1,
       );
@@ -139,9 +310,47 @@ export function AppShell({
 
     if (event.key === "ArrowUp") {
       event.preventDefault();
+      if (navigationStartsFromInput) {
+        if (launcherActiveIndex < 0) {
+          shouldFocusLauncherOptionRef.current = true;
+          setLauncherActiveIndex(filteredWorkspaces.length - 1);
+          return;
+        }
+        focusActiveLauncherOption();
+        return;
+      }
       setLauncherActiveIndex((current) =>
         current <= 0 ? filteredWorkspaces.length - 1 : current - 1,
       );
+      return;
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      setLauncherActiveIndex(0);
+      return;
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      setLauncherActiveIndex(filteredWorkspaces.length - 1);
+      return;
+    }
+
+    if (event.key === "Tab" && !event.shiftKey && navigationStartsFromInput) {
+      event.preventDefault();
+      if (launcherActiveIndex < 0) {
+        shouldFocusLauncherOptionRef.current = true;
+        setLauncherActiveIndex(0);
+        return;
+      }
+      focusActiveLauncherOption();
+      return;
+    }
+
+    if (event.key === "Tab" && event.shiftKey && !navigationStartsFromInput) {
+      event.preventDefault();
+      launcherInputRef.current?.focus();
       return;
     }
 
@@ -151,6 +360,23 @@ export function AppShell({
     }
   };
 
+  const handleLauncherBackdropMouseDown = (
+    event: React.MouseEvent<HTMLDialogElement>,
+  ) => {
+    if (event.target === event.currentTarget) {
+      event.preventDefault();
+      closeLauncher();
+    }
+  };
+
+  const activeWorkspaceIdInLauncher =
+    launcherActiveIndex >= 0 && launcherActiveIndex < filteredWorkspaces.length
+      ? filteredWorkspaces[launcherActiveIndex]?.id
+      : undefined;
+  const activeWorkspaceLabel =
+    activeWorkspaceId?.slice(0, 8) ?? t("shell.notSelectedWorkspace");
+  const activeFiscalYearLabel = activeFiscalYear ?? t("shell.notSelectedYear");
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -158,6 +384,7 @@ export function AppShell({
           <a className="brand" href="/">
             {t("app.brand")}
           </a>
+          <span className="app-header-divider" aria-hidden="true" />
           <nav className="main-nav" aria-label="Primary">
             <NavLink to="/app/workspaces">{t("nav.workspaces")}</NavLink>
             <NavLink to="/app/groups/default/control-panel">
@@ -170,42 +397,79 @@ export function AppShell({
         </div>
 
         <div className="app-header-right">
-          <div className="app-context-badge" title={t("shell.context")}>
-            <span>
-              {activeWorkspaceId?.slice(0, 8) ??
-                t("shell.notSelectedWorkspace")}
+          <div
+            className="app-context-badge"
+            title={t("shell.context")}
+            aria-live="polite"
+          >
+            <span className="app-context-badge__label">
+              {t("shell.context")}
             </span>
-            <span>-</span>
-            <span>{activeFiscalYear ?? t("shell.notSelectedYear")}</span>
+            <span className="app-context-badge__values">
+              <span
+                className="app-context-badge__value"
+                title={activeWorkspaceLabel}
+              >
+                {activeWorkspaceLabel}
+              </span>
+              <span className="app-context-badge__separator" aria-hidden="true">
+                /
+              </span>
+              <span
+                className="app-context-badge__value"
+                title={activeFiscalYearLabel}
+              >
+                {activeFiscalYearLabel}
+              </span>
+            </span>
           </div>
-          <ButtonV1
-            className="app-launcher-trigger"
-            onClick={() => setLauncherOpen(true)}
-          >
-            <span>{t("shell.quickSwitch")}</span>
-            <kbd>{t("nav.commandHint")}</kbd>
-          </ButtonV1>
-          <div className="app-language-switch">
-            <label className="micro-label" htmlFor="language-switch">
-              {t("nav.language")}
-            </label>
-            <select
-              id="language-switch"
-              value={locale}
-              onChange={(event) => setLocale(event.target.value as "en")}
-              aria-label={t("nav.language")}
+          <div className="app-header-controls">
+            <ButtonV1
+              tone="shell"
+              size="sm"
+              className="app-launcher-trigger"
+              onClick={toggleLauncher}
+              aria-haspopup="dialog"
+              aria-expanded={launcherOpen}
+              aria-controls={launcherDialogId}
+              aria-describedby={launcherShortcutHintId}
+              aria-keyshortcuts="Control+J Meta+J"
+              data-shell-active={launcherOpen ? "true" : "false"}
             >
-              <option value="en">{t("language.en")}</option>
-            </select>
+              <span>{t("shell.quickSwitch")}</span>
+              <kbd id={launcherShortcutHintId}>{t("nav.commandHint")}</kbd>
+            </ButtonV1>
+            <div className="app-language-switch">
+              <label
+                className="app-language-switch__label"
+                htmlFor="language-switch"
+              >
+                {t("nav.language")}
+              </label>
+              <div className="app-language-switch__field-wrap">
+                <select
+                  id="language-switch"
+                  className="app-header-control app-language-switch__field"
+                  value={locale}
+                  onChange={(event) => setLocale(event.target.value as "en")}
+                  aria-label={t("nav.language")}
+                >
+                  <option value="en">{t("language.en")}</option>
+                </select>
+              </div>
+            </div>
+            <ButtonV1
+              tone="shell"
+              size="sm"
+              className="app-logout-trigger"
+              onClick={() => logoutMutation.mutate()}
+              disabled={logoutMutation.isPending}
+            >
+              {logoutMutation.isPending
+                ? t("nav.logoutPending")
+                : t("nav.logout")}
+            </ButtonV1>
           </div>
-          <ButtonV1
-            onClick={() => logoutMutation.mutate()}
-            disabled={logoutMutation.isPending}
-          >
-            {logoutMutation.isPending
-              ? t("nav.logoutPending")
-              : t("nav.logout")}
-          </ButtonV1>
         </div>
       </header>
 
@@ -219,16 +483,22 @@ export function AppShell({
 
       {launcherOpen ? (
         <dialog
+          id={launcherDialogId}
+          ref={launcherDialogRef}
           open
           className="launcher-overlay"
-          aria-label={t("shell.quickSwitch")}
+          aria-labelledby={launcherTitleId}
           aria-modal="true"
+          onMouseDown={handleLauncherBackdropMouseDown}
         >
           <CardV1 className="launcher-panel" tight>
             <div className="launcher-shell">
               <div className="launcher-header section-heading-row">
-                <p className="micro-label">{t("shell.quickSwitch")}</p>
+                <p id={launcherTitleId} className="micro-label">
+                  {t("shell.quickSwitch")}
+                </p>
                 <ButtonV1
+                  ref={launcherCloseButtonRef}
                   variant="icon"
                   className="launcher-close"
                   onClick={closeLauncher}
@@ -238,14 +508,33 @@ export function AppShell({
                 </ButtonV1>
               </div>
               <InputV1
-                autoFocus
+                ref={launcherInputRef}
+                tone="shell"
                 className="launcher-input"
                 value={launcherQuery}
-                onChange={(event) => setLauncherQuery(event.target.value)}
-                onKeyDown={handleLauncherKeyDown}
+                onChange={(event) => {
+                  setLauncherQuery(event.target.value);
+                  setLauncherActiveIndex(0);
+                }}
+                onKeyDown={handleLauncherNavigation}
                 placeholder={t("workspace.selector.search")}
+                autoComplete="off"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={launcherOpen}
+                aria-controls={launcherListboxId}
+                aria-activedescendant={
+                  activeWorkspaceIdInLauncher
+                    ? `launcher-option-${activeWorkspaceIdInLauncher}`
+                    : undefined
+                }
               />
-              <div className="launcher-results panel-stack">
+              <div
+                id={launcherListboxId}
+                className="launcher-results"
+                aria-label={t("workspace.selector.search")}
+                aria-busy={workspaceListQuery.isLoading}
+              >
                 {workspaceListQuery.isLoading ? (
                   <p className="hint-text">{t("workspace.selector.loading")}</p>
                 ) : null}
@@ -259,10 +548,16 @@ export function AppShell({
                   return (
                     <ButtonV1
                       key={workspace.id}
+                      id={`launcher-option-${workspace.id}`}
                       className="launcher-result"
+                      aria-pressed={isActive}
                       data-active={isActive ? "true" : "false"}
+                      tabIndex={isActive ? 0 : -1}
+                      ref={isActive ? activeLauncherOptionRef : undefined}
+                      onMouseDown={(event) => event.preventDefault()}
                       onMouseEnter={() => setLauncherActiveIndex(index)}
                       onFocus={() => setLauncherActiveIndex(index)}
+                      onKeyDown={handleLauncherNavigation}
                       onClick={() => switchWorkspace(workspace)}
                     >
                       <span className="launcher-result-primary">

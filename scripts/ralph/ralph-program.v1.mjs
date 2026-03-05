@@ -19,6 +19,7 @@ function parseArgs(argv) {
   let maxPerSweep = 24;
   let consecutiveGreen = 2;
   let model = "";
+  let reasoningEffort = "";
   let progressFile = "";
   let loopCommand = "";
   let gateCommand = "";
@@ -57,6 +58,11 @@ function parseArgs(argv) {
       index += 1;
       continue;
     }
+    if (arg === "--reasoning-effort" && argv[index + 1]) {
+      reasoningEffort = argv[index + 1];
+      index += 1;
+      continue;
+    }
     if (arg === "--progress-file" && argv[index + 1]) {
       progressFile = argv[index + 1];
       index += 1;
@@ -92,6 +98,7 @@ function parseArgs(argv) {
     name,
     prd,
     progressFile,
+    reasoningEffort,
     sweeps,
   };
 }
@@ -100,19 +107,15 @@ function runShell(command) {
   const shell =
     process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : "sh";
   const args =
-    process.platform === "win32"
-      ? ["/d", "/s", "/c", command]
-      : ["-lc", command];
+    process.platform === "win32" ? ["/d", "/c", command] : ["-lc", command];
 
   const result = spawnSync(shell, args, {
     cwd: process.cwd(),
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
-    stdio: "pipe",
+    stdio: "inherit",
   });
 
-  process.stdout.write(result.stdout ?? "");
-  process.stderr.write(result.stderr ?? "");
   return result.status ?? 1;
 }
 
@@ -295,7 +298,7 @@ function main() {
   const loopCommandTemplate =
     args.loopCommand.trim() ||
     process.env.DINK_RALPH_LOOP_COMMAND?.trim() ||
-    `node "${defaultLoopRunnerPath}" --prd {PRD} --max {MAX}{MODEL_ARG} --progress-file {STORY_PROGRESS} --prompts-dir {PROMPTS_DIR} --outputs-dir {OUTPUTS_DIR}`;
+    `node ${defaultLoopRunnerPath} --prd {PRD} --max {MAX}{MODEL_ARG}{REASONING_ARG} --progress-file {STORY_PROGRESS} --prompts-dir {PROMPTS_DIR} --outputs-dir {OUTPUTS_DIR}`;
   const gateCommand =
     args.gateCommand.trim() ||
     process.env.DINK_RALPH_GATES_COMMAND?.trim() ||
@@ -314,11 +317,15 @@ function main() {
 
   if (args.dryRun) {
     const modelArg = args.model ? ` --model ${args.model}` : "";
+    const reasoningArg = args.reasoningEffort
+      ? ` --reasoning-effort ${args.reasoningEffort}`
+      : "";
     const sampleLoopCommand = interpolateCommand(loopCommandTemplate, {
       PRD: sourcePrdPath,
       PRD_SOURCE: sourcePrdPath,
       MAX: String(args.maxPerSweep),
       MODEL_ARG: modelArg,
+      REASONING_ARG: reasoningArg,
       STORY_PROGRESS: storyProgressPath,
       PROMPTS_DIR: promptsDirPath,
       OUTPUTS_DIR: outputsDirPath,
@@ -384,11 +391,15 @@ function main() {
 
     try {
       const modelArg = args.model ? ` --model ${args.model}` : "";
+      const reasoningArg = args.reasoningEffort
+        ? ` --reasoning-effort ${args.reasoningEffort}`
+        : "";
       const loopCommand = interpolateCommand(loopCommandTemplate, {
         PRD: workingPrdPath,
         PRD_SOURCE: sourcePrdPath,
         MAX: String(args.maxPerSweep),
         MODEL_ARG: modelArg,
+        REASONING_ARG: reasoningArg,
         STORY_PROGRESS: storyProgressPath,
         PROMPTS_DIR: promptsDirPath,
         OUTPUTS_DIR: outputsDirPath,

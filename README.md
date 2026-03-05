@@ -127,6 +127,18 @@ If you want visual capture to be mandatory in premium gates, set:
 set DINK_RALPH_REQUIRE_VISUAL=1
 ```
 
+Final consistency sweep command (FEP-12):
+
+```bash
+node scripts/ralph/check-frontend-premium-gates.v1.mjs
+```
+
+Final sweep guardrails confirmed for sign-off:
+
+- V4-first token styling (`tokens.css`) with Open Sans and 4px/8px radii only
+- Selector -> workbench -> module shell flow preserved and keyboard reachable
+- No gradients, glassmorphism, or purple/indigo accent drift
+
 Fallback (no global `pnpm`):
 
 ```bash

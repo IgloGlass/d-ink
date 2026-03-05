@@ -4,6 +4,7 @@ import { useId, useState } from "react";
 import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
 import { ButtonV1 } from "../../components/button-v1";
 import { CardV1 } from "../../components/card-v1";
+import { EmptyStateV1 } from "../../components/empty-state-v1";
 import { InputV1 } from "../../components/input-v1";
 import { toUserFacingErrorMessage } from "../../lib/http/api-client";
 import {
@@ -46,12 +47,12 @@ export function InvitePage() {
 
   if (principal.role !== "Admin") {
     return (
-      <CardV1>
-        <h1>Invite users</h1>
-        <p className="error-text">
-          Only Admin users can generate invite links.
-        </p>
-      </CardV1>
+      <EmptyStateV1
+        title="Invite users"
+        description="Only Admin users can generate invite links."
+        tone="error"
+        role="alert"
+      />
     );
   }
 
@@ -109,9 +110,15 @@ export function InvitePage() {
       </CardV1>
 
       {inviteMutation.isError ? (
-        <p className="error-text" role="alert">
-          {toUserFacingErrorMessage(inviteMutation.error)}
-        </p>
+        <EmptyStateV1
+          title="Invite generation failed"
+          description={toUserFacingErrorMessage(inviteMutation.error)}
+          tone="error"
+          role="alert"
+          action={
+            <ButtonV1 onClick={() => inviteMutation.mutate()}>Retry</ButtonV1>
+          }
+        />
       ) : null}
 
       {inviteResult ? (
