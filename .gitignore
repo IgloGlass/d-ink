@@ -6,3 +6,7 @@ dist/
 .dev.vars
 pnpm-debug.log*
 .DS_Store
+scripts/ralph/.tmp-prompts/
+scripts/ralph/.tmp-outputs/
+scripts/ralph/artifacts/
+tmp-ralph/

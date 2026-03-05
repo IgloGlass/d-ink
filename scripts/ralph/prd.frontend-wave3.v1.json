@@ -1,0 +1,106 @@
+{
+  "branchName": "codex/frontend-premium-wave3-v1",
+  "contextNotes": [
+    "Design precedence is locked as V4 > V3 > V1 > UI architecture > SSOT/AGENTS.",
+    "Use only token-driven styling with Open Sans and strict 4px/8px radii.",
+    "No gradients, no glassmorphism, no purple/indigo accents, and no default library aesthetics.",
+    "Desktop-first V1 with keyboard-accessible interactions.",
+    "All modules remain manually editable with advisory sequence guidance only.",
+    "This wave focuses on final polish, consistency cutover, and legacy visual debt cleanup."
+  ],
+  "userStories": [
+    {
+      "id": "FEP-10",
+      "title": "Tax Return INK2 Replica Sweep",
+      "priority": 1,
+      "passes": false,
+      "description": "Improve the INK2 screen’s replica feel (A4 framing, grid lines, numeric alignment, AI field highlights) without breaking form data wiring.",
+      "filesToEdit": [
+        "src/client/features/modules/core-module-shell-page.v1.tsx",
+        "src/client/styles/global.css"
+      ],
+      "acceptanceCriteria": [
+        "INK2 canvas remains constrained and premium.",
+        "Grid line treatment remains crisp and deterministic.",
+        "Numeric fields remain tabular-aligned."
+      ],
+      "verificationCommands": [
+        "npm run typecheck",
+        "node scripts/ralph/check-design-guardrails.v1.mjs",
+        "set DINK_ALLOW_UNSUPPORTED_NODE_TEST_RUNTIME=1&& npx vitest run --config vitest.client.config.ts tests/client/core-module-shell-page.v1.test.tsx"
+      ]
+    },
+    {
+      "id": "FEP-11",
+      "title": "Loading, Empty, and Error States Sweep",
+      "priority": 2,
+      "passes": false,
+      "description": "Harden skeleton-first loading and premium empty/error state consistency across primary frontend pages.",
+      "filesToEdit": [
+        "src/client/components/skeleton-v1.tsx",
+        "src/client/components/empty-state-v1.tsx",
+        "src/client/components/guidance-banner-v1.tsx",
+        "src/client/styles/global.css",
+        "src/client/features/**/*.tsx"
+      ],
+      "acceptanceCriteria": [
+        "Core surfaces use skeletons rather than spinner-first loading.",
+        "Empty and error states are consistent and actionable.",
+        "No disruptive visual jumps between states."
+      ],
+      "verificationCommands": [
+        "npm run typecheck",
+        "node scripts/ralph/check-design-guardrails.v1.mjs",
+        "set DINK_ALLOW_UNSUPPORTED_NODE_TEST_RUNTIME=1&& npm run test:client"
+      ]
+    },
+    {
+      "id": "FEP-12",
+      "title": "Final Consistency and Cutover Sweep",
+      "priority": 3,
+      "passes": false,
+      "description": "Run a final consistency pass over frontend component styling and docs to ensure premium coherence and no regressions remain before sign-off.",
+      "filesToEdit": [
+        "src/client/**/*.tsx",
+        "src/client/styles/*.css",
+        "README.md",
+        "MEMORY.md",
+        "docs/ui-design-references-v4-ai-builder.md"
+      ],
+      "acceptanceCriteria": [
+        "Frontend premium style remains coherent across all major routes.",
+        "No known UI regressions remain in selector->workbench->module flows.",
+        "Docs and memory reflect final frontend loop decisions."
+      ],
+      "verificationCommands": [
+        "node scripts/ralph/check-frontend-premium-gates.v1.mjs"
+      ]
+    },
+    {
+      "id": "FEP-13",
+      "title": "Legacy Surface Style Debt Sweep",
+      "priority": 4,
+      "passes": false,
+      "description": "Remove or migrate legacy frontend class patterns that bypass shared V1 primitives so remaining auth/legacy workspace surfaces match the premium system.",
+      "filesToEdit": [
+        "src/client/features/auth/invite-page.tsx",
+        "src/client/features/auth/session-gate.tsx",
+        "src/client/features/workspaces/workspace-list-page.tsx",
+        "src/client/features/workspaces/workspace-detail-page.tsx",
+        "src/client/styles/global.css",
+        "src/client/components/*.tsx"
+      ],
+      "acceptanceCriteria": [
+        "No raw `primary`/`secondary` control classes remain on frontend pages unless explicitly styled and documented.",
+        "Legacy pages use shared component primitives or equivalent token-driven classes.",
+        "Auth and workspace legacy routes visually match the premium shell baseline."
+      ],
+      "verificationCommands": [
+        "npm run typecheck",
+        "node scripts/ralph/check-design-guardrails.v1.mjs",
+        "set DINK_ALLOW_UNSUPPORTED_NODE_TEST_RUNTIME=1&& npx vitest run --config vitest.client.config.ts tests/client/invite-page.test.tsx tests/client/session-gate.test.tsx tests/client/workspace-list-page.test.tsx tests/client/workspace-detail-page.test.tsx",
+        "set DINK_ALLOW_UNSUPPORTED_NODE_TEST_RUNTIME=1&& npm run test:client"
+      ]
+    }
+  ]
+}

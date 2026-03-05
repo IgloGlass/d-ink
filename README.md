@@ -98,6 +98,35 @@ Notes:
 - Tax adjustments shell: grouped sidebar (`Common`, `Advanced`) with pinned final-calculation chain
 - Account mapping shell: high-density virtualized grid with `View All` / `Exceptions Only`, inline command preview, and search-first override picker
 
+### Ralph frontend premium loop
+
+Use Ralph to run repeated frontend sweeps with premium design guardrails:
+
+```bash
+npm run ralph:frontend:guardrails
+npm run ralph:frontend:gates
+npm run ralph:frontend:program
+```
+
+Program defaults:
+
+- PRD: `scripts/ralph/prd.frontend-full-premium.v1.json` (12 passes)
+- Sweep cap: `6`
+- Iteration cap per sweep: `24`
+- Convergence target: `2` consecutive green sweeps
+
+Optional visual baseline capture:
+
+```bash
+npm run ralph:frontend:visual
+```
+
+If you want visual capture to be mandatory in premium gates, set:
+
+```bash
+set DINK_RALPH_REQUIRE_VISUAL=1
+```
+
 Fallback (no global `pnpm`):
 
 ```bash

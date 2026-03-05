@@ -1,0 +1,99 @@
+{
+  "branchName": "codex/frontend-premium-wave1-v1",
+  "contextNotes": [
+    "Design precedence is locked as V4 > V3 > V1 > UI architecture > SSOT/AGENTS.",
+    "Use only token-driven styling with Open Sans and strict 4px/8px radii.",
+    "No gradients, no glassmorphism, no purple/indigo accents, and no default library aesthetics.",
+    "Desktop-first V1 with keyboard-accessible interactions.",
+    "All modules remain manually editable with advisory sequence guidance only.",
+    "This wave focuses on foundation and top-level information architecture only."
+  ],
+  "userStories": [
+    {
+      "id": "FEP-01",
+      "title": "Foundation Token Conformance Sweep",
+      "priority": 1,
+      "passes": false,
+      "description": "Normalize shared token/global style usage so every screen inherits the V4 design baseline with no conflicting legacy visual rules.",
+      "filesToEdit": [
+        "src/client/styles/tokens.css",
+        "src/client/styles/global.css",
+        "src/client/components/*.tsx"
+      ],
+      "acceptanceCriteria": [
+        "All critical V4 tokens exist with exact expected values.",
+        "Global layout and typography defaults align with V4 style rules.",
+        "No banned visual patterns are introduced."
+      ],
+      "verificationCommands": [
+        "npm run typecheck",
+        "node scripts/ralph/check-design-guardrails.v1.mjs"
+      ]
+    },
+    {
+      "id": "FEP-02",
+      "title": "App Shell and Header Premium Sweep",
+      "priority": 2,
+      "passes": false,
+      "description": "Refine the global app shell/header, context badge, language control, and launcher interactions so top-level navigation feels enterprise-premium and consistent.",
+      "filesToEdit": [
+        "src/client/components/app-shell.tsx",
+        "src/client/styles/global.css",
+        "src/client/components/button-v1.tsx",
+        "src/client/components/input-v1.tsx"
+      ],
+      "acceptanceCriteria": [
+        "Header remains fixed at 56px with clean hierarchy.",
+        "Launcher interaction supports fast keyboard flow and clear focus treatment.",
+        "Shell controls follow V4 spacing and border rules."
+      ],
+      "verificationCommands": [
+        "npm run typecheck",
+        "node scripts/ralph/check-design-guardrails.v1.mjs",
+        "set DINK_ALLOW_UNSUPPORTED_NODE_TEST_RUNTIME=1&& npx vitest run --config vitest.client.config.ts tests/client/company-selector-page.v1.test.tsx"
+      ]
+    },
+    {
+      "id": "FEP-03",
+      "title": "Routing and IA Integrity Sweep",
+      "priority": 3,
+      "passes": false,
+      "description": "Ensure route surface and navigation flow match the intended IA with stable redirects and no regressions for legacy entry points.",
+      "filesToEdit": [
+        "src/client/app/router.tsx",
+        "src/client/app/providers.tsx",
+        "src/client/app/app-context.v1.tsx"
+      ],
+      "acceptanceCriteria": [
+        "Primary IA routes resolve cleanly without dead ends.",
+        "Legacy paths continue via intentional redirects.",
+        "Global context propagation remains stable."
+      ],
+      "verificationCommands": [
+        "npm run typecheck",
+        "set DINK_ALLOW_UNSUPPORTED_NODE_TEST_RUNTIME=1&& npm run test:client"
+      ]
+    },
+    {
+      "id": "FEP-04",
+      "title": "Company Selector Search-First Sweep",
+      "priority": 4,
+      "passes": false,
+      "description": "Polish company selector search, suggestions, and list/table hierarchy for premium speed and readability.",
+      "filesToEdit": [
+        "src/client/features/workspaces/company-selector-page.v1.tsx",
+        "src/client/styles/global.css"
+      ],
+      "acceptanceCriteria": [
+        "Search suggestions react quickly and are keyboard navigable.",
+        "Table/list hierarchy is clear with premium density.",
+        "Continue action remains deterministic."
+      ],
+      "verificationCommands": [
+        "npm run typecheck",
+        "node scripts/ralph/check-design-guardrails.v1.mjs",
+        "set DINK_ALLOW_UNSUPPORTED_NODE_TEST_RUNTIME=1&& npx vitest run --config vitest.client.config.ts tests/client/company-selector-page.v1.test.tsx"
+      ]
+    }
+  ]
+}

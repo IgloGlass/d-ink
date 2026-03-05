@@ -6,6 +6,7 @@
       "dist",
       ".wrangler",
       "tmp-ralph",
+      "scripts/ralph/artifacts",
       "scripts/ralph/.tmp-prompts",
       "scripts/ralph/.tmp-outputs"
     ]

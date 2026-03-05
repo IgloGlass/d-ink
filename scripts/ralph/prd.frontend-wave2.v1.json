@@ -1,0 +1,126 @@
+{
+  "branchName": "codex/frontend-premium-wave2-v1",
+  "contextNotes": [
+    "Design precedence is locked as V4 > V3 > V1 > UI architecture > SSOT/AGENTS.",
+    "Use only token-driven styling with Open Sans and strict 4px/8px radii.",
+    "No gradients, no glassmorphism, no purple/indigo accents, and no default library aesthetics.",
+    "Desktop-first V1 with keyboard-accessible interactions.",
+    "All modules remain manually editable with advisory sequence guidance only.",
+    "This wave focuses on core operational surfaces and dense module workflows."
+  ],
+  "userStories": [
+    {
+      "id": "FEP-05",
+      "title": "Group Control Panel Premium Sweep",
+      "priority": 1,
+      "passes": false,
+      "description": "Elevate group control panel layout, profile/summary/directory rhythm, and status signaling consistency.",
+      "filesToEdit": [
+        "src/client/features/groups/group-control-panel-page.v1.tsx",
+        "src/client/components/status-badge-v1.tsx",
+        "src/client/styles/global.css"
+      ],
+      "acceptanceCriteria": [
+        "Profile, summary, and directory sections are visually separated and coherent.",
+        "Status badges use consistent tone logic.",
+        "Quick-open actions remain stable."
+      ],
+      "verificationCommands": [
+        "npm run typecheck",
+        "node scripts/ralph/check-design-guardrails.v1.mjs",
+        "set DINK_ALLOW_UNSUPPORTED_NODE_TEST_RUNTIME=1&& npm run test:client"
+      ]
+    },
+    {
+      "id": "FEP-06",
+      "title": "Workbench Module Hub Sweep",
+      "priority": 2,
+      "passes": false,
+      "description": "Polish workbench card hierarchy, module ordering cues, and advisory guidance while preserving manual access to all modules.",
+      "filesToEdit": [
+        "src/client/features/workspaces/workspace-workbench-page.v1.tsx",
+        "src/client/components/guidance-banner-v1.tsx",
+        "src/client/styles/global.css"
+      ],
+      "acceptanceCriteria": [
+        "Module cards communicate sequence, status, and action clearly.",
+        "Out-of-order guidance is visible but non-blocking.",
+        "Card styling remains premium and token-aligned."
+      ],
+      "verificationCommands": [
+        "npm run typecheck",
+        "node scripts/ralph/check-design-guardrails.v1.mjs",
+        "set DINK_ALLOW_UNSUPPORTED_NODE_TEST_RUNTIME=1&& npx vitest run --config vitest.client.config.ts tests/client/workspace-workbench-page.v1.test.tsx"
+      ]
+    },
+    {
+      "id": "FEP-07",
+      "title": "Core Module Shell Structure Sweep",
+      "priority": 3,
+      "passes": false,
+      "description": "Harden shared module shell tabs, side navigation consistency, and panel composition across modules.",
+      "filesToEdit": [
+        "src/client/features/modules/core-module-shell-page.v1.tsx",
+        "src/client/components/sidebar-nav-v1.tsx",
+        "src/client/components/tabs-v1.tsx",
+        "src/client/styles/global.css"
+      ],
+      "acceptanceCriteria": [
+        "Top tabs and left navigation remain coherent across modules.",
+        "Sidebar supports dense navigation without visual breakage.",
+        "Shell layout remains stable under content pressure."
+      ],
+      "verificationCommands": [
+        "npm run typecheck",
+        "node scripts/ralph/check-design-guardrails.v1.mjs",
+        "set DINK_ALLOW_UNSUPPORTED_NODE_TEST_RUNTIME=1&& npx vitest run --config vitest.client.config.ts tests/client/core-module-shell-page.v1.test.tsx"
+      ]
+    },
+    {
+      "id": "FEP-08",
+      "title": "Tax Adjustments Workbench Sweep",
+      "priority": 4,
+      "passes": false,
+      "description": "Polish tax adjustments side navigation and pinned final calculation visibility to preserve high-confidence workflow orientation.",
+      "filesToEdit": [
+        "src/client/features/modules/core-module-shell-page.v1.tsx",
+        "src/client/components/sidebar-nav-v1.tsx",
+        "src/client/styles/global.css",
+        "docs/tax-adjustments-submodules.v1.md"
+      ],
+      "acceptanceCriteria": [
+        "Left sidebar is scrollable, structured, and readable.",
+        "Final calculation panel remains visible and legible.",
+        "Approved submodule ordering/grouping remains intact."
+      ],
+      "verificationCommands": [
+        "npm run typecheck",
+        "node scripts/ralph/check-design-guardrails.v1.mjs",
+        "set DINK_ALLOW_UNSUPPORTED_NODE_TEST_RUNTIME=1&& npx vitest run --config vitest.client.config.ts tests/client/core-module-shell-page.v1.test.tsx"
+      ]
+    },
+    {
+      "id": "FEP-09",
+      "title": "Account Mapping Grid Precision Sweep",
+      "priority": 5,
+      "passes": false,
+      "description": "Refine mapping grid states, virtualization fidelity, and override/exception interactions to feel like a premium financial workbench.",
+      "filesToEdit": [
+        "src/client/features/modules/core-module-shell-page.v1.tsx",
+        "src/client/styles/global.css",
+        "src/client/components/input-v1.tsx",
+        "src/client/components/button-v1.tsx"
+      ],
+      "acceptanceCriteria": [
+        "Grid remains smooth under large row counts.",
+        "AI/manual/exception/selection states are clearly differentiated.",
+        "Override and inline command interactions remain deterministic."
+      ],
+      "verificationCommands": [
+        "npm run typecheck",
+        "node scripts/ralph/check-design-guardrails.v1.mjs",
+        "set DINK_ALLOW_UNSUPPORTED_NODE_TEST_RUNTIME=1&& npx vitest run --config vitest.client.config.ts tests/client/core-module-shell-page.v1.test.tsx"
+      ]
+    }
+  ]
+}

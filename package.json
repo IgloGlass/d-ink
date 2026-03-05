@@ -21,7 +21,16 @@
     "lint:logging": "node scripts/check-tenant-safe-logging.v1.mjs",
     "lint:boundaries": "depcruise --config .dependency-cruiser.cjs --output-type err-long src",
     "format": "biome format --write .",
-    "check": "npm run lint && npm run lint:logging && npm run lint:boundaries && npm run typecheck && npm run test"
+    "check": "npm run lint && npm run lint:logging && npm run lint:boundaries && npm run typecheck && npm run test",
+    "ralph:frontend:guardrails": "node scripts/ralph/check-design-guardrails.v1.mjs",
+    "ralph:frontend:gates": "node scripts/ralph/check-frontend-premium-gates.v1.mjs",
+    "ralph:frontend:visual": "node scripts/ralph/run-visual-baseline.v1.mjs",
+    "ralph:frontend:program": "node scripts/ralph/ralph-frontend-program.v1.mjs --prd scripts/ralph/prd.frontend-full-premium.v1.json --sweeps 6 --max-per-sweep 24 --consecutive-green 2",
+    "ralph:frontend:program:strict": "set DINK_RALPH_REQUIRE_VISUAL=1&& node scripts/ralph/ralph-frontend-program.v1.mjs --prd scripts/ralph/prd.frontend-full-premium.v1.json --sweeps 8 --max-per-sweep 8 --consecutive-green 3",
+    "ralph:frontend:wave1": "set DINK_RALPH_REQUIRE_VISUAL=1&& node scripts/ralph/ralph-frontend-program.v1.mjs --prd scripts/ralph/prd.frontend-wave1.v1.json --sweeps 8 --max-per-sweep 8 --consecutive-green 3",
+    "ralph:frontend:wave2": "set DINK_RALPH_REQUIRE_VISUAL=1&& node scripts/ralph/ralph-frontend-program.v1.mjs --prd scripts/ralph/prd.frontend-wave2.v1.json --sweeps 8 --max-per-sweep 8 --consecutive-green 3",
+    "ralph:frontend:wave3": "set DINK_RALPH_REQUIRE_VISUAL=1&& node scripts/ralph/ralph-frontend-program.v1.mjs --prd scripts/ralph/prd.frontend-wave3.v1.json --sweeps 8 --max-per-sweep 8 --consecutive-green 3",
+    "ralph:frontend:waves": "npm run ralph:frontend:wave1 && npm run ralph:frontend:wave2 && npm run ralph:frontend:wave3"
   },
   "engines": {
     "node": "20.x"
