@@ -132,10 +132,6 @@ export function CompanySelectorPageV1() {
     isSuggestionMenuOpen && normalizedSearch.length > 0;
   const shouldShowSuggestions = shouldShowSuggestionPanel && hasSuggestions;
   const activeSuggestion = suggestionList[activeIndex];
-  const activeOptionId =
-    shouldShowSuggestions && activeSuggestion
-      ? `${suggestionListId}-${activeSuggestion.id}`
-      : undefined;
   const resultCountLabel =
     normalizedSearch.length > 0
       ? `${filteredWorkspaces.length} matching workspace${
@@ -282,13 +278,7 @@ export function CompanySelectorPageV1() {
             }}
             placeholder={t("workspace.selector.search")}
             aria-label={t("workspace.selector.search")}
-            role="combobox"
-            aria-autocomplete="list"
-            aria-controls={suggestionListId}
-            aria-expanded={shouldShowSuggestionPanel}
-            aria-activedescendant={activeOptionId}
             aria-describedby={searchHintId}
-            aria-haspopup="listbox"
             autoComplete="off"
           />
           <p id={searchHintId} className="company-selector-search-hint">
@@ -316,7 +306,6 @@ export function CompanySelectorPageV1() {
                     key={workspace.id}
                     type="button"
                     className="search-combobox-option"
-                    aria-pressed={index === activeIndex}
                     tabIndex={-1}
                     data-active={index === activeIndex ? "true" : "false"}
                     data-option-id={workspace.id}

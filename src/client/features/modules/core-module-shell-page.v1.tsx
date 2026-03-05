@@ -181,15 +181,6 @@ export function CoreModuleShellPageV1() {
     });
   }
 
-  function toggleRowSelectionV1(decisionId: string) {
-    setSelectedRowIds((current) => {
-      if (current.includes(decisionId)) {
-        return current.filter((id) => id !== decisionId);
-      }
-      return [...current, decisionId];
-    });
-  }
-
   const normalizedCoreModule = coreModuleOrderV1.includes(
     (coreModule as CoreModuleSlugV1) ?? "annual-report-analysis",
   )
