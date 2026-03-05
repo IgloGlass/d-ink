@@ -25,6 +25,8 @@
     "ralph:frontend:guardrails": "node scripts/ralph/check-design-guardrails.v1.mjs",
     "ralph:frontend:gates": "node scripts/ralph/check-frontend-premium-gates.v1.mjs",
     "ralph:frontend:visual": "node scripts/ralph/run-visual-baseline.v1.mjs",
+    "ralph:frontend:smoke": "node scripts/ralph/smoke-loop-tests.v1.mjs",
+    "ralph:program": "node scripts/ralph/ralph-program.v1.mjs",
     "ralph:frontend:program": "node scripts/ralph/ralph-frontend-program.v1.mjs --prd scripts/ralph/prd.frontend-full-premium.v1.json --sweeps 6 --max-per-sweep 24 --consecutive-green 2",
     "ralph:frontend:program:strict": "set DINK_RALPH_REQUIRE_VISUAL=1&& node scripts/ralph/ralph-frontend-program.v1.mjs --prd scripts/ralph/prd.frontend-full-premium.v1.json --sweeps 8 --max-per-sweep 8 --consecutive-green 3",
     "ralph:frontend:wave1": "set DINK_RALPH_REQUIRE_VISUAL=1&& node scripts/ralph/ralph-frontend-program.v1.mjs --prd scripts/ralph/prd.frontend-wave1.v1.json --sweeps 8 --max-per-sweep 8 --consecutive-green 3",

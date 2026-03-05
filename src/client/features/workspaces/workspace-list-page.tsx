@@ -1,8 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
+import { ButtonV1 } from "../../components/button-v1";
+import { CardV1 } from "../../components/card-v1";
+import { InputV1 } from "../../components/input-v1";
 import { StatusPill } from "../../components/status-pill";
 import { toUserFacingErrorMessage } from "../../lib/http/api-client";
 import {
@@ -15,6 +18,9 @@ const workspaceListQueryKeyV1 = (tenantId: string) => ["workspaces", tenantId];
 export function WorkspaceListPage() {
   const principal = useRequiredSessionPrincipalV1();
   const queryClient = useQueryClient();
+  const companyIdInputId = useId();
+  const fiscalYearStartInputId = useId();
+  const fiscalYearEndInputId = useId();
 
   const [companyId, setCompanyId] = useState("");
   const [fiscalYearStart, setFiscalYearStart] = useState("2025-01-01");
@@ -42,7 +48,7 @@ export function WorkspaceListPage() {
 
   return (
     <section className="panel-stack">
-      <div className="card">
+      <CardV1>
         <h1>Workspaces</h1>
         <p>Create and manage tenant workspaces.</p>
         <p>
@@ -58,59 +64,55 @@ export function WorkspaceListPage() {
             createMutation.mutate();
           }}
         >
-          <label>
-            Company ID (UUID)
-            <div className="inline-row">
-              <input
-                type="text"
-                value={companyId}
-                onChange={(event) => setCompanyId(event.target.value)}
-                required
-                placeholder="xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx"
-              />
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => {
-                  if (typeof crypto !== "undefined" && crypto.randomUUID) {
-                    setCompanyId(crypto.randomUUID());
-                  }
-                }}
-              >
-                Generate
-              </button>
-            </div>
-          </label>
-
-          <label>
-            Fiscal year start
-            <input
-              type="date"
-              value={fiscalYearStart}
-              onChange={(event) => setFiscalYearStart(event.target.value)}
+          <label htmlFor={companyIdInputId}>Company ID (UUID)</label>
+          <div className="inline-row">
+            <InputV1
+              id={companyIdInputId}
+              type="text"
+              value={companyId}
+              onChange={(event) => setCompanyId(event.target.value)}
               required
+              placeholder="xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx"
             />
-          </label>
+            <ButtonV1
+              type="button"
+              onClick={() => {
+                if (typeof crypto !== "undefined" && crypto.randomUUID) {
+                  setCompanyId(crypto.randomUUID());
+                }
+              }}
+            >
+              Generate
+            </ButtonV1>
+          </div>
 
-          <label>
-            Fiscal year end
-            <input
-              type="date"
-              value={fiscalYearEnd}
-              onChange={(event) => setFiscalYearEnd(event.target.value)}
-              required
-            />
-          </label>
+          <label htmlFor={fiscalYearStartInputId}>Fiscal year start</label>
+          <InputV1
+            id={fiscalYearStartInputId}
+            type="date"
+            value={fiscalYearStart}
+            onChange={(event) => setFiscalYearStart(event.target.value)}
+            required
+          />
 
-          <button
+          <label htmlFor={fiscalYearEndInputId}>Fiscal year end</label>
+          <InputV1
+            id={fiscalYearEndInputId}
+            type="date"
+            value={fiscalYearEnd}
+            onChange={(event) => setFiscalYearEnd(event.target.value)}
+            required
+          />
+
+          <ButtonV1
             type="submit"
-            className="primary"
+            variant="primary"
             disabled={createMutation.isPending || companyId.trim().length === 0}
           >
             {createMutation.isPending ? "Creating..." : "Create workspace"}
-          </button>
+          </ButtonV1>
         </form>
-      </div>
+      </CardV1>
 
       {createMutation.isError ? (
         <p className="error-text" role="alert">
@@ -118,7 +120,7 @@ export function WorkspaceListPage() {
         </p>
       ) : null}
 
-      <div className="card">
+      <CardV1>
         <h2>Tenant workspace list</h2>
 
         {listQuery.isPending ? <p>Loading workspaces...</p> : null}
@@ -132,37 +134,39 @@ export function WorkspaceListPage() {
           listQuery.data.workspaces.length === 0 ? (
             <p>No workspaces yet.</p>
           ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Workspace</th>
-                  <th>Company</th>
-                  <th>Fiscal year</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {listQuery.data.workspaces.map((workspace) => (
-                  <tr key={workspace.id}>
-                    <td>
-                      <Link to={`/app/workspaces/${workspace.id}`}>
-                        {workspace.id.slice(0, 8)}
-                      </Link>
-                    </td>
-                    <td>{workspace.companyId.slice(0, 8)}</td>
-                    <td>
-                      {workspace.fiscalYearStart} to {workspace.fiscalYearEnd}
-                    </td>
-                    <td>
-                      <StatusPill status={workspace.status} />
-                    </td>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Workspace</th>
+                    <th>Company</th>
+                    <th>Fiscal year</th>
+                    <th>Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {listQuery.data.workspaces.map((workspace) => (
+                    <tr key={workspace.id}>
+                      <td>
+                        <Link to={`/app/workspaces/${workspace.id}`}>
+                          {workspace.id.slice(0, 8)}
+                        </Link>
+                      </td>
+                      <td>{workspace.companyId.slice(0, 8)}</td>
+                      <td>
+                        {workspace.fiscalYearStart} to {workspace.fiscalYearEnd}
+                      </td>
+                      <td>
+                        <StatusPill status={workspace.status} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )
         ) : null}
-      </div>
+      </CardV1>
     </section>
   );
 }

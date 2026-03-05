@@ -1,7 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 
+import { ButtonV1 } from "../../components/button-v1";
+import { CardV1 } from "../../components/card-v1";
+import { InputV1 } from "../../components/input-v1";
 import {
   ApiClientError,
   toUserFacingErrorMessage,
@@ -56,6 +59,9 @@ function readStorageValueV1(key: string): string {
 export function SessionGate() {
   const queryClient = useQueryClient();
   const location = useLocation();
+  const tenantIdInputId = useId();
+  const emailInputId = useId();
+  const roleSelectId = useId();
   const [devTenantId, setDevTenantId] = useState(() =>
     readStorageValueV1(DEV_TENANT_STORAGE_KEY_V1),
   );
@@ -95,7 +101,7 @@ export function SessionGate() {
   });
 
   if (sessionQuery.isPending) {
-    return <div className="card">Checking your session...</div>;
+    return <CardV1 className="auth-card">Checking your session...</CardV1>;
   }
 
   if (sessionQuery.isSuccess) {
@@ -110,7 +116,7 @@ export function SessionGate() {
   const shouldShowDevLogin = isLocalDevHostV1();
 
   return (
-    <div className="card auth-card">
+    <CardV1 className="auth-card">
       <h1>D.ink</h1>
       <p>AI-powered Swedish tax return assistant for accountants.</p>
       <p>Open your invite magic link to sign in.</p>
@@ -133,44 +139,41 @@ export function SessionGate() {
           }}
         >
           <h2>Quick dev sign-in</h2>
-          <label>
-            Tenant ID
-            <input
-              type="text"
-              value={devTenantId}
-              placeholder="UUIDv4 or short ID (e.g. 5335)"
-              onChange={(event) => setDevTenantId(event.target.value)}
-            />
-          </label>
-          <label>
-            Email
-            <input
-              type="email"
-              value={devEmail}
-              onChange={(event) => setDevEmail(event.target.value)}
-            />
-          </label>
-          <label>
-            Role
-            <select
-              value={devRole}
-              onChange={(event) =>
-                setDevRole(event.target.value as "Admin" | "Editor")
-              }
-            >
-              <option value="Admin">Admin</option>
-              <option value="Editor">Editor</option>
-            </select>
-          </label>
-          <button
+          <label htmlFor={tenantIdInputId}>Tenant ID</label>
+          <InputV1
+            id={tenantIdInputId}
+            type="text"
+            value={devTenantId}
+            placeholder="UUIDv4 or short ID (e.g. 5335)"
+            onChange={(event) => setDevTenantId(event.target.value)}
+          />
+          <label htmlFor={emailInputId}>Email</label>
+          <InputV1
+            id={emailInputId}
+            type="email"
+            value={devEmail}
+            onChange={(event) => setDevEmail(event.target.value)}
+          />
+          <label htmlFor={roleSelectId}>Role</label>
+          <select
+            id={roleSelectId}
+            value={devRole}
+            onChange={(event) =>
+              setDevRole(event.target.value as "Admin" | "Editor")
+            }
+          >
+            <option value="Admin">Admin</option>
+            <option value="Editor">Editor</option>
+          </select>
+          <ButtonV1
             type="submit"
-            className="secondary"
+            variant="primary"
             disabled={devLoginMutation.isPending}
           >
             {devLoginMutation.isPending
               ? "Signing in..."
               : "Sign in for local testing"}
-          </button>
+          </ButtonV1>
           {devLoginMutation.isError ? (
             <p className="error-text" role="alert">
               {toUserFacingErrorMessage(devLoginMutation.error)}
@@ -178,6 +181,6 @@ export function SessionGate() {
           ) : null}
         </form>
       ) : null}
-    </div>
+    </CardV1>
   );
 }

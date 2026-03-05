@@ -7,6 +7,9 @@ function parseArgs(argv) {
   let max = 3;
   let prd = "scripts/ralph/prd.ui-ux-polish.v1.json";
   let model = "";
+  let progressFile = "";
+  let promptsDir = "";
+  let outputsDir = "";
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--max" && argv[i + 1]) {
@@ -22,9 +25,34 @@ function parseArgs(argv) {
     if (arg === "--model" && argv[i + 1]) {
       model = argv[i + 1];
       i += 1;
+      continue;
+    }
+    if (arg === "--progress-file" && argv[i + 1]) {
+      progressFile = argv[i + 1];
+      i += 1;
+      continue;
+    }
+    if (arg === "--prompts-dir" && argv[i + 1]) {
+      promptsDir = argv[i + 1];
+      i += 1;
+      continue;
+    }
+    if (arg === "--outputs-dir" && argv[i + 1]) {
+      outputsDir = argv[i + 1];
+      i += 1;
     }
   }
-  return { max, model, prd };
+  if (!Number.isInteger(max) || max <= 0) {
+    throw new Error("--max must be a positive integer.");
+  }
+  return {
+    max,
+    model,
+    outputsDir,
+    prd,
+    progressFile,
+    promptsDir,
+  };
 }
 
 function readJson(filePath) {
@@ -37,6 +65,7 @@ function writeJson(filePath, value) {
 }
 
 function appendProgress(progressFile, text) {
+  mkdirSync(path.dirname(progressFile), { recursive: true });
   const previous = existsSync(progressFile)
     ? readFileSync(progressFile, "utf8")
     : "# Ralph Codex Progress\n";
@@ -58,6 +87,7 @@ function runCommand(command, cwd) {
   return spawnSync(comspec, ["/d", "/s", "/c", command], {
     cwd,
     encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
     stdio: "pipe",
   });
 }
@@ -90,9 +120,32 @@ function runCodexIteration({ codexPath, cwd, model, outputPath, prompt }) {
   return spawnSync(codexPath, args, {
     cwd,
     encoding: "utf8",
+    // Agent responses and tool transcripts can exceed default spawnSync buffers.
+    maxBuffer: 64 * 1024 * 1024,
     stdio: "pipe",
     input: `${prompt}\n`,
   });
+}
+
+function resolveCodexPath(workspaceRoot) {
+  const explicitPath = process.env.DINK_RALPH_CODEX_PATH?.trim();
+  if (explicitPath) {
+    return explicitPath;
+  }
+
+  const discoveredPath = execSync("where codex", {
+    cwd: workspaceRoot,
+    encoding: "utf8",
+  })
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+
+  if (!discoveredPath) {
+    throw new Error("Unable to resolve codex executable via `where codex`.");
+  }
+
+  return discoveredPath;
 }
 
 function buildPrompt({
@@ -150,9 +203,24 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   const prdPath = path.resolve(workspaceRoot, args.prd);
   const scriptDir = path.dirname(prdPath);
-  const progressPath = path.join(scriptDir, "progress.txt");
-  const promptsDir = path.join(scriptDir, ".tmp-prompts");
-  const outputsDir = path.join(scriptDir, ".tmp-outputs");
+  const progressPath = path.resolve(
+    workspaceRoot,
+    args.progressFile.trim().length > 0
+      ? args.progressFile
+      : path.join(scriptDir, "progress.txt"),
+  );
+  const promptsDir = path.resolve(
+    workspaceRoot,
+    args.promptsDir.trim().length > 0
+      ? args.promptsDir
+      : path.join(scriptDir, ".tmp-prompts"),
+  );
+  const outputsDir = path.resolve(
+    workspaceRoot,
+    args.outputsDir.trim().length > 0
+      ? args.outputsDir
+      : path.join(scriptDir, ".tmp-outputs"),
+  );
 
   if (!existsSync(prdPath)) {
     throw new Error(`PRD file not found: ${prdPath}`);
@@ -160,17 +228,7 @@ function main() {
 
   mkdirSync(promptsDir, { recursive: true });
   mkdirSync(outputsDir, { recursive: true });
-  const codexPath = execSync("where codex", {
-    cwd: workspaceRoot,
-    encoding: "utf8",
-  })
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0);
-
-  if (!codexPath) {
-    throw new Error("Unable to resolve codex executable via `where codex`.");
-  }
+  const codexPath = resolveCodexPath(workspaceRoot);
 
   for (let iteration = 1; iteration <= args.max; iteration += 1) {
     const prd = readJson(prdPath);
@@ -234,7 +292,7 @@ function main() {
     );
     const verifyPass = verifyResults.every((result) => result.exitCode === 0);
 
-    if (saidPass && verifyPass) {
+    if (codexStatus === 0 && saidPass && verifyPass) {
       const next = readJson(prdPath);
       const target = next.userStories.find(
         (candidate) => candidate.id === story.id,
@@ -265,7 +323,7 @@ function main() {
         progressPath,
         [
           `Story failed: ${story.id} - ${story.title}`,
-          `Agent status: ${saidPass ? "PASS" : "FAIL_OR_MISSING"}`,
+          `Agent status: ${codexStatus === 0 && saidPass ? "PASS" : "FAIL_OR_MISSING"}`,
           `Codex command exit: ${codexStatus}`,
           codexError ? `Codex spawn error: ${codexError}` : "",
           codexRun.stderr ? `Codex stderr: ${codexRun.stderr.trim()}` : "",
@@ -285,6 +343,11 @@ function main() {
   }
 
   console.log("Reached max iterations.");
+  appendProgress(
+    progressPath,
+    `Reached max iterations (${args.max}) with unresolved stories.`,
+  );
+  process.exit(1);
 }
 
 main();

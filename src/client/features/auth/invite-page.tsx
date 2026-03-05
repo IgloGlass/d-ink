@@ -1,7 +1,10 @@
 import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
+import { ButtonV1 } from "../../components/button-v1";
+import { CardV1 } from "../../components/card-v1";
+import { InputV1 } from "../../components/input-v1";
 import { toUserFacingErrorMessage } from "../../lib/http/api-client";
 import {
   type CreateInviteResponseV1,
@@ -26,6 +29,8 @@ export function InvitePage() {
   const [inviteeEmail, setInviteeEmail] = useState("");
   const [inviteeRole, setInviteeRole] = useState<"Admin" | "Editor">("Editor");
   const [copied, setCopied] = useState(false);
+  const inviteeEmailInputId = useId();
+  const inviteeRoleSelectId = useId();
 
   const inviteMutation = useMutation({
     mutationFn: async () =>
@@ -41,12 +46,12 @@ export function InvitePage() {
 
   if (principal.role !== "Admin") {
     return (
-      <section className="card">
+      <CardV1>
         <h1>Invite users</h1>
         <p className="error-text">
           Only Admin users can generate invite links.
         </p>
-      </section>
+      </CardV1>
     );
   }
 
@@ -56,7 +61,7 @@ export function InvitePage() {
 
   return (
     <section className="panel-stack">
-      <div className="card">
+      <CardV1>
         <h1>Invite a teammate</h1>
         <p>Create a one-time magic link for this tenant.</p>
 
@@ -67,33 +72,31 @@ export function InvitePage() {
             inviteMutation.mutate();
           }}
         >
-          <label>
-            Invitee email
-            <input
-              type="email"
-              value={inviteeEmail}
-              onChange={(event) => setInviteeEmail(event.target.value)}
-              required
-              placeholder="name@firm.se"
-            />
-          </label>
+          <label htmlFor={inviteeEmailInputId}>Invitee email</label>
+          <InputV1
+            id={inviteeEmailInputId}
+            type="email"
+            value={inviteeEmail}
+            onChange={(event) => setInviteeEmail(event.target.value)}
+            required
+            placeholder="name@firm.se"
+          />
 
-          <label>
-            Role
-            <select
-              value={inviteeRole}
-              onChange={(event) =>
-                setInviteeRole(event.target.value as "Admin" | "Editor")
-              }
-            >
-              <option value="Editor">Editor</option>
-              <option value="Admin">Admin</option>
-            </select>
-          </label>
+          <label htmlFor={inviteeRoleSelectId}>Role</label>
+          <select
+            id={inviteeRoleSelectId}
+            value={inviteeRole}
+            onChange={(event) =>
+              setInviteeRole(event.target.value as "Admin" | "Editor")
+            }
+          >
+            <option value="Editor">Editor</option>
+            <option value="Admin">Admin</option>
+          </select>
 
-          <button
+          <ButtonV1
             type="submit"
-            className="primary"
+            variant="primary"
             disabled={
               inviteMutation.isPending || inviteeEmail.trim().length === 0
             }
@@ -101,9 +104,9 @@ export function InvitePage() {
             {inviteMutation.isPending
               ? "Generating..."
               : "Generate invite link"}
-          </button>
+          </ButtonV1>
         </form>
-      </div>
+      </CardV1>
 
       {inviteMutation.isError ? (
         <p className="error-text" role="alert">
@@ -112,27 +115,26 @@ export function InvitePage() {
       ) : null}
 
       {inviteResult ? (
-        <div className="card">
+        <CardV1>
           <h2>Invite link ready</h2>
           <p>
             Expires at:{" "}
             {new Date(inviteResult.magicLinkExpiresAt).toLocaleString()}
           </p>
           <div className="link-row">
-            <input type="text" readOnly value={inviteResult.magicLinkUrl} />
-            <button
+            <InputV1 type="text" readOnly value={inviteResult.magicLinkUrl} />
+            <ButtonV1
               type="button"
-              className="secondary"
               onClick={async () => {
                 const didCopy = await copyTextV1(inviteResult.magicLinkUrl);
                 setCopied(didCopy);
               }}
             >
               Copy link
-            </button>
+            </ButtonV1>
           </div>
           {copied ? <p className="success-text">Copied to clipboard.</p> : null}
-        </div>
+        </CardV1>
       ) : null}
     </section>
   );
