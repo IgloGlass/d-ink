@@ -83,6 +83,7 @@
   --space-8: 32px;
   --radius-sm: 4px;
   --radius-md: 8px;
+  --shadow-subtle: 0 4px 12px -8px rgba(17, 24, 39, 0.2);
   --shadow-float: 0 10px 30px -5px rgba(17, 24, 39, 0.08);
   --focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px #86bc25;
   --transition-fast: all 0.15s ease-in-out;

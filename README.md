@@ -83,7 +83,7 @@ npm run check
 
 Primary IA routes:
 
-- `/app/workspaces` -> company selector (search-first with suggestions)
+- `/app/workspaces` -> company hub (create company, seed demo companies, open landing)
 - `/app/groups/:groupId/control-panel` -> group control panel
 - `/app/workspaces/:workspaceId/workbench` -> ordered module hub
 - `/app/workspaces/:workspaceId/:coreModule` -> core module shell
@@ -97,6 +97,7 @@ Notes:
 - i18n: English active with locale provider and key-based translations
 - Tax adjustments shell: grouped sidebar (`Common`, `Advanced`) with pinned final-calculation chain
 - Account mapping shell: high-density virtualized grid with `View All` / `Exceptions Only`, inline command preview, and search-first override picker
+- Company hub: legal-name/org-number/fiscal-year capture with automatic initial workspace bootstrap and card-based company directory
 
 ### Ralph frontend premium loop
 
@@ -163,7 +164,7 @@ DEV_AUTH_DEFAULT_ROLE=Admin
 
 `DEV_AUTH_DEFAULT_TENANT_ID` can be either a UUIDv4 or a short numeric ID (for example `5335`) for local testing.
 
-When enabled, the `/` sign-in screen on `localhost` shows a "Quick dev sign-in" form that creates a local session cookie.
+When enabled, the `/` route on `localhost` now auto-creates an Admin demo session (no magic-link step).
 
 ## Trial balance template
 

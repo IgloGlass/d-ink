@@ -10,6 +10,7 @@ type ButtonV1Props = ButtonHTMLAttributes<HTMLButtonElement> & {
   size?: ButtonSizeV1;
   tone?: ButtonToneV1;
   pressed?: boolean;
+  busy?: boolean;
 };
 
 export const ButtonV1 = forwardRef<HTMLButtonElement, ButtonV1Props>(
@@ -20,19 +21,27 @@ export const ButtonV1 = forwardRef<HTMLButtonElement, ButtonV1Props>(
       size = "md",
       tone = "default",
       pressed,
+      busy = false,
       className,
       type = "button",
+      disabled,
       ...rest
     },
     ref,
   ) {
-    const classes = ["btn-v1", `btn-v1--${variant}`, `btn-v1--${size}`];
-    if (tone === "shell") {
-      classes.push("btn-v1--shell");
-      classes.push("btn-v1--tone-shell");
-    }
+    // Shell controls stay on the compact control rhythm used in the fixed header.
+    const resolvedSize = tone === "shell" ? "sm" : size;
+    const classes = [
+      "btn-v1",
+      `btn-v1--${variant}`,
+      `btn-v1--${resolvedSize}`,
+      `btn-v1--tone-${tone}`,
+    ];
     if (className) {
       classes.push(className);
+    }
+    if (busy) {
+      classes.push("btn-v1--busy");
     }
 
     return (
@@ -40,11 +49,14 @@ export const ButtonV1 = forwardRef<HTMLButtonElement, ButtonV1Props>(
         ref={ref}
         type={type}
         className={classes.join(" ")}
-        data-size={size}
+        data-size={resolvedSize}
         data-variant={variant}
         data-tone={tone}
         data-pressed={pressed ? "true" : "false"}
+        data-busy={busy ? "true" : "false"}
         aria-pressed={pressed}
+        aria-busy={busy}
+        disabled={disabled || busy}
         {...rest}
       >
         {children}

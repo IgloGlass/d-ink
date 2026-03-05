@@ -8,6 +8,7 @@ type InputV1Props = InputHTMLAttributes<HTMLInputElement> & {
   size?: InputSizeV1;
   tone?: InputToneV1;
   invalid?: boolean;
+  monospace?: boolean;
 };
 
 export const InputV1 = forwardRef<HTMLInputElement, InputV1Props>(
@@ -18,17 +19,23 @@ export const InputV1 = forwardRef<HTMLInputElement, InputV1Props>(
       size = "md",
       tone = "default",
       invalid = false,
+      monospace = false,
       ...rest
     },
     ref,
   ) {
-    const classes = ["input-v1", `input-v1--${size}`];
+    // Header/launcher inputs should always use compact shell sizing.
+    const resolvedSize = tone === "shell" ? "sm" : size;
+    const classes = [
+      "input-v1",
+      `input-v1--${resolvedSize}`,
+      `input-v1--tone-${tone}`,
+    ];
     if (aiFilled) {
       classes.push("input-v1--ai");
     }
-    if (tone === "shell") {
-      classes.push("input-v1--shell");
-      classes.push("input-v1--tone-shell");
+    if (monospace) {
+      classes.push("input-v1--mono");
     }
     if (className) {
       classes.push(className);
@@ -39,9 +46,10 @@ export const InputV1 = forwardRef<HTMLInputElement, InputV1Props>(
         ref={ref}
         className={classes.join(" ")}
         data-ai-filled={aiFilled ? "true" : "false"}
-        data-size={size}
+        data-size={resolvedSize}
         data-tone={tone}
         data-invalid={invalid ? "true" : "false"}
+        data-monospace={monospace ? "true" : "false"}
         aria-invalid={invalid}
         {...rest}
       />

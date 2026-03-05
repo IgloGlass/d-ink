@@ -99,11 +99,22 @@ export function AppShell({
     setLauncherOpen((current) => !current);
   }, []);
 
+  const openLauncher = useCallback(() => {
+    setLauncherOpen(true);
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "j") {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        (event.key.toLowerCase() === "j" || event.key.toLowerCase() === "k")
+      ) {
         event.preventDefault();
-        toggleLauncher();
+        if (launcherOpen) {
+          closeLauncher();
+          return;
+        }
+        openLauncher();
         return;
       }
 
@@ -115,7 +126,7 @@ export function AppShell({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [closeLauncher, launcherOpen, toggleLauncher]);
+  }, [closeLauncher, launcherOpen, openLauncher]);
 
   useEffect(() => {
     if (!launcherOpen) {
@@ -212,6 +223,29 @@ export function AppShell({
     if (!launcherOpen) {
       return;
     }
+
+    if (launcherQuery.trim().length > 0) {
+      return;
+    }
+
+    const activeWorkspaceIndex = filteredWorkspaces.findIndex(
+      (workspace) => workspace.id === activeWorkspaceId,
+    );
+    if (activeWorkspaceIndex >= 0) {
+      setLauncherActiveIndex(activeWorkspaceIndex);
+    }
+  }, [
+    activeWorkspaceId,
+    filteredWorkspaces,
+    launcherOpen,
+    launcherQuery,
+    setLauncherActiveIndex,
+  ]);
+
+  useEffect(() => {
+    if (!launcherOpen) {
+      return;
+    }
     setLauncherActiveIndex((current) => {
       if (filteredWorkspaces.length === 0) {
         return -1;
@@ -291,7 +325,20 @@ export function AppShell({
       return;
     }
 
-    if (event.key === "ArrowDown") {
+    const isForwardNavigationKey =
+      event.key === "ArrowDown" ||
+      event.key === "PageDown" ||
+      ((event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === "n" &&
+        !event.shiftKey);
+    const isBackwardNavigationKey =
+      event.key === "ArrowUp" ||
+      event.key === "PageUp" ||
+      ((event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === "p" &&
+        !event.shiftKey);
+
+    if (isForwardNavigationKey) {
       event.preventDefault();
       if (navigationStartsFromInput) {
         if (launcherActiveIndex < 0) {
@@ -302,13 +349,14 @@ export function AppShell({
         focusActiveLauncherOption();
         return;
       }
+      const step = event.key === "PageDown" ? 5 : 1;
       setLauncherActiveIndex((current) =>
-        current >= filteredWorkspaces.length - 1 ? 0 : current + 1,
+        current + step >= filteredWorkspaces.length ? 0 : current + step,
       );
       return;
     }
 
-    if (event.key === "ArrowUp") {
+    if (isBackwardNavigationKey) {
       event.preventDefault();
       if (navigationStartsFromInput) {
         if (launcherActiveIndex < 0) {
@@ -319,8 +367,9 @@ export function AppShell({
         focusActiveLauncherOption();
         return;
       }
+      const step = event.key === "PageUp" ? 5 : 1;
       setLauncherActiveIndex((current) =>
-        current <= 0 ? filteredWorkspaces.length - 1 : current - 1,
+        current - step < 0 ? filteredWorkspaces.length - 1 : current - step,
       );
       return;
     }
@@ -354,9 +403,15 @@ export function AppShell({
       return;
     }
 
-    if (event.key === "Enter" && launcherActiveIndex >= 0) {
+    if (event.key === "Enter") {
       event.preventDefault();
-      switchWorkspace(filteredWorkspaces[launcherActiveIndex]);
+      const selectedWorkspace =
+        launcherActiveIndex >= 0
+          ? filteredWorkspaces[launcherActiveIndex]
+          : filteredWorkspaces[0];
+      if (selectedWorkspace) {
+        switchWorkspace(selectedWorkspace);
+      }
     }
   };
 
@@ -433,7 +488,7 @@ export function AppShell({
               aria-expanded={launcherOpen}
               aria-controls={launcherDialogId}
               aria-describedby={launcherShortcutHintId}
-              aria-keyshortcuts="Control+J Meta+J"
+              aria-keyshortcuts="Control+J Meta+J Control+K Meta+K"
               data-shell-active={launcherOpen ? "true" : "false"}
             >
               <span>{t("shell.quickSwitch")}</span>
@@ -532,6 +587,7 @@ export function AppShell({
               <div
                 id={launcherListboxId}
                 className="launcher-results"
+                role="listbox"
                 aria-label={t("workspace.selector.search")}
                 aria-busy={workspaceListQuery.isLoading}
               >
@@ -550,7 +606,8 @@ export function AppShell({
                       key={workspace.id}
                       id={`launcher-option-${workspace.id}`}
                       className="launcher-result"
-                      aria-pressed={isActive}
+                      role="option"
+                      aria-selected={isActive}
                       data-active={isActive ? "true" : "false"}
                       tabIndex={isActive ? 0 : -1}
                       ref={isActive ? activeLauncherOptionRef : undefined}

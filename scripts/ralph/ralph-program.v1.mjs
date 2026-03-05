@@ -233,7 +233,7 @@ function appendProgramLog(progressPath, title, message) {
 function createWorkingSweepPrdCopy(input) {
   const sourcePrd = readJson(input.sourcePrdPath);
   for (const story of sourcePrd.userStories) {
-    story.passes = false;
+    story.passes = input.carryForwardPassedStoryIds.has(story.id);
   }
 
   const sourceBaseName = path.basename(
@@ -249,6 +249,19 @@ function createWorkingSweepPrdCopy(input) {
 function allStoriesPassed(prdPath) {
   const prd = readJson(prdPath);
   return prd.userStories.every((story) => story.passes === true);
+}
+
+function collectPassedStoryIds(prdPath) {
+  const prd = readJson(prdPath);
+  return prd.userStories
+    .filter((story) => story.passes === true)
+    .map((story) => story.id);
+}
+
+function firstOpenStoryId(prdPath) {
+  const prd = readJson(prdPath);
+  const next = prd.userStories.find((story) => story.passes !== true);
+  return next ? next.id : "NONE";
 }
 
 function resolveDefaultLoopRunnerPath() {
@@ -279,6 +292,10 @@ function main() {
   const loopRetryBudget = toNonNegativeInteger(
     Number(process.env.DINK_RALPH_LOOP_RETRIES ?? "1"),
     "DINK_RALPH_LOOP_RETRIES",
+  );
+  const maxIdenticalRedSweeps = toNonNegativeInteger(
+    Number(process.env.DINK_RALPH_MAX_IDENTICAL_RED_SWEEPS ?? "2"),
+    "DINK_RALPH_MAX_IDENTICAL_RED_SWEEPS",
   );
   const loopMaxAttempts = loopRetryBudget + 1;
   const nameForPath = sanitizeNameForFileName(args.name) || "ralph-program";
@@ -365,6 +382,7 @@ function main() {
       `- loop command template: ${loopCommandTemplate}`,
       `- gate command: ${runGates ? gateCommand : "(none)"}`,
       `- loop attempts per sweep: ${loopMaxAttempts}`,
+      `- max identical red sweeps: ${maxIdenticalRedSweeps === 0 ? "disabled" : maxIdenticalRedSweeps}`,
       `- story progress file: ${storyProgressPath}`,
       `- prompts dir: ${promptsDirPath}`,
       `- outputs dir: ${outputsDirPath}`,
@@ -373,12 +391,17 @@ function main() {
   );
 
   let stableGreenCount = 0;
+  let repeatedRedCount = 0;
+  let previousRedSignature = "";
+  let abortedForRepeatedRed = false;
+  const carryForwardPassedStoryIds = new Set();
   const runTag = `${Date.now()}-${process.pid}`;
 
   for (let sweep = 1; sweep <= args.sweeps; sweep += 1) {
     process.stdout.write(`\n[${labelPrefix}] Sweep ${sweep}/${args.sweeps}\n`);
 
     const workingPrdPath = createWorkingSweepPrdCopy({
+      carryForwardPassedStoryIds,
       runTag,
       sourcePrdPath,
       sweep,
@@ -419,6 +442,10 @@ function main() {
       }
 
       const storiesPassed = allStoriesPassed(workingPrdPath);
+      for (const passedStoryId of collectPassedStoryIds(workingPrdPath)) {
+        carryForwardPassedStoryIds.add(passedStoryId);
+      }
+      const nextStoryId = firstOpenStoryId(workingPrdPath);
       let gateExit = runGates ? 1 : 0;
       if (loopExit === 0 && storiesPassed && runGates) {
         gateExit = runShell(gateCommand);
@@ -427,8 +454,23 @@ function main() {
       const sweepGreen = loopExit === 0 && storiesPassed && gateExit === 0;
       if (sweepGreen) {
         stableGreenCount += 1;
+        repeatedRedCount = 0;
+        previousRedSignature = "";
       } else {
         stableGreenCount = 0;
+        const redSignature = [
+          loopExit,
+          gateExit,
+          storiesPassed ? "ALL_TRUE" : "ALL_FALSE",
+          nextStoryId,
+          String(carryForwardPassedStoryIds.size),
+        ].join("|");
+        if (redSignature === previousRedSignature) {
+          repeatedRedCount += 1;
+        } else {
+          previousRedSignature = redSignature;
+          repeatedRedCount = 1;
+        }
       }
 
       appendProgramLog(
@@ -440,9 +482,12 @@ function main() {
           `- loop exit: ${loopExit}`,
           `- loop attempts: ${loopResult.attempts}/${loopMaxAttempts}`,
           `- all stories passed: ${storiesPassed}`,
+          `- carry-forward passed stories: ${carryForwardPassedStoryIds.size}/${storyCount}`,
+          `- next open story: ${nextStoryId}`,
           `- gate command used: ${runGates ? "yes" : "no"}`,
           `- gate exit: ${gateExit}`,
           `- consecutive green sweeps: ${stableGreenCount}/${args.consecutiveGreen}`,
+          `- repeated red signature count: ${repeatedRedCount}`,
           `- working prd: ${workingPrdPath}`,
         ].join("\n"),
       );
@@ -455,6 +500,23 @@ function main() {
         process.stdout.write(`[${labelPrefix}] PASS convergence reached.\n`);
         return;
       }
+
+      if (
+        !sweepGreen &&
+        maxIdenticalRedSweeps > 0 &&
+        repeatedRedCount >= maxIdenticalRedSweeps
+      ) {
+        abortedForRepeatedRed = true;
+        appendProgramLog(
+          progressPath,
+          logTitle,
+          `Sweep ${sweep} aborted early after ${repeatedRedCount} identical RED signatures to avoid token churn.`,
+        );
+        process.stderr.write(
+          `[${labelPrefix}] FAIL repeated RED signature detected (${repeatedRedCount}/${maxIdenticalRedSweeps}).\n`,
+        );
+        break;
+      }
     } finally {
       if (!args.keepSweepPrd) {
         rmSync(workingPrdPath, { force: true });
@@ -463,7 +525,9 @@ function main() {
   }
 
   process.stderr.write(
-    `[${labelPrefix}] FAIL convergence target was not reached.\n`,
+    abortedForRepeatedRed
+      ? `[${labelPrefix}] FAIL convergence aborted due to repeated RED sweeps.\n`
+      : `[${labelPrefix}] FAIL convergence target was not reached.\n`,
   );
   process.exit(1);
 }

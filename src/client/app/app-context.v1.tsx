@@ -25,6 +25,33 @@ type GlobalAppContextValueV1 = GlobalAppContextStateV1 & {
 
 const GlobalAppContextV1 = createContext<GlobalAppContextValueV1 | null>(null);
 
+function normalizeWorkspaceIdV1(
+  workspaceId: string | null | undefined,
+): string | null {
+  const normalizedWorkspaceId = workspaceId?.trim() ?? "";
+  return normalizedWorkspaceId.length > 0 ? normalizedWorkspaceId : null;
+}
+
+/**
+ * Extract workspace context from canonical IA workspace paths.
+ * This remains deterministic and route-shape aware for shared app-shell context sync.
+ */
+export function readWorkspaceIdFromPathnameV1(pathname: string): string | null {
+  const workspaceMatch = pathname.match(
+    /^\/app\/workspaces?\/([^/]+)(?:\/|$)/i,
+  );
+  const workspaceIdFromPath = workspaceMatch?.[1];
+  if (!workspaceIdFromPath) {
+    return null;
+  }
+
+  try {
+    return normalizeWorkspaceIdV1(decodeURIComponent(workspaceIdFromPath));
+  } catch {
+    return normalizeWorkspaceIdV1(workspaceIdFromPath);
+  }
+}
+
 export function GlobalAppContextProviderV1({
   children,
 }: {
@@ -46,7 +73,7 @@ export function GlobalAppContextProviderV1({
       );
 
       const nextWorkspaceId = hasWorkspaceId
-        ? (input.activeWorkspaceId ?? null)
+        ? normalizeWorkspaceIdV1(input.activeWorkspaceId)
         : current.activeWorkspaceId;
 
       // Workspace changes without an explicit fiscal year should clear stale badges.

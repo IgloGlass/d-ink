@@ -87,6 +87,8 @@ node scripts/ralph/ralph-frontend-program.v1.mjs \
 6. If `max-per-sweep` is lower than PRD story count, it is automatically raised.
 7. Retries transient Windows loop crashes (`1073807364`, `3221226091`) before marking a sweep red.
 8. Source PRD remains unchanged unless you explicitly keep sweep copies.
+9. Carries forward story pass flags across sweeps so retries resume from the first incomplete story.
+10. Fails fast on repeated identical red sweep signatures to avoid token churn.
 
 ## Manual checkpoint policy between waves
 
@@ -123,6 +125,7 @@ If you add story tickets manually, keep this structure in each story/prompt:
 ## Loop diagnostics and overrides
 
 - `DINK_RALPH_LOOP_RETRIES`: extra retries for transient loop crashes (default `1`).
+- `DINK_RALPH_MAX_IDENTICAL_RED_SWEEPS`: stop early after this many identical red sweep signatures (default `2`, set `0` to disable).
 - `DINK_RALPH_LOOP_COMMAND`: override loop command template. Supports placeholders:
   - `{PRD}` path argument
   - `{PRD_SOURCE}` original PRD path

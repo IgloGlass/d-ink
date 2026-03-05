@@ -1,0 +1,25 @@
+Implemented FEP-02 in the allowed files only:
+
+- Updated launcher keyboard flow and accessibility in [app-shell.tsx](C:\Users\slemi\Documents\D.ink\src\client\components\app-shell.tsx):
+  - `Ctrl/Cmd+J` and `Ctrl/Cmd+K` now open/close launcher predictably.
+  - Added faster list navigation keys (`PageUp/PageDown`, `Ctrl/Cmd+N`, `Ctrl/Cmd+P`).
+  - `Enter` now reliably selects the active result (or first result fallback).
+  - Improved listbox semantics (`role="listbox"`, `role="option"`, `aria-selected`).
+
+- Aligned shell control sizing/rhythm in [button-v1.tsx](C:\Users\slemi\Documents\D.ink\src\client\components\button-v1.tsx) and [input-v1.tsx](C:\Users\slemi\Documents\D.ink\src\client\components\input-v1.tsx):
+  - Shell tone now enforces compact `sm` sizing consistently.
+  - Class output is cleaner and tone-driven (`--tone-shell` path).
+
+- Refined premium header/launcher/control styling in [global.css](C:\Users\slemi\Documents\D.ink\src\client\styles\global.css):
+  - Preserved fixed 56px header and shell grid top row.
+  - Tightened header hierarchy spacing and context badge typography.
+  - Improved launcher panel/result density and active/focus clarity.
+  - Kept V4 token-driven styling, Open Sans, and 4px/8px radii constraints.
+
+Verification run results:
+
+1. `npm run typecheck` -> pass  
+2. `node scripts/ralph/check-design-guardrails.v1.mjs` -> pass  
+3. `set DINK_ALLOW_UNSUPPORTED_NODE_TEST_RUNTIME=1&& npx vitest run --config vitest.client.config.ts tests/client/company-selector-page.v1.test.tsx` -> pass (React Router future-flag warnings remain in stderr)
+
+RALPH_STATUS:PASS

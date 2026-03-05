@@ -1,6 +1,7 @@
 import { createD1AuditRepositoryV1 } from "../../db/repositories/audit.repository.v1";
 import { createD1AuthRepositoryV1 } from "../../db/repositories/auth.repository.v1";
 import { createD1CommentsRepositoryV1 } from "../../db/repositories/comments.repository.v1";
+import { createD1CompanyRepositoryV1 } from "../../db/repositories/company.repository.v1";
 import { createD1MappingPreferenceRepositoryV1 } from "../../db/repositories/mapping-preference.repository.v1";
 import { createD1TasksRepositoryV1 } from "../../db/repositories/tasks.repository.v1";
 import { createD1TbPipelineArtifactRepositoryV1 } from "../../db/repositories/tb-pipeline-artifact.repository.v1";
@@ -15,6 +16,7 @@ import type {
   ResolveSessionPrincipalDepsV1,
 } from "./auth-magic-link.v1";
 import type { CollaborationDepsV1 } from "./collaboration.v1";
+import type { CompanyLifecycleDepsV1 } from "./company-lifecycle.v1";
 import type { MappingOverrideDepsV1 } from "./mapping-override.v1";
 import type { MappingReviewDepsV1 } from "./mapping-review.v1";
 import type { TaxCoreWorkflowDepsV1 } from "./tax-core-workflow.v1";
@@ -68,6 +70,17 @@ export function createWorkspaceLifecycleDepsV1(
 ): WorkspaceLifecycleDepsV1 {
   return {
     workspaceRepository: createD1WorkspaceRepositoryV1(env.DB),
+    generateId: () => crypto.randomUUID(),
+    nowIsoUtc: () => new Date().toISOString(),
+  };
+}
+
+/**
+ * Creates environment-backed dependencies for company lifecycle workflows.
+ */
+export function createCompanyLifecycleDepsV1(env: Env): CompanyLifecycleDepsV1 {
+  return {
+    companyRepository: createD1CompanyRepositoryV1(env.DB),
     generateId: () => crypto.randomUUID(),
     nowIsoUtc: () => new Date().toISOString(),
   };

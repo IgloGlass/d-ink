@@ -1,0 +1,129 @@
+# Ralph Program (ralph-frontend-program)
+
+## 2026-03-05T16:30:06.332Z
+[ralph-frontend-program] Run configuration
+- source prd: C:\Users\slemi\Documents\D.ink\scripts\ralph\prd.frontend-full-premium.v1.json
+- stories: 12
+- sweeps: 6
+- max-per-sweep: 24
+- consecutive-green target: 2
+- loop command template: node C:\Users\slemi\Documents\D.ink\scripts\ralph\ralph-codex.mjs --prd {PRD} --max {MAX}{MODEL_ARG}{REASONING_ARG} --progress-file {STORY_PROGRESS} --prompts-dir {PROMPTS_DIR} --outputs-dir {OUTPUTS_DIR}
+- gate command: node scripts/ralph/check-frontend-premium-gates.v1.mjs
+- loop attempts per sweep: 3
+- story progress file: C:\Users\slemi\Documents\D.ink\scripts\ralph\progress-ralph-frontend-program-stories.txt
+- prompts dir: C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-ralph-frontend-program-prompts
+- outputs dir: C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-ralph-frontend-program-outputs
+- keep sweep prd copies: no
+
+## 2026-03-05T16:30:06.335Z
+Sweep 1 started. Working PRD prepared: C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772728206333-7460.sweep-01.json
+
+## 2026-03-05T16:50:22.872Z
+Sweep 1 result: RED
+- loop command: node C:\Users\slemi\Documents\D.ink\scripts\ralph\ralph-codex.mjs --prd C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772728206333-7460.sweep-01.json --max 24 --reasoning-effort medium --progress-file C:\Users\slemi\Documents\D.ink\scripts\ralph\progress-ralph-frontend-program-stories.txt --prompts-dir C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-ralph-frontend-program-prompts --outputs-dir C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-ralph-frontend-program-outputs
+- loop exit: 1
+- loop attempts: 1/3
+- all stories passed: false
+- gate command used: yes
+- gate exit: 1
+- consecutive green sweeps: 0/2
+- working prd: C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772728206333-7460.sweep-01.json
+
+## 2026-03-05T16:50:22.876Z
+Sweep 2 started. Working PRD prepared: C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772728206333-7460.sweep-02.json
+
+## 2026-03-05T16:50:23.051Z
+Sweep 2 result: RED
+- loop command: node C:\Users\slemi\Documents\D.ink\scripts\ralph\ralph-codex.mjs --prd C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772728206333-7460.sweep-02.json --max 24 --reasoning-effort medium --progress-file C:\Users\slemi\Documents\D.ink\scripts\ralph\progress-ralph-frontend-program-stories.txt --prompts-dir C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-ralph-frontend-program-prompts --outputs-dir C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-ralph-frontend-program-outputs
+- loop exit: 1
+- loop attempts: 1/3
+- all stories passed: false
+- gate command used: yes
+- gate exit: 1
+- consecutive green sweeps: 0/2
+- working prd: C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772728206333-7460.sweep-02.json
+
+## 2026-03-05T16:50:23.054Z
+Sweep 3 started. Working PRD prepared: C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772728206333-7460.sweep-03.json
+
+## 2026-03-05T16:50:23.226Z
+Sweep 3 result: RED
+- loop command: node C:\Users\slemi\Documents\D.ink\scripts\ralph\ralph-codex.mjs --prd C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772728206333-7460.sweep-03.json --max 24 --reasoning-effort medium --progress-file C:\Users\slemi\Documents\D.ink\scripts\ralph\progress-ralph-frontend-program-stories.txt --prompts-dir C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-ralph-frontend-program-prompts --outputs-dir C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-ralph-frontend-program-outputs
+- loop exit: 1
+- loop attempts: 1/3
+- all stories passed: false
+- gate command used: yes
+- gate exit: 1
+- consecutive green sweeps: 0/2
+- working prd: C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772728206333-7460.sweep-03.json
+
+## 2026-03-05T16:50:23.230Z
+Sweep 4 started. Working PRD prepared: C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772728206333-7460.sweep-04.json
+
+## 2026-03-05T16:50:23.401Z
+Sweep 4 result: RED
+- loop command: node C:\Users\slemi\Documents\D.ink\scripts\ralph\ralph-codex.mjs --prd C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772728206333-7460.sweep-04.json --max 24 --reasoning-effort medium --progress-file C:\Users\slemi\Documents\D.ink\scripts\ralph\progress-ralph-frontend-program-stories.txt --prompts-dir C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-ralph-frontend-program-prompts --outputs-dir C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-ralph-frontend-program-outputs
+- loop exit: 1
+- loop attempts: 1/3
+- all stories passed: false
+- gate command used: yes
+- gate exit: 1
+- consecutive green sweeps: 0/2
+- working prd: C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772728206333-7460.sweep-04.json
+
+## 2026-03-05T16:50:23.405Z
+Sweep 5 started. Working PRD prepared: C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772728206333-7460.sweep-05.json
+
+## 2026-03-05T16:50:23.595Z
+Sweep 5 result: RED
+- loop command: node C:\Users\slemi\Documents\D.ink\scripts\ralph\ralph-codex.mjs --prd C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772728206333-7460.sweep-05.json --max 24 --reasoning-effort medium --progress-file C:\Users\slemi\Documents\D.ink\scripts\ralph\progress-ralph-frontend-program-stories.txt --prompts-dir C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-ralph-frontend-program-prompts --outputs-dir C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-ralph-frontend-program-outputs
+- loop exit: 1
+- loop attempts: 1/3
+- all stories passed: false
+- gate command used: yes
+- gate exit: 1
+- consecutive green sweeps: 0/2
+- working prd: C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772728206333-7460.sweep-05.json
+
+## 2026-03-05T16:50:23.599Z
+Sweep 6 started. Working PRD prepared: C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772728206333-7460.sweep-06.json
+
+## 2026-03-05T16:50:23.772Z
+Sweep 6 result: RED
+- loop command: node C:\Users\slemi\Documents\D.ink\scripts\ralph\ralph-codex.mjs --prd C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772728206333-7460.sweep-06.json --max 24 --reasoning-effort medium --progress-file C:\Users\slemi\Documents\D.ink\scripts\ralph\progress-ralph-frontend-program-stories.txt --prompts-dir C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-ralph-frontend-program-prompts --outputs-dir C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-ralph-frontend-program-outputs
+- loop exit: 1
+- loop attempts: 1/3
+- all stories passed: false
+- gate command used: yes
+- gate exit: 1
+- consecutive green sweeps: 0/2
+- working prd: C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772728206333-7460.sweep-06.json
+
+## 2026-03-05T16:51:15.021Z
+[ralph-frontend-program] Run configuration
+- source prd: C:\Users\slemi\Documents\D.ink\scripts\ralph\prd.frontend-full-premium.v1.json
+- stories: 12
+- sweeps: 1
+- max-per-sweep: 24
+- consecutive-green target: 1
+- loop command template: node C:\Users\slemi\Documents\D.ink\scripts\ralph\ralph-codex.mjs --prd {PRD} --max {MAX}{MODEL_ARG}{REASONING_ARG} --progress-file {STORY_PROGRESS} --prompts-dir {PROMPTS_DIR} --outputs-dir {OUTPUTS_DIR}
+- gate command: node scripts/ralph/check-frontend-premium-gates.v1.mjs
+- loop attempts per sweep: 3
+- story progress file: C:\Users\slemi\Documents\D.ink\scripts\ralph\progress-ralph-frontend-program-stories.txt
+- prompts dir: C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-ralph-frontend-program-prompts
+- outputs dir: C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-ralph-frontend-program-outputs
+- keep sweep prd copies: no
+
+## 2026-03-05T16:51:15.024Z
+Sweep 1 started. Working PRD prepared: C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772729475022-16448.sweep-01.json
+
+## 2026-03-05T17:22:06.273Z
+Sweep 1 result: RED
+- loop command: node C:\Users\slemi\Documents\D.ink\scripts\ralph\ralph-codex.mjs --prd C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772729475022-16448.sweep-01.json --max 24 --reasoning-effort medium --progress-file C:\Users\slemi\Documents\D.ink\scripts\ralph\progress-ralph-frontend-program-stories.txt --prompts-dir C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-ralph-frontend-program-prompts --outputs-dir C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-ralph-frontend-program-outputs
+- loop exit: 1
+- loop attempts: 1/3
+- all stories passed: false
+- gate command used: yes
+- gate exit: 1
+- consecutive green sweeps: 0/1
+- working prd: C:\Users\slemi\Documents\D.ink\scripts\ralph\.tmp-prd.frontend-full-premium.v1.1772729475022-16448.sweep-01.json

@@ -1,0 +1,19 @@
+Implemented FEP-05 within allowed scope and kept quick-open flow unchanged.
+
+Updated:
+- [group-control-panel-page.v1.tsx](C:\Users\slemi\Documents\D.ink\src\client\features\groups\group-control-panel-page.v1.tsx)
+- [status-badge-v1.tsx](C:\Users\slemi\Documents\D.ink\src\client\components\status-badge-v1.tsx)
+- [global.css](C:\Users\slemi\Documents\D.ink\src\client\styles\global.css)
+
+What changed:
+- Added shared aggregate workspace status tone logic and used it for group-level summary/directory badges.
+- Restructured group panel into clearer profile/summary/directory section rhythm with explicit section wrappers and headers.
+- Added styling for stronger section separation and keyboard focus visibility in directory rows.
+- Preserved quick-open button behavior and navigation/context-setting logic.
+
+Verification run:
+- `npm run typecheck` passed
+- `node scripts/ralph/check-design-guardrails.v1.mjs` passed
+- `set DINK_ALLOW_UNSUPPORTED_NODE_TEST_RUNTIME=1&& npm run test:client` passed (React Router future-flag warnings only)
+
+RALPH_STATUS:PASS

@@ -1,0 +1,12 @@
+Implemented FEP-01 conformance sweep in allowed files with baseline-safe changes:
+
+1. Added missing shared token `--shadow-subtle` to [tokens.css](C:\Users\slemi\Documents\D.ink\src\client\styles\tokens.css).
+2. Normalized font baseline in [global.css](C:\Users\slemi\Documents\D.ink\src\client\styles\global.css):
+   - Kept explicit Open Sans stack on `html` (guardrail-compatible).
+   - Kept `body` token-driven via `var(--font-family-base)` with no duplicate/conflicting font declarations.
+
+Verification run:
+1. `npm run typecheck` passed.
+2. `node scripts/ralph/check-design-guardrails.v1.mjs` passed.
+
+RALPH_STATUS:PASS

@@ -13,16 +13,35 @@ const workspaceStatusLabelByValueV1: Record<WorkspaceStatusV1, string> = {
   filed: "Filed",
 };
 
-const workspaceStatusToneByValueV1: Record<WorkspaceStatusV1, StatusToneV1> = {
-  draft: "neutral",
-  in_review: "warning",
-  changes_requested: "attention",
-  ready_for_approval: "warning",
-  approved_for_export: "success",
-  exported: "success",
-  client_accepted: "success",
-  filed: "success",
-};
+const workspaceStatusesNeedingAttentionV1 = new Set<WorkspaceStatusV1>([
+  "changes_requested",
+]);
+const workspaceStatusesInProgressV1 = new Set<WorkspaceStatusV1>([
+  "in_review",
+  "ready_for_approval",
+]);
+const workspaceStatusesCompletedV1 = new Set<WorkspaceStatusV1>([
+  "approved_for_export",
+  "exported",
+  "client_accepted",
+  "filed",
+]);
+
+function getWorkspaceStatusToneV1(status: WorkspaceStatusV1): StatusToneV1 {
+  if (workspaceStatusesNeedingAttentionV1.has(status)) {
+    return "attention";
+  }
+
+  if (workspaceStatusesCompletedV1.has(status)) {
+    return "success";
+  }
+
+  if (workspaceStatusesInProgressV1.has(status)) {
+    return "warning";
+  }
+
+  return "neutral";
+}
 
 export function getWorkspaceStatusBadgeMetaV1(status: WorkspaceStatusV1): {
   label: string;
@@ -30,8 +49,29 @@ export function getWorkspaceStatusBadgeMetaV1(status: WorkspaceStatusV1): {
 } {
   return {
     label: workspaceStatusLabelByValueV1[status],
-    tone: workspaceStatusToneByValueV1[status],
+    tone: getWorkspaceStatusToneV1(status),
   };
+}
+
+export function getWorkspaceStatusAggregateToneV1(
+  statuses: WorkspaceStatusV1[],
+): StatusToneV1 {
+  if (statuses.some((status) => workspaceStatusesNeedingAttentionV1.has(status))) {
+    return "attention";
+  }
+
+  if (statuses.some((status) => workspaceStatusesInProgressV1.has(status))) {
+    return "warning";
+  }
+
+  if (
+    statuses.length > 0 &&
+    statuses.every((status) => workspaceStatusesCompletedV1.has(status))
+  ) {
+    return "success";
+  }
+
+  return "neutral";
 }
 
 export function StatusBadgeV1({

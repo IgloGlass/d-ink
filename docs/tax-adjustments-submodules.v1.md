@@ -97,6 +97,12 @@ Note:
 - Final calculation summary card in the main panel should stay sticky and readable during vertical scroll.
 - Core module tab label remains `Tax Adjustments`.
 
+## Implemented In FEP-08
+- Sidebar keeps the approved grouping and ordering exactly as listed above.
+- The main sidebar body is independently scrollable for long label sets.
+- The pinned `Calculation Chain` block remains visible at the bottom of the sidebar container.
+- Final calculation summary card remains sticky in the main content column for workflow orientation.
+
 ## Explicit Deferrals (Do Not Implement Yet)
 - Account-to-submodule mapping rules.
 - Detailed tax logic, thresholds, and formulas per submodule.

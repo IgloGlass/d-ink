@@ -51,6 +51,40 @@ function getModuleStatusBadgeV1(signal: ModuleSignalV1): {
   return { label: "In progress", tone: "warning" };
 }
 
+function getModuleSequenceHintV1(input: {
+  isOutOfOrder: boolean;
+  isRecommended: boolean;
+  signal: ModuleSignalV1;
+}): string {
+  if (input.signal.status === "ready") {
+    return "Completed";
+  }
+  if (input.isRecommended) {
+    return "Next in sequence";
+  }
+  if (input.isOutOfOrder) {
+    return "Available out of sequence";
+  }
+  return "Available";
+}
+
+function getModuleActionHintV1(input: {
+  isOutOfOrder: boolean;
+  isRecommended: boolean;
+  signal: ModuleSignalV1;
+}): string {
+  if (input.signal.status === "ready") {
+    return "Review current output and apply updates if needed.";
+  }
+  if (input.isRecommended) {
+    return "Recommended next module for sequence flow.";
+  }
+  if (input.isOutOfOrder) {
+    return "Opens now. Earlier modules can be completed later.";
+  }
+  return "Open and continue with manual sequencing.";
+}
+
 function getSignalFromQueryV1(
   query: {
     data?: { active?: { version: number } };
@@ -203,6 +237,12 @@ export function WorkspaceWorkbenchPageV1() {
         : undefined,
     [moduleCards, nextRecommendedOrder],
   );
+  const remainingModuleCount = useMemo(
+    () =>
+      moduleCards.filter((module) => module.signal.status !== "ready").length,
+    [moduleCards],
+  );
+  const completedModuleCount = moduleCards.length - remainingModuleCount;
 
   useEffect(() => {
     if (!workspaceQuery.data?.workspace) {
@@ -277,9 +317,17 @@ export function WorkspaceWorkbenchPageV1() {
           nextRecommendedModule ? "Suggested next step" : "Sequence guidance"
         }
       >
-        {nextRecommendedModule
-          ? `${nextRecommendedModule.order}. ${nextRecommendedModule.label} is recommended next. You can still open every module manually.`
-          : t("workbench.sequenceGuidance")}
+        {nextRecommendedModule ? (
+          <>
+            <span className="guidance-inline-strong">
+              {nextRecommendedModule.order}. {nextRecommendedModule.label}
+            </span>{" "}
+            is recommended next. Manual access remains available for every
+            module at all times.
+          </>
+        ) : (
+          t("workbench.sequenceGuidance")
+        )}
       </GuidanceBannerV1>
 
       {workspaceQuery.isError ? (
@@ -301,6 +349,16 @@ export function WorkspaceWorkbenchPageV1() {
           const isOutOfOrder =
             nextRecommendedOrder !== undefined &&
             module.order > nextRecommendedOrder;
+          const moduleSequenceHint = getModuleSequenceHintV1({
+            isOutOfOrder,
+            isRecommended,
+            signal: module.signal,
+          });
+          const moduleActionHint = getModuleActionHintV1({
+            isOutOfOrder,
+            isRecommended,
+            signal: module.signal,
+          });
           return (
             <article
               key={module.key}
@@ -308,11 +366,14 @@ export function WorkspaceWorkbenchPageV1() {
               data-recommended={isRecommended ? "true" : "false"}
               data-out-of-order={isOutOfOrder ? "true" : "false"}
             >
+              <p className="module-card-step-label">
+                Step {module.order} of {moduleCards.length}
+              </p>
               <div className="module-card-head">
                 <div className="module-sequence">
                   <span className="module-order">{module.order}</span>
                   <p className="module-sequence-label">
-                    {isRecommended ? "Recommended next" : "Manual access"}
+                    {moduleSequenceHint}
                   </p>
                 </div>
                 <StatusBadgeV1
@@ -347,11 +408,17 @@ export function WorkspaceWorkbenchPageV1() {
                 >
                   {t("module.open")}
                 </ButtonV1>
+                <p className="module-card-action-hint">{moduleActionHint}</p>
               </div>
             </article>
           );
         })}
       </div>
+
+      <GuidanceBannerV1 tone="neutral" title="Progress overview">
+        {completedModuleCount} of {moduleCards.length} modules have active
+        artifacts. Remaining modules: {remainingModuleCount}.
+      </GuidanceBannerV1>
     </section>
   );
 }

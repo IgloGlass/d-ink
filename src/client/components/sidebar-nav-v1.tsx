@@ -1,8 +1,10 @@
+import { useId } from "react";
 import { NavLink } from "react-router-dom";
 
 export type SidebarSectionItemV1 = {
   id: string;
   label: string;
+  exact?: boolean;
   to: string;
 };
 
@@ -19,14 +21,26 @@ export function SidebarNavV1({
   sections,
   pinnedItems = [],
   pinnedTitle = "Calculation Chain",
+  density = "default",
 }: {
   sections: SidebarSectionV1[];
   pinnedItems?: SidebarSectionItemV1[];
   pinnedTitle?: string;
+  density?: "default" | "dense";
 }) {
+  const pinnedHeadingId = useId();
+
   return (
-    <aside className="sidebar-v1" aria-label="Module navigation">
-      <div className="sidebar-v1-scroll">
+    <aside
+      className="sidebar-v1"
+      data-density={density}
+      aria-label="Module navigation"
+    >
+      <div
+        className="sidebar-v1-scroll"
+        role="region"
+        aria-label="Submodule navigation"
+      >
         {sections.map((section) => (
           <section key={section.id} className="sidebar-v1-section">
             {section.collapsible ? (
@@ -41,17 +55,28 @@ export function SidebarNavV1({
                 <span aria-hidden="true">{section.collapsed ? "+" : "-"}</span>
               </button>
             ) : (
-              <h3 className="sidebar-v1-section-title">{section.title}</h3>
+              <h3
+                id={`sidebar-section-heading-${section.id}`}
+                className="sidebar-v1-section-title"
+              >
+                {section.title}
+              </h3>
             )}
             {!section.collapsed ? (
               <ul
                 id={`sidebar-section-${section.id}`}
                 className="sidebar-v1-link-list"
+                aria-labelledby={
+                  section.collapsible
+                    ? undefined
+                    : `sidebar-section-heading-${section.id}`
+                }
               >
                 {section.items.map((item) => (
                   <li key={item.id}>
                     <NavLink
                       to={item.to}
+                      end={item.exact}
                       title={item.label}
                       className={({ isActive }) =>
                         isActive
@@ -71,13 +96,20 @@ export function SidebarNavV1({
         ))}
       </div>
       {pinnedItems.length > 0 ? (
-        <div className="sidebar-v1-pinned" aria-label={pinnedTitle}>
-          <h3 className="sidebar-v1-section-title">{pinnedTitle}</h3>
-          <ul className="sidebar-v1-link-list">
+        <div
+          className="sidebar-v1-pinned"
+          role="region"
+          aria-label={pinnedTitle}
+        >
+          <h3 id={pinnedHeadingId} className="sidebar-v1-section-title">
+            {pinnedTitle}
+          </h3>
+          <ul className="sidebar-v1-link-list" aria-labelledby={pinnedHeadingId}>
             {pinnedItems.map((item) => (
               <li key={item.id}>
                 <NavLink
                   to={item.to}
+                  end={item.exact}
                   title={item.label}
                   className={({ isActive }) =>
                     isActive ? "is-active sidebar-v1-link" : "sidebar-v1-link"

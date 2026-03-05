@@ -5,6 +5,7 @@ import authMagicLinkMigrationSql from "../../src/db/migrations/0002_auth_magic_l
 import tbPipelineArtifactsMigrationSql from "../../src/db/migrations/0003_tb_pipeline_artifacts_v1.sql?raw";
 import mappingPreferencesMigrationSql from "../../src/db/migrations/0004_mapping_preferences_v1.sql?raw";
 import coreTaxModulesMigrationSql from "../../src/db/migrations/0005_core_tax_modules_v1.sql?raw";
+import companiesMigrationSql from "../../src/db/migrations/0006_companies_v1.sql?raw";
 
 function splitSqlStatements(migrationSql: string): string[] {
   return migrationSql
@@ -23,6 +24,7 @@ export async function applyWorkspaceAuditSchemaForTests(): Promise<void> {
     tbPipelineArtifactsMigrationSql,
     mappingPreferencesMigrationSql,
     coreTaxModulesMigrationSql,
+    companiesMigrationSql,
   ];
 
   for (const migrationSql of migrationSqlList) {

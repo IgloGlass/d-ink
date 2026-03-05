@@ -204,6 +204,97 @@ function main() {
     }
   });
 
+  runScenario("carry-forward progress resumes from first incomplete story", () => {
+    const { prdPath, tempDir } = createPrdFixture({ storyCount: 2 });
+    const progressFile = path.join(tempDir, "progress.txt");
+    const stateFile = path.join(tempDir, "state.txt");
+    const loopScriptPath = path.join(tempDir, "partial-pass-loop.js");
+    writeFileSync(
+      loopScriptPath,
+      [
+        "const fs = require('node:fs');",
+        "const prdArgIndex = process.argv.indexOf('--prd');",
+        "const stateArgIndex = process.argv.indexOf('--state-file');",
+        "const prdPath = process.argv[prdArgIndex + 1];",
+        "const statePath = process.argv[stateArgIndex + 1];",
+        "const hasFailed = fs.existsSync(statePath);",
+        "const prd = JSON.parse(fs.readFileSync(prdPath, 'utf8'));",
+        "if (!hasFailed) {",
+        "  prd.userStories[0].passes = true;",
+        "  fs.writeFileSync(prdPath, JSON.stringify(prd, null, 2) + '\\n', 'utf8');",
+        "  fs.writeFileSync(statePath, 'failed-once\\n', 'utf8');",
+        "  process.exit(9);",
+        "}",
+        "for (const story of prd.userStories) {",
+        "  story.passes = true;",
+        "}",
+        "fs.writeFileSync(prdPath, JSON.stringify(prd, null, 2) + '\\n', 'utf8');",
+        "process.exit(0);",
+      ].join("\n"),
+      "utf8",
+    );
+
+    try {
+      const result = runNodeScript({
+        scriptPath: genericScript,
+        args: genericBaseArgs({
+          consecutiveGreen: 1,
+          maxPerSweep: 2,
+          prdPath,
+          progressFile,
+          sweeps: 2,
+        }),
+        env: {
+          DINK_RALPH_LOOP_COMMAND: `node ${loopScriptPath} --state-file ${stateFile} --prd {PRD}`,
+          DINK_RALPH_LOOP_RETRIES: "0",
+          DINK_RALPH_MAX_IDENTICAL_RED_SWEEPS: "0",
+        },
+      });
+
+      assertExitCode(
+        result,
+        0,
+        "carry-forward progress resumes from first incomplete story",
+      );
+      const progressContents = readFileSync(progressFile, "utf8");
+      assert.match(progressContents, /carry-forward passed stories: 1\/2/);
+      assert.match(progressContents, /next open story: T-02/);
+      assert.match(progressContents, /Sweep 2 result: GREEN/);
+    } finally {
+      rmSync(tempDir, { force: true, recursive: true });
+    }
+  });
+
+  runScenario("fail fast on repeated identical red sweeps", () => {
+    const { prdPath, tempDir } = createPrdFixture({ storyCount: 1 });
+    const progressFile = path.join(tempDir, "progress.txt");
+    try {
+      const result = runNodeScript({
+        scriptPath: genericScript,
+        args: genericBaseArgs({
+          consecutiveGreen: 1,
+          maxPerSweep: 1,
+          prdPath,
+          progressFile,
+          sweeps: 6,
+        }),
+        env: {
+          DINK_RALPH_LOOP_COMMAND:
+            "node scripts/ralph/test-loop-stub.v1.mjs --mode fail --exit-code 9 --prd {PRD}",
+          DINK_RALPH_LOOP_RETRIES: "0",
+          DINK_RALPH_MAX_IDENTICAL_RED_SWEEPS: "2",
+        },
+      });
+
+      assertExitCode(result, 1, "fail fast on repeated identical red sweeps");
+      const progressContents = readFileSync(progressFile, "utf8");
+      assert.match(progressContents, /aborted early after 2 identical RED signatures/i);
+      assert.doesNotMatch(progressContents, /Sweep 3 started/);
+    } finally {
+      rmSync(tempDir, { force: true, recursive: true });
+    }
+  });
+
   runScenario("gate failure keeps sweep red even when stories pass", () => {
     const { prdPath, tempDir } = createPrdFixture({ storyCount: 2 });
     const progressFile = path.join(tempDir, "progress.txt");

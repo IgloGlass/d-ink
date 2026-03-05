@@ -1,4 +1,5 @@
 import { handleAuthMagicLinkRoutesV1 } from "./server/http/auth-magic-link-routes.v1";
+import { handleCompanyRoutesV1 } from "./server/http/company-routes.v1";
 import { handleWorkspaceRoutesV1 } from "./server/http/workspace-routes.v1";
 import { redactSensitiveLogFieldsV1 } from "./server/security/redaction.v1";
 import type { Env } from "./shared/types/env";
@@ -11,6 +12,9 @@ export default {
       const requestUrl = new URL(request.url);
       if (requestUrl.pathname.startsWith("/v1/auth/")) {
         return handleAuthMagicLinkRoutesV1(request, env);
+      }
+      if (requestUrl.pathname.startsWith("/v1/companies")) {
+        return handleCompanyRoutesV1(request, env);
       }
       if (requestUrl.pathname.startsWith("/v1/workspaces")) {
         return handleWorkspaceRoutesV1(request, env);

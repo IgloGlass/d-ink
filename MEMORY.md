@@ -23,7 +23,7 @@ Last updated: 2026-03-05
 2. V1 stack: Cloudflare Pages + Workers + D1 (+ R2/Queues as needed)
 3. V1 AI integration: API key stored server-side; never client-exposed
 4. Azure + SSO deferred to V2
-5. V1 authentication: invite-based email magic-link sign-in (no passwords in V1)
+5. V1 demo auth: automatic localhost Admin session (invite/magic-link deferred to V2)
 6. V1 annual report formats: PDF and DOCX
 7. Additional evidence uploads deferred to V2
 8. Workflow uses explicit persisted state machine
@@ -41,7 +41,7 @@ Last updated: 2026-03-05
 
 ## Outstanding Questions
 
-- V1 auth UI: admin invite flow UX (generate/copy link action in admin area)
+- None currently blocking the active V1 build path.
 
 Resolved in this batch:
 
@@ -150,3 +150,5 @@ When a major product or architecture decision changes:
 - 2026-03-03: Implemented frontend overhaul cutover for primary V1 shell: V4 tokenized light theme foundation, fixed 56px global header, Ctrl+J workspace context launcher, i18n scaffolding (English active), new IA routes (selector, group control panel, workbench, module shell), compatibility redirects, tax-adjustments grouped sidebar with pinned final-calculation panel, and premium INK2 replica canvas. Added client integration tests for selector/workbench/module shell navigation.
 - 2026-03-03: Account-mapping module now uses virtualized row rendering in the new shell with `View All`/`Exceptions Only`, search-first category override UI, and inline AI command preview adapter. `@tanstack/react-virtual` package installation was blocked locally by npm auth/runtime constraints, so V1 ships with an internal deterministic virtualizer implementation pending dependency-install remediation.
 - 2026-03-05: Completed final frontend consistency and cutover sweep (FEP-12). UI gate now enforces coherent V4 token usage, selector -> workbench -> module flow stability, and semantic keyboard-accessible interaction cleanup (removed redundant ARIA roles on native list/button controls).
+- 2026-03-05: Locked V1 demo authentication to automatic localhost Admin session and moved invite/magic-link auth from active V1 scope to V2.
+- 2026-03-05: Added a dedicated `Company` module (`companies_v1` table, company contracts/repository/workflow/HTTP routes) and shifted `/app/workspaces` into a company-first premium hub with create-company flow, seed demo companies action, and workspace bootstrap per company.

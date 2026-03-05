@@ -312,16 +312,25 @@ export function CoreModuleShellPageV1() {
       setSelectedRowIds([]);
       setCategorySelection(null);
       setCategoryQuery("");
+      setCommandPreview(null);
+      setCommandText("");
     },
   });
 
+  const mappingAllRows = mappingQuery.data?.mapping.decisions ?? [];
+
   const mappingRows = useMemo(() => {
-    const rows = mappingQuery.data?.mapping.decisions ?? [];
+    const rows = mappingAllRows;
     if (mappingViewMode === "all") {
       return rows;
     }
     return rows.filter((row) => isMappingExceptionV1(row));
-  }, [mappingQuery.data?.mapping.decisions, mappingViewMode]);
+  }, [mappingAllRows, mappingViewMode]);
+
+  const mappingExceptionCount = useMemo(
+    () => mappingAllRows.filter((row) => isMappingExceptionV1(row)).length,
+    [mappingAllRows],
+  );
 
   const mappingVirtualRows = useMemo(() => {
     const startIndex = Math.max(
@@ -355,6 +364,33 @@ export function CoreModuleShellPageV1() {
   );
 
   useEffect(() => {
+    const availableRowIds = new Set(mappingAllRows.map((row) => row.id));
+    setSelectedRowIds((current) =>
+      current.filter((rowId) => availableRowIds.has(rowId)),
+    );
+  }, [mappingAllRows]);
+
+  useEffect(() => {
+    const maxScrollTop = Math.max(
+      0,
+      mappingRows.length * mappingGridRowHeightV1 - mappingGridViewportHeightV1,
+    );
+    if (mappingScrollTop <= maxScrollTop) {
+      return;
+    }
+    setMappingScrollTop(maxScrollTop);
+    if (mappingScrollRef.current) {
+      mappingScrollRef.current.scrollTop = maxScrollTop;
+    }
+  }, [mappingRows.length, mappingScrollTop]);
+
+  useEffect(() => {
+    if (commandText.trim().length === 0 || selectedRowIds.length === 0) {
+      setCommandPreview(null);
+    }
+  }, [commandText, selectedRowIds.length]);
+
+  useEffect(() => {
     return () => {
       if (mappingScrollRafRef.current !== null) {
         cancelAnimationFrame(mappingScrollRafRef.current);
@@ -382,11 +418,23 @@ export function CoreModuleShellPageV1() {
     {
       id: "common",
       title: t("module.sidebar.common"),
-      items: taxAdjustmentGroupsV1.common.map((label) => ({
-        id: toSlugV1(label),
-        label,
-        to: `/app/workspaces/${resolvedWorkspaceId}/tax-adjustments/${toSlugV1(label)}`,
-      })),
+      items: taxAdjustmentGroupsV1.common.map((label, index) => {
+        const slug = toSlugV1(label);
+        const basePath = `/app/workspaces/${resolvedWorkspaceId}/tax-adjustments`;
+        if (index === 0) {
+          return {
+            id: slug,
+            label,
+            to: basePath,
+            exact: true,
+          };
+        }
+        return {
+          id: slug,
+          label,
+          to: `${basePath}/${slug}`,
+        };
+      }),
     },
     {
       id: "advanced",
@@ -574,8 +622,8 @@ export function CoreModuleShellPageV1() {
                 <ButtonV1
                   variant="primary"
                   onClick={() => applyMappingOverrideMutation.mutate()}
+                  busy={applyMappingOverrideMutation.isPending}
                   disabled={
-                    applyMappingOverrideMutation.isPending ||
                     selectedRowIds.length === 0 ||
                     !categorySelection
                   }
@@ -592,10 +640,28 @@ export function CoreModuleShellPageV1() {
                   ? `${selectedRowIds.length} row(s) selected for override.`
                   : "Select one or more rows to enable override and AI command actions."}
               </GuidanceBannerV1>
+              <div className="mapping-grid-state-legend" aria-label="Row state legend">
+                <span className="mapping-grid-state" data-state="ai-confident">
+                  AI Confident
+                </span>
+                <span className="mapping-grid-state" data-state="approved">
+                  Approved
+                </span>
+                <span className="mapping-grid-state" data-state="manual-override">
+                  Manual Override
+                </span>
+                <span className="mapping-grid-state" data-state="pending-review">
+                  Pending Review
+                </span>
+                <span className="mapping-grid-legend-summary">
+                  Exceptions: {mappingExceptionCount}
+                </span>
+              </div>
 
               <div className="form-grid form-grid--inline">
                 <InputV1
                   value={commandText}
+                  monospace
                   placeholder={t("mapping.inlineCommandPlaceholder")}
                   invalid={
                     commandText.trim().length > 0 && selectedRowIds.length === 0
@@ -636,7 +702,9 @@ export function CoreModuleShellPageV1() {
                     cancelAnimationFrame(mappingScrollRafRef.current);
                   }
                   mappingScrollRafRef.current = requestAnimationFrame(() => {
-                    setMappingScrollTop(nextTop);
+                    setMappingScrollTop((current) =>
+                      current === nextTop ? current : nextTop,
+                    );
                     mappingScrollRafRef.current = null;
                   });
                 }}
@@ -700,6 +768,7 @@ export function CoreModuleShellPageV1() {
                           top: 0,
                           left: 0,
                           transform: `translateY(${virtualRow.start}px)`,
+                          willChange: "transform",
                           display: "grid",
                           gridTemplateColumns: mappingGridTemplateColumnsV1,
                           minHeight: `${mappingGridRowHeightV1}px`,
@@ -753,15 +822,16 @@ export function CoreModuleShellPageV1() {
           role="tabpanel"
           className="workspace-layout workspace-layout--tax"
         >
-          <div className="workspace-layout-sidebar">
+          <div className="workspace-layout-sidebar workspace-layout-sidebar--tax">
             <SidebarNavV1
               sections={taxSidebarSections}
               pinnedItems={taxPinnedItems}
               pinnedTitle="Calculation Chain"
+              density="dense"
             />
           </div>
 
-          <div className="module-shell-v1-main">
+          <div className="module-shell-v1-main module-shell-v1-main--tax">
             <CardV1>
               <p className="micro-label">{t("module.taxAdjustments")}</p>
               <h1 className="page-title">
@@ -811,7 +881,7 @@ export function CoreModuleShellPageV1() {
               ) : null}
             </CardV1>
 
-            <CardV1 className="module-shell-v1-summary-card">
+            <CardV1 className="module-shell-v1-summary-card module-shell-v1-summary-card--tax">
               <p className="micro-label">{t("module.sidebar.finalTax")}</p>
               {taxSummaryQuery.isPending ? (
                 <div className="panel-stack">

@@ -1,0 +1,19 @@
+Implemented `FEP-08` with scoped edits only in the requested files:
+
+- Updated tax adjustments shell hooks for targeted layout behavior in [core-module-shell-page.v1.tsx](C:/Users/slemi/Documents/D.ink/src/client/features/modules/core-module-shell-page.v1.tsx)
+- Improved sidebar structure/accessibility semantics in [sidebar-nav-v1.tsx](C:/Users/slemi/Documents/D.ink/src/client/components/sidebar-nav-v1.tsx)
+- Tightened sidebar scroll/pinned behavior and sticky summary-card visibility in [global.css](C:/Users/slemi/Documents/D.ink/src/client/styles/global.css)
+- Documented implemented behavior in [tax-adjustments-submodules.v1.md](C:/Users/slemi/Documents/D.ink/docs/tax-adjustments-submodules.v1.md)
+
+Acceptance criteria coverage:
+- Left sidebar remains scrollable and readable with structured regions and pinned chain separation.
+- Final calculation panel remains sticky/legible in the tax adjustments main column.
+- Approved grouping/order remains intact (no reordering logic changed).
+
+Verification run results:
+- `npm run typecheck` passed.
+- `node scripts/ralph/check-design-guardrails.v1.mjs` passed.
+- `set DINK_ALLOW_UNSUPPORTED_NODE_TEST_RUNTIME=1&& npx vitest run --config vitest.client.config.ts tests/client/core-module-shell-page.v1.test.tsx` passed.
+- React Router future-flag warnings still appear in test stderr (non-blocking, unchanged behavior).
+
+RALPH_STATUS:PASS

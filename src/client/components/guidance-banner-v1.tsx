@@ -18,7 +18,14 @@ export function GuidanceBannerV1({
   ariaLive = "off",
 }: GuidanceBannerV1Props) {
   return (
-    <div className="guidance-banner-v1" data-tone={tone} aria-live={ariaLive}>
+    <div
+      className="guidance-banner-v1"
+      data-tone={tone}
+      data-has-title={title ? "true" : "false"}
+      data-has-action={action ? "true" : "false"}
+      aria-live={ariaLive}
+      role={ariaLive === "off" ? "note" : "status"}
+    >
       <div className="guidance-banner-v1__body">
         {title ? <p className="guidance-banner-v1__title">{title}</p> : null}
         <div className="guidance-banner-v1__message">{children}</div>

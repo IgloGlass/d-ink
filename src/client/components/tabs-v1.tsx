@@ -11,10 +11,12 @@ export function TabsV1({
   items,
   activeId,
   onChange,
+  ariaLabel = "Core modules",
 }: {
   items: TabItemV1[];
   activeId: string;
   onChange: (id: string) => void;
+  ariaLabel?: string;
 }) {
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const activeIndex = Math.max(
@@ -40,8 +42,9 @@ export function TabsV1({
     <div
       className="tabs-v1"
       role="tablist"
-      aria-label="Core modules"
+      aria-label={ariaLabel}
       aria-orientation="horizontal"
+      data-tab-count={items.length}
     >
       {items.map((item, index) => (
         <ButtonV1
@@ -55,6 +58,7 @@ export function TabsV1({
           tabIndex={index === activeIndex ? 0 : -1}
           aria-selected={item.id === activeId}
           aria-controls={`module-panel-${item.id}`}
+          title={item.label}
           onClick={() => onChange(item.id)}
           onKeyDown={(event) => {
             if (event.key === "ArrowRight") {

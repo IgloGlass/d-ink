@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -19,21 +19,36 @@ describe("SessionGate", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders unauthenticated guidance when session is missing", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      mockJsonResponse({
-        status: 401,
-        body: {
-          ok: false,
-          error: {
-            code: "SESSION_MISSING",
-            message: "A valid authenticated session is required.",
-            user_message: "A valid authenticated session is required.",
-            context: {},
+  it("shows automatic sign-in failure state when dev-login fails", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        mockJsonResponse({
+          status: 401,
+          body: {
+            ok: false,
+            error: {
+              code: "SESSION_MISSING",
+              message: "A valid authenticated session is required.",
+              user_message: "A valid authenticated session is required.",
+              context: {},
+            },
           },
-        },
-      }),
-    );
+        }),
+      )
+      .mockResolvedValueOnce(
+        mockJsonResponse({
+          status: 404,
+          body: {
+            ok: false,
+            error: {
+              code: "NOT_FOUND",
+              message: "Auth route not found.",
+              user_message: "Auth route not found.",
+              context: {},
+            },
+          },
+        }),
+      );
 
     const router = createMemoryRouter(
       [
@@ -55,7 +70,7 @@ describe("SessionGate", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("Open your invite magic link to sign in."),
+        screen.getByText("Automatic demo sign-in failed"),
       ).toBeInTheDocument();
     });
   });
@@ -103,7 +118,7 @@ describe("SessionGate", () => {
     });
   });
 
-  it("supports local quick dev sign-in when magic-link session is missing", async () => {
+  it("automatically creates local dev session when session is missing", async () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
         mockJsonResponse({
@@ -175,14 +190,6 @@ describe("SessionGate", () => {
       <AppProviders>
         <RouterProvider router={router} />
       </AppProviders>,
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText("Quick dev sign-in")).toBeInTheDocument();
-    });
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Sign in for local testing" }),
     );
 
     await waitFor(() => {

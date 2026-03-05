@@ -1,11 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useId, useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 
 import { ButtonV1 } from "../../components/button-v1";
 import { CardV1 } from "../../components/card-v1";
 import { EmptyStateV1 } from "../../components/empty-state-v1";
-import { InputV1 } from "../../components/input-v1";
 import { SkeletonV1 } from "../../components/skeleton-v1";
 import {
   ApiClientError,
@@ -35,10 +34,6 @@ function toAuthErrorHintV1(search: string): string | null {
   return `Sign-in failed (${code}).`;
 }
 
-const DEV_TENANT_STORAGE_KEY_V1 = "dink_dev_auth_tenant_id_v1";
-const DEV_EMAIL_STORAGE_KEY_V1 = "dink_dev_auth_email_v1";
-const DEV_ROLE_STORAGE_KEY_V1 = "dink_dev_auth_role_v1";
-
 function isLocalDevHostV1(): boolean {
   if (typeof window === "undefined") {
     return false;
@@ -50,47 +45,14 @@ function isLocalDevHostV1(): boolean {
   );
 }
 
-function readStorageValueV1(key: string): string {
-  if (typeof window === "undefined") {
-    return "";
-  }
-
-  return window.localStorage.getItem(key) ?? "";
-}
-
 export function SessionGate() {
   const queryClient = useQueryClient();
   const location = useLocation();
-  const tenantIdInputId = useId();
-  const emailInputId = useId();
-  const roleSelectId = useId();
-  const [devTenantId, setDevTenantId] = useState(() =>
-    readStorageValueV1(DEV_TENANT_STORAGE_KEY_V1),
-  );
-  const [devEmail, setDevEmail] = useState(() => {
-    const value = readStorageValueV1(DEV_EMAIL_STORAGE_KEY_V1);
-    return value.length > 0 ? value : "dev.user@example.com";
-  });
-  const [devRole, setDevRole] = useState<"Admin" | "Editor">(() => {
-    const value = readStorageValueV1(DEV_ROLE_STORAGE_KEY_V1);
-    return value === "Editor" ? "Editor" : "Admin";
-  });
+  const [hasAttemptedAutoLogin, setHasAttemptedAutoLogin] = useState(false);
 
   const devLoginMutation = useMutation({
-    mutationFn: async () =>
-      startDevSessionV1({
-        tenantId:
-          devTenantId.trim().length > 0 ? devTenantId.trim() : undefined,
-        email: devEmail.trim().length > 0 ? devEmail.trim() : undefined,
-        role: devRole,
-      }),
+    mutationFn: async () => startDevSessionV1({ role: "Admin" }),
     onSuccess: async () => {
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(DEV_TENANT_STORAGE_KEY_V1, devTenantId);
-        window.localStorage.setItem(DEV_EMAIL_STORAGE_KEY_V1, devEmail);
-        window.localStorage.setItem(DEV_ROLE_STORAGE_KEY_V1, devRole);
-      }
-
       await queryClient.invalidateQueries({
         queryKey: currentSessionQueryKeyV1,
       });
@@ -101,6 +63,35 @@ export function SessionGate() {
     queryKey: currentSessionQueryKeyV1,
     queryFn: fetchCurrentSessionV1,
   });
+
+  const shouldAutoDevLogin = isLocalDevHostV1();
+  const sessionMissingOrExpired =
+    sessionQuery.isError &&
+    sessionQuery.error instanceof ApiClientError &&
+    (sessionQuery.error.code === "SESSION_MISSING" ||
+      sessionQuery.error.code === "SESSION_INVALID_OR_EXPIRED");
+
+  useEffect(() => {
+    if (!shouldAutoDevLogin) {
+      return;
+    }
+    if (!sessionQuery.isError || !sessionMissingOrExpired) {
+      return;
+    }
+    if (devLoginMutation.isPending || hasAttemptedAutoLogin) {
+      return;
+    }
+
+    // Temporary V1 demo mode: auto-establish Admin session in local dev.
+    setHasAttemptedAutoLogin(true);
+    devLoginMutation.mutate();
+  }, [
+    devLoginMutation,
+    hasAttemptedAutoLogin,
+    sessionMissingOrExpired,
+    sessionQuery.isError,
+    shouldAutoDevLogin,
+  ]);
 
   if (sessionQuery.isPending) {
     return (
@@ -119,18 +110,59 @@ export function SessionGate() {
     return <Navigate replace to="/app/workspaces" />;
   }
 
+  const isAutoSigningIn =
+    shouldAutoDevLogin &&
+    sessionMissingOrExpired &&
+    (!hasAttemptedAutoLogin || devLoginMutation.isPending);
+  if (isAutoSigningIn) {
+    return (
+      <CardV1 className="auth-card">
+        <div className="panel-stack">
+          <h1>D.ink</h1>
+          <p>Starting automatic demo admin session...</p>
+          <SkeletonV1 width="80%" height={16} />
+          <SkeletonV1 width="72%" height={16} />
+          <SkeletonV1 height={36} />
+        </div>
+      </CardV1>
+    );
+  }
+
+  if (shouldAutoDevLogin && devLoginMutation.isError) {
+    return (
+      <CardV1 className="auth-card">
+        <h1>D.ink</h1>
+        <EmptyStateV1
+          title="Automatic demo sign-in failed"
+          description={toUserFacingErrorMessage(devLoginMutation.error)}
+          tone="error"
+          role="alert"
+          action={
+            <ButtonV1
+              variant="primary"
+              onClick={() => {
+                setHasAttemptedAutoLogin(true);
+                devLoginMutation.mutate();
+              }}
+            >
+              Retry automatic sign-in
+            </ButtonV1>
+          }
+        />
+      </CardV1>
+    );
+  }
+
   const authErrorHint = toAuthErrorHintV1(location.search);
   const defaultMessage = toUserFacingErrorMessage(sessionQuery.error);
   const shouldShowApiMessage =
     sessionQuery.error instanceof ApiClientError &&
     sessionQuery.error.code !== "SESSION_MISSING";
-  const shouldShowDevLogin = isLocalDevHostV1();
 
   return (
     <CardV1 className="auth-card">
       <h1>D.ink</h1>
       <p>AI-powered Swedish tax return assistant for accountants.</p>
-      <p>Open your invite magic link to sign in.</p>
       {authErrorHint ? (
         <EmptyStateV1
           title="Sign-in error"
@@ -147,56 +179,8 @@ export function SessionGate() {
           role="alert"
         />
       ) : null}
-      {shouldShowDevLogin ? (
-        <form
-          className="form-grid"
-          onSubmit={(event) => {
-            event.preventDefault();
-            devLoginMutation.mutate();
-          }}
-        >
-          <h2>Quick dev sign-in</h2>
-          <label htmlFor={tenantIdInputId}>Tenant ID</label>
-          <InputV1
-            id={tenantIdInputId}
-            type="text"
-            value={devTenantId}
-            placeholder="UUIDv4 or short ID (e.g. 5335)"
-            onChange={(event) => setDevTenantId(event.target.value)}
-          />
-          <label htmlFor={emailInputId}>Email</label>
-          <InputV1
-            id={emailInputId}
-            type="email"
-            value={devEmail}
-            onChange={(event) => setDevEmail(event.target.value)}
-          />
-          <label htmlFor={roleSelectId}>Role</label>
-          <select
-            id={roleSelectId}
-            value={devRole}
-            onChange={(event) =>
-              setDevRole(event.target.value as "Admin" | "Editor")
-            }
-          >
-            <option value="Admin">Admin</option>
-            <option value="Editor">Editor</option>
-          </select>
-          <ButtonV1
-            type="submit"
-            variant="primary"
-            disabled={devLoginMutation.isPending}
-          >
-            {devLoginMutation.isPending
-              ? "Signing in..."
-              : "Sign in for local testing"}
-          </ButtonV1>
-          {devLoginMutation.isError ? (
-            <p className="error-text" role="alert">
-              {toUserFacingErrorMessage(devLoginMutation.error)}
-            </p>
-          ) : null}
-        </form>
+      {!shouldAutoDevLogin ? (
+        <p>Demo auto sign-in is available only on localhost.</p>
       ) : null}
     </CardV1>
   );

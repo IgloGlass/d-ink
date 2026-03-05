@@ -2,6 +2,8 @@ export * from "./audit-event.v1";
 export * from "./audit-event.v2";
 export * from "./annual-report-extraction.v1";
 export * from "./auth-magic-link.v1";
+export * from "./company-lifecycle.v1";
+export * from "./company.v1";
 export * from "./collaboration.v1";
 export * from "./common.v1";
 export * from "./export-package.v1";

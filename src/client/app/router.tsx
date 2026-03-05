@@ -17,12 +17,14 @@ import { CoreModuleShellPageV1 } from "../features/modules/core-module-shell-pag
 import { CompanySelectorPageV1 } from "../features/workspaces/company-selector-page.v1";
 import { WorkspaceDetailPage } from "../features/workspaces/workspace-detail-page";
 import { WorkspaceWorkbenchPageV1 } from "../features/workspaces/workspace-workbench-page.v1";
-import { toUserFacingErrorMessage } from "../lib/http/api-client";
 import {
   currentSessionQueryKeyV1,
   fetchCurrentSessionV1,
 } from "../lib/http/auth-api";
-import { useGlobalAppContextV1 } from "./app-context.v1";
+import {
+  readWorkspaceIdFromPathnameV1,
+  useGlobalAppContextV1,
+} from "./app-context.v1";
 
 const appWorkspaceHomePathV1 = "/app/workspaces";
 const defaultGroupControlPanelPathV1 = "/app/groups/default/control-panel";
@@ -39,6 +41,10 @@ const legacyWorkspaceDetailPathsV1 = new Set([
   "workspace-detail",
   "legacy-detail",
 ]);
+const canonicalWorkspaceWorkbenchPathV1 = (workspaceId: string) =>
+  `/app/workspaces/${workspaceId}/workbench`;
+const canonicalWorkspaceDetailPathV1 = (workspaceId: string) =>
+  `/app/workspaces/${workspaceId}/detail`;
 
 function ProtectedLayoutV1() {
   const location = useLocation();
@@ -49,16 +55,22 @@ function ProtectedLayoutV1() {
   });
 
   useEffect(() => {
-    const workspaceMatch = location.pathname.match(
-      /^\/app\/workspaces\/([^/]+)(?:\/|$)/,
-    );
-    const workspaceIdFromPath = workspaceMatch?.[1] ?? null;
-    if (!workspaceIdFromPath || workspaceIdFromPath === activeWorkspaceId) {
+    const workspaceIdFromPath = readWorkspaceIdFromPathnameV1(location.pathname);
+    if (workspaceIdFromPath && workspaceIdFromPath !== activeWorkspaceId) {
+      // Keep launcher context in sync for direct URL and legacy-route entry.
+      setActiveContext({ activeWorkspaceId: workspaceIdFromPath });
       return;
     }
 
-    // Keep launcher context in sync for direct URL and legacy-route entry.
-    setActiveContext({ activeWorkspaceId: workspaceIdFromPath });
+    if (!workspaceIdFromPath && activeWorkspaceId !== null) {
+      // Avoid stale workspace context when navigating to non-workspace IA routes.
+      setActiveContext({ activeWorkspaceId: null });
+      return;
+    }
+
+    if (!workspaceIdFromPath) {
+      return;
+    }
   }, [activeWorkspaceId, location.pathname, setActiveContext]);
 
   if (currentSessionQuery.isPending) {
@@ -66,13 +78,8 @@ function ProtectedLayoutV1() {
   }
 
   if (currentSessionQuery.isError) {
-    return (
-      <div className="card">
-        <h1>Sign-in required</h1>
-        <p>{toUserFacingErrorMessage(currentSessionQuery.error)}</p>
-        <p>Open a valid magic-link invite URL to sign in.</p>
-      </div>
-    );
+    // Demo mode: route through SessionGate for automatic local Admin sign-in.
+    return <Navigate replace to="/" />;
   }
 
   return (
@@ -88,7 +95,7 @@ function LegacyWorkspaceWorkbenchRedirectV1() {
     return <Navigate replace to={appWorkspaceHomePathV1} />;
   }
 
-  return <Navigate replace to={`/app/workspaces/${workspaceId}/workbench`} />;
+  return <Navigate replace to={canonicalWorkspaceWorkbenchPathV1(workspaceId)} />;
 }
 
 function toLegacyWorkspaceDestinationV1(
@@ -102,7 +109,7 @@ function toLegacyWorkspaceDestinationV1(
   }
 
   if (legacyWorkspaceDetailPathsV1.has(normalizedAlias)) {
-    return "legacy-detail";
+    return "detail";
   }
 
   return normalizedPath;
@@ -127,9 +134,7 @@ function LegacyWorkspaceDetailRedirectV1() {
     return <Navigate replace to={appWorkspaceHomePathV1} />;
   }
 
-  return (
-    <Navigate replace to={`/app/workspaces/${workspaceId}/legacy-detail`} />
-  );
+  return <Navigate replace to={canonicalWorkspaceDetailPathV1(workspaceId)} />;
 }
 
 function LegacyWorkspaceAppFallbackRedirectV1() {
@@ -141,7 +146,7 @@ function LegacyWorkspaceAppFallbackRedirectV1() {
   // Unknown deep workspace paths should recover to workbench instead of app root.
   const destination = toLegacyWorkspaceDestinationV1(legacySubPath);
   const canonicalDestination =
-    destination === "legacy-detail" || destination === "workbench"
+    destination === "detail" || destination === "workbench"
       ? destination
       : "workbench";
 
@@ -247,7 +252,7 @@ const routerV1 = createBrowserRouter(
         },
         {
           path: "workspaces/:workspaceId/detail",
-          element: <LegacyWorkspaceDetailRedirectV1 />,
+          element: <WorkspaceDetailPage />,
         },
         {
           path: "workspaces/:workspaceId/workspace-detail",
@@ -255,7 +260,7 @@ const routerV1 = createBrowserRouter(
         },
         {
           path: "workspaces/:workspaceId/legacy-detail",
-          element: <WorkspaceDetailPage />,
+          element: <LegacyWorkspaceDetailRedirectV1 />,
         },
         {
           path: "workspaces/:workspaceId/:coreModule/:subModule",
