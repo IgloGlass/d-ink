@@ -57,7 +57,7 @@ export async function executeAnnualReportTaxAnalysisV1(
         modelTier: input.config.moduleSpec.runtime.modelTier,
         responseSchema: AnnualReportTaxAnalysisAiResultV1Schema,
         systemInstruction: ANNUAL_REPORT_TAX_ANALYSIS_SYSTEM_PROMPT_V1,
-        timeoutMs: 120_000,
+        timeoutMs: 180_000,
         useResponseJsonSchema: false,
         userInstruction: [
           ANNUAL_REPORT_TAX_ANALYSIS_USER_PROMPT_V1,

@@ -8,6 +8,13 @@ import type {
   AnnualReportRuntimeMetadataV1,
   AnnualReportStatementLineV1,
 } from "../../../shared/contracts/annual-report-extraction.v1";
+import {
+  getAnnualReportCodeDefinitionV1,
+  getAnnualReportCodeOrderV1,
+  isAnnualReportBalanceAssetCodeV1,
+  isAnnualReportBalanceEquityLiabilityCodeV1,
+  type AnnualReportCodeDefinitionV1,
+} from "../../../shared/contracts/annual-report-codes.v1";
 import { MAX_ANNUAL_REPORT_UPLOAD_BYTES_V1 } from "../../../shared/contracts/annual-report-upload-session.v1";
 import type {
   AnnualReportProcessingRunV1,
@@ -299,6 +306,188 @@ function confirmActiveDataOverrideV1(message: string): boolean {
   return window.confirm(message);
 }
 
+type AnnualReportStatementDisplayEntryV1 =
+  | {
+      kind: "section";
+      key: string;
+      label: string;
+    }
+  | {
+      kind: "group";
+      key: string;
+      label: string;
+    }
+  | {
+      kind: "row";
+      key: string;
+      codeDefinition?: AnnualReportCodeDefinitionV1;
+      line: AnnualReportStatementLineV1;
+    };
+
+function buildAnnualReportStatementDisplayEntriesV1(
+  lines: AnnualReportStatementLineV1[],
+): AnnualReportStatementDisplayEntryV1[] {
+  const sortedLines = [...lines].sort((left, right) => {
+    const orderDifference =
+      getAnnualReportCodeOrderV1(left.code) - getAnnualReportCodeOrderV1(right.code);
+    if (orderDifference !== 0) {
+      return orderDifference;
+    }
+    return left.label.localeCompare(right.label, "sv-SE");
+  });
+  const entries: AnnualReportStatementDisplayEntryV1[] = [];
+  let previousSection: string | null = null;
+  let previousGroup: string | null = null;
+
+  for (const line of sortedLines) {
+    const codeDefinition = getAnnualReportCodeDefinitionV1(line.code);
+    if (!codeDefinition) {
+      entries.push({
+        kind: "row",
+        key: `row-${line.code}-${line.label}`,
+        line,
+      });
+      continue;
+    }
+
+    if (codeDefinition.sectionSv !== previousSection) {
+      entries.push({
+        kind: "section",
+        key: `section-${codeDefinition.sectionSv}`,
+        label: codeDefinition.sectionSv,
+      });
+      previousSection = codeDefinition.sectionSv;
+      previousGroup = null;
+    }
+
+    const groupLabel = codeDefinition.subgroupSv ?? codeDefinition.groupSv;
+    if (groupLabel && groupLabel !== previousGroup) {
+      entries.push({
+        kind: "group",
+        key: `group-${codeDefinition.code}-${groupLabel}`,
+        label: groupLabel,
+      });
+      previousGroup = groupLabel;
+    }
+
+    entries.push({
+      kind: "row",
+      key: `row-${line.code}-${line.label}`,
+      line,
+      codeDefinition,
+    });
+  }
+
+  return entries;
+}
+
+function calculateAnnualReportBalanceControlV1(
+  lines: AnnualReportStatementLineV1[],
+): {
+  currentAssets: number;
+  currentDifference: number;
+  currentEquityAndLiabilities: number;
+  priorAssets: number | undefined;
+  priorDifference: number | undefined;
+  priorEquityAndLiabilities: number | undefined;
+} {
+  let currentAssets = 0;
+  let currentEquityAndLiabilities = 0;
+  let priorAssets = 0;
+  let priorEquityAndLiabilities = 0;
+  let hasPriorAssets = false;
+  let hasPriorEquityAndLiabilities = false;
+
+  for (const line of lines) {
+    if (isAnnualReportBalanceAssetCodeV1(line.code)) {
+      currentAssets += line.currentYearValue ?? 0;
+      if (line.priorYearValue !== undefined) {
+        priorAssets += line.priorYearValue;
+        hasPriorAssets = true;
+      }
+    }
+    if (isAnnualReportBalanceEquityLiabilityCodeV1(line.code)) {
+      currentEquityAndLiabilities += line.currentYearValue ?? 0;
+      if (line.priorYearValue !== undefined) {
+        priorEquityAndLiabilities += line.priorYearValue;
+        hasPriorEquityAndLiabilities = true;
+      }
+    }
+  }
+
+  return {
+    currentAssets,
+    currentDifference: currentAssets - currentEquityAndLiabilities,
+    currentEquityAndLiabilities,
+    priorAssets: hasPriorAssets ? priorAssets : undefined,
+    priorDifference:
+      hasPriorAssets || hasPriorEquityAndLiabilities
+        ? priorAssets - priorEquityAndLiabilities
+        : undefined,
+    priorEquityAndLiabilities: hasPriorEquityAndLiabilities
+      ? priorEquityAndLiabilities
+      : undefined,
+  };
+}
+
+function AnnualReportBalanceControlV1({
+  lines,
+}: {
+  lines: AnnualReportStatementLineV1[];
+}) {
+  const control = calculateAnnualReportBalanceControlV1(lines);
+  const hasPriorYear =
+    control.priorAssets !== undefined ||
+    control.priorEquityAndLiabilities !== undefined ||
+    control.priorDifference !== undefined;
+
+  return (
+    <div className="annual-report-sidebar__section">
+      <div className="annual-report-sidebar__label">Balance control</div>
+      <table className="annual-report-sidebar__statement-table">
+        <thead>
+          <tr>
+            <th>Check</th>
+            <th>Current year</th>
+            {hasPriorYear ? <th>Prior year</th> : null}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Assets</td>
+            <td>{formatOptionalCurrencyV1(control.currentAssets)}</td>
+            {hasPriorYear ? (
+              <td>{formatOptionalCurrencyV1(control.priorAssets)}</td>
+            ) : null}
+          </tr>
+          <tr>
+            <td>Equity + liabilities</td>
+            <td>{formatOptionalCurrencyV1(control.currentEquityAndLiabilities)}</td>
+            {hasPriorYear ? (
+              <td>
+                {formatOptionalCurrencyV1(control.priorEquityAndLiabilities)}
+              </td>
+            ) : null}
+          </tr>
+          <tr>
+            <td>Difference</td>
+            <td>{formatOptionalCurrencyV1(control.currentDifference)}</td>
+            {hasPriorYear ? (
+              <td>{formatOptionalCurrencyV1(control.priorDifference)}</td>
+            ) : null}
+          </tr>
+        </tbody>
+      </table>
+      <div className="annual-report-sidebar__caption">
+        {control.currentDifference === 0 &&
+        (control.priorDifference === undefined || control.priorDifference === 0)
+          ? "Control passed: assets equal equity plus liabilities."
+          : "Control flagged: the balance sheet does not currently reconcile."}
+      </div>
+    </div>
+  );
+}
+
 function AnnualReportStatementSectionV1({
   lines,
   title,
@@ -311,6 +500,10 @@ function AnnualReportStatementSectionV1({
   }
 
   const hasPriorYearValues = lines.some((line) => line.priorYearValue !== undefined);
+  const displayEntries = buildAnnualReportStatementDisplayEntriesV1(lines);
+  const hasKnownCodeDefinitions = displayEntries.some(
+    (entry) => entry.kind === "row" && Boolean(entry.codeDefinition),
+  );
 
   return (
     <div className="annual-report-sidebar__section">
@@ -318,23 +511,57 @@ function AnnualReportStatementSectionV1({
       <table className="annual-report-sidebar__statement-table">
         <thead>
           <tr>
+            {hasKnownCodeDefinitions ? <th>Code</th> : null}
             <th>Line item</th>
             <th>Current year</th>
             {hasPriorYearValues ? <th>Prior year</th> : null}
           </tr>
         </thead>
         <tbody>
-          {lines.map((line) => (
-            <tr key={`${title}-${line.code}-${line.label}`}>
-              <td>{line.label}</td>
-              <td>{formatOptionalCurrencyV1(line.currentYearValue)}</td>
-              {hasPriorYearValues ? (
-                <td>{formatOptionalCurrencyV1(line.priorYearValue)}</td>
-              ) : null}
-            </tr>
-          ))}
+          {displayEntries.map((entry) => {
+            if (entry.kind === "section") {
+              return (
+                <tr key={`${title}-${entry.key}`}>
+                  <td
+                    colSpan={hasKnownCodeDefinitions ? (hasPriorYearValues ? 4 : 3) : hasPriorYearValues ? 3 : 2}
+                    className="annual-report-sidebar__statement-heading"
+                  >
+                    {entry.label}
+                  </td>
+                </tr>
+              );
+            }
+            if (entry.kind === "group") {
+              return (
+                <tr key={`${title}-${entry.key}`}>
+                  <td
+                    colSpan={hasKnownCodeDefinitions ? (hasPriorYearValues ? 4 : 3) : hasPriorYearValues ? 3 : 2}
+                    className="annual-report-sidebar__statement-subheading"
+                  >
+                    {entry.label}
+                  </td>
+                </tr>
+              );
+            }
+
+            return (
+              <tr key={`${title}-${entry.key}`}>
+                {hasKnownCodeDefinitions ? (
+                  <td>{entry.codeDefinition?.code ?? entry.line.code}</td>
+                ) : null}
+                <td>{entry.codeDefinition?.labelSv ?? entry.line.label}</td>
+                <td>{formatOptionalCurrencyV1(entry.line.currentYearValue)}</td>
+                {hasPriorYearValues ? (
+                  <td>{formatOptionalCurrencyV1(entry.line.priorYearValue)}</td>
+                ) : null}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
+      {title === "Balance sheet" && hasKnownCodeDefinitions ? (
+        <AnnualReportBalanceControlV1 lines={lines} />
+      ) : null}
     </div>
   );
 }

@@ -15,6 +15,7 @@ import {
   type AnnualReportProcessingDepsV1,
 } from "../../../src/server/workflow/annual-report-processing.v1";
 import { parseAnnualReportExtractionPayloadV1 } from "../../../src/shared/contracts/annual-report-extraction.v1";
+import { parseAnnualReportTaxAnalysisPayloadV1 } from "../../../src/shared/contracts/annual-report-tax-analysis.v1";
 import { applyWorkspaceAuditSchemaForTests } from "../../db/test-schema";
 
 const TENANT_ID = "9d100000-0000-4000-8000-000000000001";
@@ -485,6 +486,184 @@ describe("annual report processing workflow v1", () => {
         "tax_analysis.background.failed",
         "tax_analysis.background.error=MODEL_EXECUTION_FAILED",
       ]),
+    );
+  });
+
+  it("records fallback tax-analysis completion when a usable fallback review is persisted", async () => {
+    await createQueuedRun();
+    const deps = createBaseDeps();
+    deps.sourceStore = {
+      async delete() {
+        return;
+      },
+      async get() {
+        return {
+          async arrayBuffer() {
+            return new Uint8Array([37, 80, 68, 70]).buffer;
+          },
+        };
+      },
+      async put() {
+        return;
+      },
+    };
+    deps.extractAnnualReport = async () => ({
+      ok: true as const,
+      extraction: createCompleteExtractionPayloadV1(),
+    });
+    deps.analyzeAnnualReportTax = async (input) => ({
+      ok: true as const,
+      taxAnalysis: parseAnnualReportTaxAnalysisPayloadV1({
+        schemaVersion: "annual_report_tax_analysis_v1",
+        sourceExtractionArtifactId: input.extractionArtifactId,
+        policyVersion: input.policyVersion,
+        basedOn: input.extraction.taxDeep!,
+        executiveSummary: "Forensic review completed using deterministic fallback.",
+        accountingStandardAssessment: {
+          status: "aligned",
+          rationale: "K3 is available in the extracted core facts.",
+        },
+        findings: [],
+        missingInformation: [],
+        recommendedNextActions: ["Review degraded note extraction manually."],
+        aiRun: {
+          runId: "fallback-run",
+          moduleId: "annual-report-tax-analysis",
+          moduleVersion: "v1",
+          promptVersion: "annual-report-tax-analysis.prompts.v1",
+          policyVersion: input.policyVersion,
+          activePatchVersions: [],
+          provider: "gemini",
+          model: "gemini-2.5-flash",
+          modelTier: "fast",
+          generatedAt: "2026-03-03T12:10:00.000Z",
+          usedFallback: true,
+        },
+      }),
+    });
+
+    await processAnnualReportProcessingRunV1(
+      {
+        runId: RUN_ID,
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+      },
+      deps,
+    );
+
+    const latest = await getLatestAnnualReportProcessingRunV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+      },
+      deps,
+    );
+    expect(latest.ok).toBe(true);
+    if (!latest.ok) {
+      return;
+    }
+
+    expect(latest.run.status).toBe("completed");
+    expect(latest.run.result?.taxAnalysisArtifactId).toBeTruthy();
+    expect(latest.run.technicalDetails).toEqual(
+      expect.arrayContaining([
+        "tax_analysis.background.fallback_used",
+        "tax_analysis.background.completed",
+      ]),
+    );
+  });
+
+  it("retries the active-extraction check before persisting tax analysis", async () => {
+    await createQueuedRun();
+    const deps = createBaseDeps();
+    deps.sourceStore = {
+      async delete() {
+        return;
+      },
+      async get() {
+        return {
+          async arrayBuffer() {
+            return new Uint8Array([37, 80, 68, 70]).buffer;
+          },
+        };
+      },
+      async put() {
+        return;
+      },
+    };
+    deps.extractAnnualReport = async () => ({
+      ok: true as const,
+      extraction: createCompleteExtractionPayloadV1(),
+    });
+    deps.analyzeAnnualReportTax = async (input) => ({
+      ok: true as const,
+      taxAnalysis: parseAnnualReportTaxAnalysisPayloadV1({
+        schemaVersion: "annual_report_tax_analysis_v1",
+        sourceExtractionArtifactId: input.extractionArtifactId,
+        policyVersion: input.policyVersion,
+        basedOn: input.extraction.taxDeep!,
+        executiveSummary: "Forensic review completed after active-artifact retry.",
+        accountingStandardAssessment: {
+          status: "aligned",
+          rationale: "K3 is available in the extracted core facts.",
+        },
+        findings: [],
+        missingInformation: [],
+        recommendedNextActions: [],
+        aiRun: {
+          runId: "retry-run",
+          moduleId: "annual-report-tax-analysis",
+          moduleVersion: "v1",
+          promptVersion: "annual-report-tax-analysis.prompts.v1",
+          policyVersion: input.policyVersion,
+          activePatchVersions: [],
+          provider: "gemini",
+          model: "gemini-2.5-flash",
+          modelTier: "fast",
+          generatedAt: "2026-03-03T12:10:00.000Z",
+          usedFallback: false,
+        },
+      }),
+    });
+
+    const realArtifactRepository = deps.artifactRepository;
+    let activeExtractionReads = 0;
+    deps.artifactRepository = {
+      ...realArtifactRepository,
+      async getActiveAnnualReportExtraction(input) {
+        activeExtractionReads += 1;
+        if (activeExtractionReads === 1) {
+          return null;
+        }
+        return realArtifactRepository.getActiveAnnualReportExtraction(input);
+      },
+    };
+
+    await processAnnualReportProcessingRunV1(
+      {
+        runId: RUN_ID,
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+      },
+      deps,
+    );
+
+    const latest = await getLatestAnnualReportProcessingRunV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+      },
+      deps,
+    );
+    expect(latest.ok).toBe(true);
+    if (!latest.ok) {
+      return;
+    }
+
+    expect(activeExtractionReads).toBeGreaterThan(1);
+    expect(latest.run.result?.taxAnalysisArtifactId).toBeTruthy();
+    expect(latest.run.technicalDetails).toEqual(
+      expect.arrayContaining(["tax_analysis.background.completed"]),
     );
   });
 

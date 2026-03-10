@@ -1,4 +1,9 @@
-import type { AnnualReportExtractionPayloadV1 } from "../../../../shared/contracts/annual-report-extraction.v1";
+import type {
+  AnnualReportEvidenceReferenceV1,
+  AnnualReportExtractionPayloadV1,
+  AnnualReportTaxDeepExtractionV1,
+  AnnualReportValueWithEvidenceV1,
+} from "../../../../shared/contracts/annual-report-extraction.v1";
 import {
   type AnnualReportAiSectionLocatorResultV1,
   AnnualReportAiSectionLocatorResultV1Schema,
@@ -1489,6 +1494,270 @@ function dedupeStringsV1(values: Array<string | undefined | null>): string[] {
   ];
 }
 
+function sanitizeFinalEvidenceReferenceV1(
+  value: unknown,
+): AnnualReportEvidenceReferenceV1[] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return [];
+  }
+
+  const entry = value as Record<string, unknown>;
+  if (typeof entry.snippet !== "string" || entry.snippet.trim().length === 0) {
+    return [];
+  }
+
+  return [
+    {
+      snippet: entry.snippet.trim(),
+      page:
+        typeof entry.page === "number" && Number.isFinite(entry.page)
+          ? entry.page
+          : undefined,
+      section:
+        typeof entry.section === "string" && entry.section.trim().length > 0
+          ? entry.section.trim()
+          : undefined,
+      noteReference:
+        typeof entry.noteReference === "string" &&
+        entry.noteReference.trim().length > 0
+          ? entry.noteReference.trim()
+          : undefined,
+    },
+  ];
+}
+
+function sanitizeFinalNotesV1(values: unknown[]): string[] {
+  return dedupeStringsV1(
+    values.map((value) =>
+      typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined,
+    ),
+  );
+}
+
+function sanitizeFinalValueWithEvidenceV1(
+  value: unknown,
+): AnnualReportValueWithEvidenceV1 | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const entry = value as Record<string, unknown>;
+  if (typeof entry.value !== "number" || !Number.isFinite(entry.value)) {
+    return undefined;
+  }
+
+  return {
+    value: entry.value,
+    evidence: dedupeByKeyV1(
+      [
+        ...(Array.isArray(entry.evidence)
+          ? entry.evidence.flatMap((item) => sanitizeFinalEvidenceReferenceV1(item))
+          : []),
+        ...sanitizeFinalEvidenceReferenceV1(value),
+      ],
+      (evidence) =>
+        [
+          evidence.page ?? "",
+          evidence.section ?? "",
+          evidence.noteReference ?? "",
+          evidence.snippet,
+        ].join("|"),
+    ),
+  };
+}
+
+function sanitizeFinalStatementsExtractedV1(input: {
+  statementUnit?: AnnualReportTaxDeepExtractionV1["ink2rExtracted"]["statementUnit"];
+  incomeStatement?: AnnualReportTaxDeepExtractionV1["ink2rExtracted"]["incomeStatement"];
+  balanceSheet?: AnnualReportTaxDeepExtractionV1["ink2rExtracted"]["balanceSheet"];
+}): AnnualReportTaxDeepExtractionV1["ink2rExtracted"] {
+  return {
+    statementUnit: input.statementUnit,
+    incomeStatement: input.incomeStatement ?? [],
+    balanceSheet: input.balanceSheet ?? [],
+  };
+}
+
+function sanitizeFinalTaxDeepForContractV1(
+  taxDeep: AnnualReportAiExtractionResultV1["taxDeep"],
+): AnnualReportTaxDeepExtractionV1 {
+  const raw = taxDeep as unknown as Record<string, unknown>;
+  const netInterestContext =
+    typeof raw.netInterestContext === "object" && raw.netInterestContext !== null
+      ? (raw.netInterestContext as Record<string, unknown>)
+      : {};
+  const pensionContext =
+    typeof raw.pensionContext === "object" && raw.pensionContext !== null
+      ? (raw.pensionContext as Record<string, unknown>)
+      : {};
+  const taxExpenseContext =
+    typeof raw.taxExpenseContext === "object" && raw.taxExpenseContext !== null
+      ? (raw.taxExpenseContext as Record<string, unknown>)
+      : undefined;
+  const leasingContext =
+    typeof raw.leasingContext === "object" && raw.leasingContext !== null
+      ? (raw.leasingContext as Record<string, unknown>)
+      : {};
+  const groupContributionContext =
+    typeof raw.groupContributionContext === "object" &&
+    raw.groupContributionContext !== null
+      ? (raw.groupContributionContext as Record<string, unknown>)
+      : {};
+  const shareholdingContext =
+    typeof raw.shareholdingContext === "object" && raw.shareholdingContext !== null
+      ? (raw.shareholdingContext as Record<string, unknown>)
+      : {};
+
+  return {
+    ink2rExtracted: sanitizeFinalStatementsExtractedV1(taxDeep.ink2rExtracted),
+    depreciationContext: {
+      assetAreas: taxDeep.depreciationContext.assetAreas,
+      evidence: taxDeep.depreciationContext.evidence,
+    },
+    assetMovements: {
+      lines: taxDeep.assetMovements.lines,
+      evidence: taxDeep.assetMovements.evidence,
+    },
+    reserveContext: {
+      movements: taxDeep.reserveContext.movements,
+      notes: sanitizeFinalNotesV1(taxDeep.reserveContext.notes),
+      evidence: taxDeep.reserveContext.evidence,
+    },
+    netInterestContext: {
+      financeIncome:
+        sanitizeFinalValueWithEvidenceV1(netInterestContext.financeIncome) ??
+        sanitizeFinalValueWithEvidenceV1(netInterestContext.otherFinancialIncome),
+      financeExpense:
+        sanitizeFinalValueWithEvidenceV1(netInterestContext.financeExpense) ??
+        sanitizeFinalValueWithEvidenceV1(netInterestContext.otherFinancialExpense),
+      interestIncome: sanitizeFinalValueWithEvidenceV1(netInterestContext.interestIncome),
+      interestExpense: sanitizeFinalValueWithEvidenceV1(netInterestContext.interestExpense),
+      netInterest: sanitizeFinalValueWithEvidenceV1(netInterestContext.netInterest),
+      notes: sanitizeFinalNotesV1(taxDeep.netInterestContext.notes),
+      evidence: taxDeep.netInterestContext.evidence,
+    },
+    pensionContext: {
+      specialPayrollTax: sanitizeFinalValueWithEvidenceV1(pensionContext.specialPayrollTax),
+      flags: taxDeep.pensionContext.flags,
+      notes: sanitizeFinalNotesV1([
+        ...taxDeep.pensionContext.notes,
+        ...(Array.isArray(pensionContext.pensionCosts) ? pensionContext.pensionCosts : []),
+        ...(Array.isArray(pensionContext.pensionObligations)
+          ? pensionContext.pensionObligations
+          : []),
+      ]),
+      evidence: dedupeByKeyV1(
+        [
+          ...taxDeep.pensionContext.evidence,
+          ...(Array.isArray(pensionContext.evidence)
+            ? pensionContext.evidence.flatMap((item) =>
+                sanitizeFinalEvidenceReferenceV1(item),
+              )
+            : []),
+        ],
+        (evidence) =>
+          [
+            evidence.page ?? "",
+            evidence.section ?? "",
+            evidence.noteReference ?? "",
+            evidence.snippet,
+          ].join("|"),
+      ),
+    },
+    taxExpenseContext: taxExpenseContext
+      ? {
+          currentTax:
+            sanitizeFinalValueWithEvidenceV1(taxExpenseContext.currentTax) ??
+            sanitizeFinalValueWithEvidenceV1(taxExpenseContext.recognizedTax),
+          deferredTax: sanitizeFinalValueWithEvidenceV1(taxExpenseContext.deferredTax),
+          totalTaxExpense: sanitizeFinalValueWithEvidenceV1(taxExpenseContext.totalTaxExpense),
+          notes: sanitizeFinalNotesV1([
+            ...(Array.isArray(taxExpenseContext.notes) ? taxExpenseContext.notes : []),
+            ...(Array.isArray(taxExpenseContext.reconciliation)
+              ? taxExpenseContext.reconciliation
+              : []),
+          ]),
+          evidence: dedupeByKeyV1(
+            [
+              ...(Array.isArray(taxExpenseContext.evidence)
+                ? taxExpenseContext.evidence.flatMap((item) =>
+                    sanitizeFinalEvidenceReferenceV1(item),
+                  )
+                : []),
+              ...sanitizeFinalEvidenceReferenceV1(taxExpenseContext.recognizedTax),
+              ...sanitizeFinalEvidenceReferenceV1(taxExpenseContext.totalTaxExpense),
+            ],
+            (evidence) =>
+              [
+                evidence.page ?? "",
+                evidence.section ?? "",
+                evidence.noteReference ?? "",
+                evidence.snippet,
+              ].join("|"),
+          ),
+        }
+      : undefined,
+    leasingContext: {
+      flags: taxDeep.leasingContext.flags,
+      notes: sanitizeFinalNotesV1([
+        ...taxDeep.leasingContext.notes,
+        ...(Array.isArray(leasingContext.leasingCosts) ? leasingContext.leasingCosts : []),
+        ...(Array.isArray(leasingContext.leasingExpenses)
+          ? leasingContext.leasingExpenses
+          : []),
+        ...(Array.isArray(leasingContext.futureLeasingCommitments)
+          ? leasingContext.futureLeasingCommitments
+          : []),
+        ...(Array.isArray(leasingContext.leasingObligations)
+          ? leasingContext.leasingObligations
+          : []),
+      ]),
+      evidence: taxDeep.leasingContext.evidence,
+    },
+    groupContributionContext: {
+      flags: taxDeep.groupContributionContext.flags,
+      notes: sanitizeFinalNotesV1([
+        ...taxDeep.groupContributionContext.notes,
+        ...(Array.isArray(groupContributionContext.groupContributionsReceived)
+          ? groupContributionContext.groupContributionsReceived
+          : []),
+        ...(Array.isArray(groupContributionContext.groupContributionsPaid)
+          ? groupContributionContext.groupContributionsPaid
+          : []),
+      ]),
+      evidence: taxDeep.groupContributionContext.evidence,
+    },
+    shareholdingContext: {
+      dividendsReceived:
+        sanitizeFinalValueWithEvidenceV1(shareholdingContext.dividendsReceived) ??
+        sanitizeFinalValueWithEvidenceV1(shareholdingContext.dividends),
+      dividendsPaid: sanitizeFinalValueWithEvidenceV1(shareholdingContext.dividendsPaid),
+      flags: taxDeep.shareholdingContext.flags,
+      notes: sanitizeFinalNotesV1([
+        ...taxDeep.shareholdingContext.notes,
+        ...(Array.isArray(shareholdingContext.dividends) ? shareholdingContext.dividends : []),
+        ...(Array.isArray(shareholdingContext.proposedDividend)
+          ? shareholdingContext.proposedDividend
+          : []),
+        ...(Array.isArray(shareholdingContext.financialAssets)
+          ? shareholdingContext.financialAssets
+          : []),
+        ...(Array.isArray(shareholdingContext.participationsInGroupCompanies)
+          ? shareholdingContext.participationsInGroupCompanies
+          : []),
+        ...(Array.isArray(shareholdingContext.participationsInAssociatedCompanies)
+          ? shareholdingContext.participationsInAssociatedCompanies
+          : []),
+        ...(Array.isArray(shareholdingContext.otherLongTermSecurities)
+          ? shareholdingContext.otherLongTermSecurities
+          : []),
+      ]),
+      evidence: taxDeep.shareholdingContext.evidence,
+    },
+    priorYearComparatives: taxDeep.priorYearComparatives,
+  };
+}
+
 function dedupeByKeyV1<TValue>(
   values: TValue[],
   buildKey: (value: TValue) => string,
@@ -2872,9 +3141,10 @@ export async function executeAnnualReportAnalysisV1(
     }
   }
 
+  const sanitizedTaxDeep = sanitizeFinalTaxDeepForContractV1(taxDeep);
   const finalCoreFacts = applyProfitBeforeTaxStatementFallbackV1({
     coreFacts,
-    taxDeep,
+    taxDeep: sanitizedTaxDeep,
     warnings,
   });
   const finalOutput = AnnualReportAiExtractionResultV1Schema.parse({
@@ -2882,7 +3152,7 @@ export async function executeAnnualReportAnalysisV1(
     fields: finalCoreFacts.fields,
     taxSignals: finalCoreFacts.taxSignals,
     documentWarnings: [...new Set(warnings)],
-    taxDeep,
+    taxDeep: sanitizedTaxDeep,
     evidence: [],
   });
 

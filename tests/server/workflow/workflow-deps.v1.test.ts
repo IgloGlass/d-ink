@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  alignAnnualReportStatementsToInk2CodesV1,
+  buildDeterministicAnnualReportTaxAnalysisFallbackV1,
+  hydrateAnnualReportStatementEvidenceFromPageTextV1,
+  normalizeAnnualReportNumericFieldValueV1,
+  normalizeAnnualReportOrganizationNumberV1,
   normalizeAnnualReportAiDateFieldV1,
   sanitizeAnnualReportTaxDeepV1,
   normalizeAnnualReportTaxDeepV1,
@@ -29,6 +34,15 @@ describe("workflow deps annual-report AI date normalization v1", () => {
     expect(start.field.value).toBe("2025-01-01");
     expect(end.field.status).toBe("extracted");
     expect(end.field.value).toBe("2025-12-31");
+  });
+
+  it("normalizes organization numbers to a plain hyphen format", () => {
+    expect(normalizeAnnualReportOrganizationNumberV1("556271–5309")).toBe(
+      "556271-5309",
+    );
+    expect(normalizeAnnualReportOrganizationNumberV1("556271-5309")).toBe(
+      "556271-5309",
+    );
   });
 
   it("keeps the extraction path alive when one AI date is malformed", () => {
@@ -171,6 +185,244 @@ describe("workflow deps annual-report AI date normalization v1", () => {
     expect(normalized.taxExpenseContext?.deferredTax?.value).toBe(1000);
   });
 
+  it("normalizes field-level profit before tax using the pre-normalized statement unit", () => {
+    expect(normalizeAnnualReportNumericFieldValueV1(545286, "ksek")).toBe(
+      545286000,
+    );
+    expect(normalizeAnnualReportNumericFieldValueV1(545286, "sek")).toBe(
+      545286,
+    );
+    expect(normalizeAnnualReportNumericFieldValueV1(undefined, "ksek")).toBe(
+      undefined,
+    );
+  });
+
+  it("recovers missing statement amounts from evidence snippets before SEK normalization", () => {
+    const normalized = normalizeAnnualReportTaxDeepV1({
+      ink2rExtracted: {
+        statementUnit: "ksek",
+        incomeStatement: [
+          {
+            code: "profit_before_tax",
+            label: "Resultat före skatt",
+            evidence: [
+              {
+                snippet: "Resultat före skatt 545 286 771 473",
+                page: 15,
+              },
+            ],
+          },
+        ],
+        balanceSheet: [
+          {
+            code: "cash",
+            label: "Kassa och bank",
+            evidence: [
+              {
+                snippet: "Kassa och bank 301 521 287 144",
+                page: 16,
+              },
+            ],
+          },
+        ],
+      },
+      depreciationContext: { assetAreas: [], evidence: [] },
+      assetMovements: { lines: [], evidence: [] },
+      reserveContext: { movements: [], notes: [], evidence: [] },
+      netInterestContext: { notes: [], evidence: [] },
+      pensionContext: { flags: [], notes: [], evidence: [] },
+      taxExpenseContext: { notes: [], evidence: [] },
+      leasingContext: { flags: [], notes: [], evidence: [] },
+      groupContributionContext: { flags: [], notes: [], evidence: [] },
+      shareholdingContext: { flags: [], notes: [], evidence: [] },
+      priorYearComparatives: [],
+    });
+
+    expect(
+      normalized.ink2rExtracted.incomeStatement[0]?.currentYearValue,
+    ).toBe(545286000);
+    expect(
+      normalized.ink2rExtracted.incomeStatement[0]?.priorYearValue,
+    ).toBe(771473000);
+    expect(
+      normalized.ink2rExtracted.balanceSheet[0]?.currentYearValue,
+    ).toBe(301521000);
+    expect(
+      normalized.ink2rExtracted.balanceSheet[0]?.priorYearValue,
+    ).toBe(287144000);
+  });
+
+  it("recovers single-sided balance-sheet amounts when note references precede the value", () => {
+    const normalized = normalizeAnnualReportTaxDeepV1({
+      ink2rExtracted: {
+        statementUnit: "ksek",
+        incomeStatement: [],
+        balanceSheet: [
+          {
+            code: "long-term-liability",
+            label: "Övriga långfristiga skulder",
+            currentYearValue: 37,
+            priorYearValue: 429,
+            evidence: [
+              {
+                snippet: "Övriga långfristiga skulder 24 37 429 -",
+                page: 17,
+              },
+            ],
+          },
+        ],
+      },
+      depreciationContext: { assetAreas: [], evidence: [] },
+      assetMovements: { lines: [], evidence: [] },
+      reserveContext: { movements: [], notes: [], evidence: [] },
+      netInterestContext: { notes: [], evidence: [] },
+      pensionContext: { flags: [], notes: [], evidence: [] },
+      taxExpenseContext: { notes: [], evidence: [] },
+      leasingContext: { flags: [], notes: [], evidence: [] },
+      groupContributionContext: { flags: [], notes: [], evidence: [] },
+      shareholdingContext: { flags: [], notes: [], evidence: [] },
+      priorYearComparatives: [],
+    });
+
+    expect(normalized.ink2rExtracted.balanceSheet[0]?.currentYearValue).toBe(
+      37429000,
+    );
+    expect(normalized.ink2rExtracted.balanceSheet[0]?.priorYearValue).toBeUndefined();
+  });
+
+  it("hydrates missing statement evidence and unit from routed statement pages", () => {
+    const pageTexts = Array.from({ length: 16 }, () => "Page");
+    pageTexts[14] = [
+      "Resultaträkning",
+      "Belopp i KSEK",
+      "Nettoomsättning 1 3 989 355 4 381 698",
+      "Resultat före skatt 545 286 771 473",
+    ].join("\n");
+    pageTexts[15] = [
+      "Balansräkning",
+      "Kassa och bank 301 521 287 144",
+    ].join("\n");
+
+    const hydrated = hydrateAnnualReportStatementEvidenceFromPageTextV1({
+      taxDeep: {
+        ink2rExtracted: {
+          incomeStatement: [
+            {
+              code: "revenue",
+              label: "Nettoomsättning",
+              evidence: [],
+            },
+            {
+              code: "profit_before_tax",
+              label: "Resultat före skatt",
+              evidence: [],
+            },
+          ],
+          balanceSheet: [
+            {
+              code: "cash",
+              label: "Kassa och bank",
+              evidence: [],
+            },
+          ],
+        },
+        depreciationContext: { assetAreas: [], evidence: [] },
+        assetMovements: { lines: [], evidence: [] },
+        reserveContext: { movements: [], notes: [], evidence: [] },
+        netInterestContext: { notes: [], evidence: [] },
+        pensionContext: { flags: [], notes: [], evidence: [] },
+        taxExpenseContext: { notes: [], evidence: [] },
+        leasingContext: { flags: [], notes: [], evidence: [] },
+        groupContributionContext: { flags: [], notes: [], evidence: [] },
+        shareholdingContext: { flags: [], notes: [], evidence: [] },
+        priorYearComparatives: [],
+      },
+      pageTexts,
+      incomeStatementRanges: [{ startPage: 15, endPage: 15 }],
+      balanceSheetRanges: [{ startPage: 16, endPage: 16 }],
+    });
+    const normalized = normalizeAnnualReportTaxDeepV1(hydrated);
+
+    expect(hydrated.ink2rExtracted.statementUnit).toBe("ksek");
+    expect(
+      hydrated.ink2rExtracted.incomeStatement[0]?.evidence[0]?.snippet,
+    ).toContain("Nettoomsättning 1 3 989 355 4 381 698");
+    expect(
+      normalized.ink2rExtracted.incomeStatement[0]?.currentYearValue,
+    ).toBe(3989355000);
+    expect(
+      normalized.ink2rExtracted.incomeStatement[1]?.currentYearValue,
+    ).toBe(545286000);
+    expect(
+      normalized.ink2rExtracted.balanceSheet[0]?.currentYearValue,
+    ).toBe(301521000);
+  });
+
+  it("replaces placeholder statement rows with deterministic rows from routed pages", () => {
+    const pageTexts = Array.from({ length: 17 }, () => "Page");
+    pageTexts[14] = [
+      "Resultaträkning",
+      "Belopp i KSEK",
+      "Nettoomsättning 1 3 989 355 4 381 698",
+      "Rörelseresultat 542 839 624 526",
+      "Resultat före skatt 545 286 771 473",
+    ].join("\n");
+    pageTexts[15] = [
+      "Balansräkning",
+      "Belopp i KSEK",
+      "Kassa och bank 22 301 521 504 292",
+      "SUMMA TILLGÅNGAR 1 282 468 1 425 371",
+    ].join("\n");
+
+    const hydrated = hydrateAnnualReportStatementEvidenceFromPageTextV1({
+      taxDeep: {
+        ink2rExtracted: {
+          incomeStatement: [
+            {
+              code: "unclassified_line",
+              label: "Unknown line",
+              evidence: [],
+            },
+          ],
+          balanceSheet: [
+            {
+              code: "unclassified_line",
+              label: "Unknown line",
+              evidence: [],
+            },
+          ],
+        },
+        depreciationContext: { assetAreas: [], evidence: [] },
+        assetMovements: { lines: [], evidence: [] },
+        reserveContext: { movements: [], notes: [], evidence: [] },
+        netInterestContext: { notes: [], evidence: [] },
+        pensionContext: { flags: [], notes: [], evidence: [] },
+        taxExpenseContext: { notes: [], evidence: [] },
+        leasingContext: { flags: [], notes: [], evidence: [] },
+        groupContributionContext: { flags: [], notes: [], evidence: [] },
+        shareholdingContext: { flags: [], notes: [], evidence: [] },
+        priorYearComparatives: [],
+      },
+      pageTexts,
+      incomeStatementRanges: [{ startPage: 15, endPage: 15 }],
+      balanceSheetRanges: [{ startPage: 16, endPage: 16 }],
+    });
+    const normalized = normalizeAnnualReportTaxDeepV1(hydrated);
+
+    expect(hydrated.ink2rExtracted.incomeStatement.length).toBeGreaterThan(1);
+    expect(hydrated.ink2rExtracted.balanceSheet.length).toBeGreaterThan(1);
+    expect(
+      normalized.ink2rExtracted.incomeStatement.find(
+        (line) => line.label === "Resultat före skatt",
+      )?.currentYearValue,
+    ).toBe(545286000);
+    expect(
+      normalized.ink2rExtracted.balanceSheet.find(
+        (line) => line.label === "Kassa och bank",
+      )?.currentYearValue,
+    ).toBe(301521000);
+  });
+
   it("sanitizes legacy overdrive taxDeep keys before strict extraction parsing", () => {
     const sanitized = sanitizeAnnualReportTaxDeepV1({
       ink2rExtracted: {
@@ -256,12 +508,20 @@ describe("workflow deps annual-report AI date normalization v1", () => {
           page: 24,
           snippet: "Skatt på årets resultat 14",
         },
+        recognizedTax: {
+          value: 14,
+          page: 24,
+          snippet: "Redovisad skatt 14",
+        },
+        reconciliation: ["Skatteavstämning enligt not 9."],
         taxReceivables: ["ignored legacy field"],
       } as never,
       leasingContext: {
         flags: [],
         notes: [],
         evidence: [],
+        leasingExpenses: ["Leasingkostnader under året uppgår till 12."],
+        leasingObligations: ["Leasingförpliktelser uppgår till 40."],
         futureLeasingCommitments: ["Framtida leasingavgifter uppgår till 40."],
       } as never,
       groupContributionContext: {
@@ -274,7 +534,11 @@ describe("workflow deps annual-report AI date normalization v1", () => {
         flags: [],
         notes: [],
         evidence: [],
+        dividends: ["Utdelningar under året 25."],
         proposedDividend: ["Föreslagen utdelning 100."],
+        participationsInGroupCompanies: ["Andelar i koncernföretag framgår av not 18."],
+        participationsInAssociatedCompanies: ["Andelar i intresseföretag framgår av not 19."],
+        otherLongTermSecurities: ["Andra långfristiga värdepappersinnehav framgår av not 20."],
       } as never,
       priorYearComparatives: [],
     });
@@ -286,9 +550,387 @@ describe("workflow deps annual-report AI date normalization v1", () => {
     expect(sanitized.netInterestContext.interestIncome?.evidence[0]?.page).toBe(24);
     expect(sanitized.netInterestContext.financeIncome?.value).toBe(1);
     expect(sanitized.taxExpenseContext?.totalTaxExpense?.evidence[0]?.snippet).toContain("Skatt");
+    expect(sanitized.taxExpenseContext?.currentTax?.evidence[0]?.snippet).toContain(
+      "Redovisad skatt",
+    );
+    expect(sanitized.taxExpenseContext?.notes).toContain("Skatteavstämning enligt not 9.");
     expect(sanitized.pensionContext.notes).toContain("Pensionskostnader framgår av not 5.");
+    expect(sanitized.leasingContext.notes).toContain("Leasingkostnader under året uppgår till 12.");
     expect(sanitized.leasingContext.notes).toContain("Framtida leasingavgifter uppgår till 40.");
     expect(sanitized.groupContributionContext.notes).toContain("Koncernbidrag mottaget.");
+    expect(sanitized.shareholdingContext.notes).toContain("Utdelningar under året 25.");
     expect(sanitized.shareholdingContext.notes).toContain("Föreslagen utdelning 100.");
+    expect(sanitized.shareholdingContext.notes).toContain(
+      "Andelar i koncernföretag framgår av not 18.",
+    );
+  });
+
+  it("aligns extracted statement lines to INK2 codes and drops summary rows", () => {
+    const aligned = alignAnnualReportStatementsToInk2CodesV1({
+      pageTexts: [
+        "",
+        "",
+        "",
+        [
+          "Resultaträkning",
+          "Rörelsens intäkter",
+          "Nettoomsättning 3 989 355 4 381 698",
+          "Rörelsens kostnader",
+          "Övriga externa kostnader 1 234 567 1 111 111",
+          "Resultat före skatt 545 286 771 473",
+        ].join("\n"),
+        [
+          "Balansräkning",
+          "Tillgångar",
+          "Kassa och bank 301 521 287 144",
+          "Kortfristiga skulder",
+          "Övriga skulder till kreditinstitut 42 000 39 000",
+          "Leverantörsskulder 145 000 121 000",
+          "SUMMA TILLGÅNGAR 1 282 468 1 425 371",
+        ].join("\n"),
+      ],
+      taxDeep: {
+        ink2rExtracted: {
+          statementUnit: "sek",
+          incomeStatement: [
+            {
+              code: "raw-revenue",
+              label: "Nettoomsättning",
+              currentYearValue: 3989355,
+              priorYearValue: 4381698,
+              evidence: [{ snippet: "Nettoomsättning 3 989 355 4 381 698", page: 4 }],
+            },
+            {
+              code: "raw-costs",
+              label: "Övriga externa kostnader",
+              currentYearValue: 1234567,
+              priorYearValue: 1111111,
+              evidence: [
+                {
+                  snippet: "Övriga externa kostnader 1 234 567 1 111 111",
+                  page: 4,
+                },
+              ],
+            },
+            {
+              code: "raw-pbt",
+              label: "Resultat före skatt",
+              currentYearValue: 545286,
+              priorYearValue: 771473,
+              evidence: [{ snippet: "Resultat före skatt 545 286 771 473", page: 4 }],
+            },
+          ],
+          balanceSheet: [
+            {
+              code: "raw-cash",
+              label: "Kassa och bank",
+              currentYearValue: 301521,
+              priorYearValue: 287144,
+              evidence: [{ snippet: "Kassa och bank 301 521 287 144", page: 5 }],
+            },
+            {
+              code: "raw-bank-debt",
+              label: "Övriga skulder till kreditinstitut",
+              currentYearValue: 42000,
+              priorYearValue: 39000,
+              evidence: [
+                {
+                  snippet: "Övriga skulder till kreditinstitut 42 000 39 000",
+                  page: 5,
+                },
+              ],
+            },
+            {
+              code: "raw-suppliers",
+              label: "Leverantörsskulder",
+              currentYearValue: 145000,
+              priorYearValue: 121000,
+              evidence: [{ snippet: "Leverantörsskulder 145 000 121 000", page: 5 }],
+            },
+            {
+              code: "raw-total",
+              label: "SUMMA TILLGÅNGAR",
+              currentYearValue: 1282468,
+              priorYearValue: 1425371,
+              evidence: [{ snippet: "SUMMA TILLGÅNGAR 1 282 468 1 425 371", page: 5 }],
+            },
+          ],
+        },
+        depreciationContext: { assetAreas: [], evidence: [] },
+        assetMovements: { lines: [], evidence: [] },
+        reserveContext: { movements: [], notes: [], evidence: [] },
+        netInterestContext: { notes: [], evidence: [] },
+        pensionContext: { flags: [], notes: [], evidence: [] },
+        taxExpenseContext: { notes: [], evidence: [] },
+        leasingContext: { flags: [], notes: [], evidence: [] },
+        groupContributionContext: { flags: [], notes: [], evidence: [] },
+        shareholdingContext: { flags: [], notes: [], evidence: [] },
+        priorYearComparatives: [],
+      },
+    });
+
+    expect(aligned.taxDeep.ink2rExtracted.incomeStatement).toEqual([
+      expect.objectContaining({ code: "3.1", label: "Nettoomsättning" }),
+      expect.objectContaining({
+        code: "3.7",
+        label: "Övriga externa kostnader",
+      }),
+    ]);
+    expect(
+      aligned.taxDeep.ink2rExtracted.incomeStatement.some(
+        (line) => line.label === "Resultat före skatt",
+      ),
+    ).toBe(false);
+    expect(aligned.taxDeep.ink2rExtracted.balanceSheet).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "2.26",
+          label: "Kassa, bank och redovisningsmedel",
+        }),
+        expect.objectContaining({
+          code: "2.41",
+          label: "Övriga skulder till kreditinstitut",
+        }),
+        expect.objectContaining({
+          code: "2.45",
+          label: "Leverantörsskulder",
+        }),
+      ]),
+    );
+    expect(
+      aligned.taxDeep.ink2rExtracted.balanceSheet.some((line) =>
+        line.label.includes("SUMMA"),
+      ),
+    ).toBe(false);
+  });
+
+  it("maps common Swedish balance-sheet labels into INK2 codes and ignores disposition-only rows", () => {
+    const aligned = alignAnnualReportStatementsToInk2CodesV1({
+      pageTexts: [
+        "",
+        "",
+        "",
+        "",
+        "",
+        [
+          "Balansräkning",
+          "Immateriella anläggningstillgångar",
+          "Programvaror 49 004 33 174",
+          "Materiella anläggningstillgångar",
+          "Datorer 15 572 22 132",
+          "Kortfristiga fordringar",
+          "Skattefordran 46 760 1 056",
+          "Upparbetade ej fakturerade arvoden 42 951 86 307",
+          "Eget kapital",
+          "Reservfond 3 523 3 523",
+          "Långfristiga skulder",
+          "Övriga långfristiga skulder 37 429 -",
+          "I ny räkning balanseras 1 612",
+        ].join("\n"),
+      ],
+      taxDeep: {
+        ink2rExtracted: {
+          statementUnit: "sek",
+          incomeStatement: [],
+          balanceSheet: [
+            {
+              code: "raw-programs",
+              label: "Programvaror",
+              currentYearValue: 49004000,
+              priorYearValue: 33174000,
+              evidence: [{ snippet: "Programvaror 49 004 33 174", page: 5 }],
+            },
+            {
+              code: "raw-computers",
+              label: "Datorer",
+              currentYearValue: 15572000,
+              priorYearValue: 22132000,
+              evidence: [{ snippet: "Datorer 15 572 22 132", page: 5 }],
+            },
+            {
+              code: "raw-tax-receivable",
+              label: "Skattefordran",
+              currentYearValue: 46760000,
+              priorYearValue: 1056000,
+              evidence: [{ snippet: "Skattefordran 46 760 1 056", page: 5 }],
+            },
+            {
+              code: "raw-unbilled",
+              label: "Upparbetade ej fakturerade arvoden",
+              currentYearValue: 42951000,
+              priorYearValue: 86307000,
+              evidence: [
+                {
+                  snippet: "Upparbetade ej fakturerade arvoden 42 951 86 307",
+                  page: 5,
+                },
+              ],
+            },
+            {
+              code: "raw-reserve-fund",
+              label: "Reservfond",
+              currentYearValue: 3523000,
+              priorYearValue: 3523000,
+              evidence: [{ snippet: "Reservfond 3 523 3 523", page: 5 }],
+            },
+            {
+              code: "raw-long-term-other-debt",
+              label: "Övriga långfristiga skulder",
+              currentYearValue: 37429000,
+              evidence: [{ snippet: "Övriga långfristiga skulder 37 429 -", page: 5 }],
+            },
+            {
+              code: "raw-disposition",
+              label: "I ny räkning balanseras",
+              currentYearValue: 1612000,
+              evidence: [{ snippet: "I ny räkning balanseras 1 612", page: 5 }],
+            },
+          ],
+        },
+        depreciationContext: { assetAreas: [], evidence: [] },
+        assetMovements: { lines: [], evidence: [] },
+        reserveContext: { movements: [], notes: [], evidence: [] },
+        netInterestContext: { notes: [], evidence: [] },
+        pensionContext: { flags: [], notes: [], evidence: [] },
+        taxExpenseContext: { notes: [], evidence: [] },
+        leasingContext: { flags: [], notes: [], evidence: [] },
+        groupContributionContext: { flags: [], notes: [], evidence: [] },
+        shareholdingContext: { flags: [], notes: [], evidence: [] },
+        priorYearComparatives: [],
+      },
+    });
+
+    expect(aligned.taxDeep.ink2rExtracted.balanceSheet).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "2.1" }),
+        expect.objectContaining({ code: "2.4" }),
+        expect.objectContaining({ code: "2.21" }),
+        expect.objectContaining({ code: "2.22" }),
+        expect.objectContaining({ code: "2.27" }),
+        expect.objectContaining({ code: "2.39" }),
+      ]),
+    );
+    expect(
+      aligned.taxDeep.ink2rExtracted.balanceSheet.some(
+        (line) => line.label === "I ny räkning balanseras",
+      ),
+    ).toBe(false);
+    expect(aligned.warnings).toEqual([]);
+  });
+
+  it("builds a deterministic fallback annual-report tax analysis", () => {
+    const fallback = buildDeterministicAnnualReportTaxAnalysisFallbackV1({
+      config: null,
+      extraction: {
+        schemaVersion: "annual_report_extraction_v1",
+        sourceFileName: "annual-report.pdf",
+        sourceFileType: "pdf",
+        policyVersion: "annual-report-manual-first.v1",
+        fields: {
+          companyName: { status: "extracted", confidence: 0.9, value: "Test AB" },
+          organizationNumber: {
+            status: "extracted",
+            confidence: 0.9,
+            value: "556123-1234",
+          },
+          fiscalYearStart: {
+            status: "extracted",
+            confidence: 0.9,
+            value: "2025-01-01",
+          },
+          fiscalYearEnd: {
+            status: "extracted",
+            confidence: 0.9,
+            value: "2025-12-31",
+          },
+          accountingStandard: {
+            status: "extracted",
+            confidence: 0.9,
+            value: "K3",
+          },
+          profitBeforeTax: {
+            status: "extracted",
+            confidence: 0.9,
+            value: 100000,
+          },
+        },
+        summary: { autoDetectedFieldCount: 6, needsReviewFieldCount: 0 },
+        taxSignals: [],
+        documentWarnings: [
+          "degraded.tax_notes_assets.unavailable:[tax notes assets/reserves] Stage timed out.",
+        ],
+        taxDeep: {
+          ink2rExtracted: { incomeStatement: [], balanceSheet: [] },
+          depreciationContext: {
+            assetAreas: [
+              {
+                assetArea: "Inventarier",
+                acquisitions: 100000,
+                evidence: [{ snippet: "Inventarier 100 000", page: 26 }],
+              },
+            ],
+            evidence: [{ snippet: "Not 8 inventarier", page: 26 }],
+          },
+          assetMovements: { lines: [], evidence: [] },
+          reserveContext: {
+            movements: [
+              {
+                reserveType: "Periodiseringsfond",
+                closingBalance: 50000,
+                evidence: [{ snippet: "Periodiseringsfond 50 000", page: 27 }],
+              },
+            ],
+            notes: [],
+            evidence: [{ snippet: "Not 9 periodiseringsfond", page: 27 }],
+          },
+          netInterestContext: {
+            interestExpense: {
+              value: 12000,
+              evidence: [{ snippet: "Räntekostnader 12 000", page: 24 }],
+            },
+            notes: [],
+            evidence: [{ snippet: "Not 7 finansnetto", page: 24 }],
+          },
+          pensionContext: { flags: [], notes: [], evidence: [] },
+          taxExpenseContext: {
+            totalTaxExpense: {
+              value: 21000,
+              evidence: [{ snippet: "Skatt på årets resultat 21 000", page: 24 }],
+            },
+            notes: [],
+            evidence: [{ snippet: "Not 10 skatt", page: 24 }],
+          },
+          leasingContext: { flags: [], notes: [], evidence: [] },
+          groupContributionContext: {
+            flags: [],
+            notes: ["Koncernbidrag förekommer."],
+            evidence: [{ snippet: "Koncernbidrag", page: 25 }],
+          },
+          shareholdingContext: { flags: [], notes: [], evidence: [] },
+          priorYearComparatives: [],
+        },
+        confirmation: { isConfirmed: false },
+      },
+      extractionArtifactId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      fallbackReason: "Gemini request timed out after 180000ms.",
+      modelName: "gemini-2.5-flash",
+      policyVersion: "annual-report-tax-analysis.v1",
+    });
+
+    expect(fallback.executiveSummary).toContain("deterministic fallback");
+    expect(fallback.findings.length).toBeGreaterThanOrEqual(3);
+    expect(fallback.findings.map((finding) => finding.area)).toEqual(
+      expect.arrayContaining([
+        "depreciation_differences",
+        "untaxed_reserves",
+        "net_interest",
+      ]),
+    );
+    expect(fallback.missingInformation[0]).toContain("Detailed note extraction");
+    expect(fallback.recommendedNextActions).toEqual(
+      expect.arrayContaining([
+        "Reconcile the fixed-asset note to the tax depreciation schedule.",
+      ]),
+    );
   });
 });

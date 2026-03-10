@@ -1643,6 +1643,225 @@ describe("CoreModuleShellPageV1", () => {
     expect(screen.queryByText("Test Company AB")).not.toBeInTheDocument();
   });
 
+  it("renders INK2-coded rows with a balance control instead of raw summary rows", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (
+        url.includes("/v1/workspaces/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa?") &&
+        method === "GET"
+      ) {
+        return mockJsonResponse({
+          status: 200,
+          body: {
+            ok: true,
+            workspace: {
+              id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              tenantId: sessionPrincipalMock.tenantId,
+              companyId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+              fiscalYearStart: "2025-01-01",
+              fiscalYearEnd: "2025-12-31",
+              status: "draft",
+              createdAt: "2026-03-01T10:00:00.000Z",
+              updatedAt: "2026-03-01T10:00:00.000Z",
+            },
+          },
+        });
+      }
+
+      if (url.includes("/annual-report-extractions/active?")) {
+        return mockJsonResponse({
+          status: 200,
+          body: {
+            ok: true,
+            active: {
+              artifactId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              version: 3,
+              schemaVersion: "annual_report_extraction_v1",
+            },
+            extraction: {
+              schemaVersion: "annual_report_extraction_v1",
+              sourceFileName: "annual-report.pdf",
+              sourceFileType: "pdf",
+              policyVersion: "annual-report-manual-first.v1",
+              fields: {
+                companyName: {
+                  value: "Test Company AB",
+                  status: "extracted",
+                  confidence: 0.95,
+                },
+                organizationNumber: {
+                  value: "556123-1234",
+                  status: "extracted",
+                  confidence: 0.95,
+                },
+                fiscalYearStart: {
+                  value: "2025-01-01",
+                  status: "extracted",
+                  confidence: 0.95,
+                },
+                fiscalYearEnd: {
+                  value: "2025-12-31",
+                  status: "extracted",
+                  confidence: 0.95,
+                },
+                accountingStandard: {
+                  value: "K3",
+                  status: "extracted",
+                  confidence: 0.92,
+                },
+                profitBeforeTax: {
+                  value: 545286000,
+                  status: "extracted",
+                  confidence: 0.9,
+                },
+              },
+              summary: { autoDetectedFieldCount: 6, needsReviewFieldCount: 0 },
+              taxSignals: [],
+              documentWarnings: [],
+              taxDeep: {
+                ink2rExtracted: {
+                  statementUnit: "sek",
+                  incomeStatement: [
+                    {
+                      code: "3.1",
+                      label: "Nettoomsättning",
+                      currentYearValue: 3989355000,
+                      priorYearValue: 4381698000,
+                      evidence: [],
+                    },
+                    {
+                      code: "3.7",
+                      label: "Övriga externa kostnader",
+                      currentYearValue: 1234567000,
+                      priorYearValue: 1111111000,
+                      evidence: [],
+                    },
+                  ],
+                  balanceSheet: [
+                    {
+                      code: "2.26",
+                      label: "Kassa, bank och redovisningsmedel",
+                      currentYearValue: 301521000,
+                      priorYearValue: 287144000,
+                      evidence: [],
+                    },
+                    {
+                      code: "2.27",
+                      label: "Bundet eget kapital",
+                      currentYearValue: 150000000,
+                      priorYearValue: 150000000,
+                      evidence: [],
+                    },
+                    {
+                      code: "2.28",
+                      label: "Fritt eget kapital",
+                      currentYearValue: 31000000,
+                      priorYearValue: 16144000,
+                      evidence: [],
+                    },
+                    {
+                      code: "2.45",
+                      label: "Leverantörsskulder",
+                      currentYearValue: 120521000,
+                      priorYearValue: 121000000,
+                      evidence: [],
+                    },
+                  ],
+                },
+                depreciationContext: { assetAreas: [], evidence: [] },
+                assetMovements: { lines: [], evidence: [] },
+                reserveContext: { movements: [], notes: [], evidence: [] },
+                netInterestContext: { notes: [], evidence: [] },
+                pensionContext: { flags: [], notes: [], evidence: [] },
+                leasingContext: { flags: [], notes: [], evidence: [] },
+                groupContributionContext: { flags: [], notes: [], evidence: [] },
+                shareholdingContext: { flags: [], notes: [], evidence: [] },
+                priorYearComparatives: [],
+              },
+              confirmation: {
+                isConfirmed: true,
+                confirmedAt: "2026-03-01T10:00:00.000Z",
+                confirmedByUserId: sessionPrincipalMock.userId,
+              },
+            },
+          },
+        });
+      }
+
+      if (url.includes("/annual-report-tax-analysis/active?")) {
+        return mockNotFoundResponse("TAX_ANALYSIS_NOT_FOUND");
+      }
+      if (url.includes("/annual-report-processing/latest?")) {
+        return mockNotFoundResponse("PROCESSING_RUN_NOT_FOUND");
+      }
+      if (url.includes("/mapping-decisions/active?")) {
+        return mockNotFoundResponse("MAPPING_NOT_FOUND");
+      }
+      if (url.includes("/tax-adjustments/active?")) {
+        return mockNotFoundResponse("ADJUSTMENTS_NOT_FOUND");
+      }
+      if (url.includes("/tax-summary/active?")) {
+        return mockNotFoundResponse("TAX_SUMMARY_NOT_FOUND");
+      }
+      if (url.includes("/ink2-form/active?")) {
+        return mockNotFoundResponse("INK2_FORM_NOT_FOUND");
+      }
+      if (url.includes("/comments?")) {
+        return mockJsonResponse({ status: 200, body: { ok: true, comments: [] } });
+      }
+      if (url.includes("/tasks?")) {
+        return mockJsonResponse({ status: 200, body: { ok: true, tasks: [] } });
+      }
+
+      return mockJsonResponse({
+        status: 500,
+        body: {
+          ok: false,
+          error: {
+            code: "UNEXPECTED",
+            message: "Unexpected call",
+            user_message: "Unexpected call",
+            context: {},
+          },
+        },
+      });
+    });
+
+    render(
+      <AppProviders>
+        <MemoryRouter
+          initialEntries={[
+            "/app/workspaces/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/annual-report-analysis",
+          ]}
+        >
+          <Routes>
+            <Route
+              path="/app/workspaces/:workspaceId/:coreModule"
+              element={<CoreModuleShellPageV1 />}
+            />
+          </Routes>
+        </MemoryRouter>
+      </AppProviders>,
+    );
+
+    await screen.findByRole("heading", { name: "Financial data" });
+
+    expect(screen.getByText("2.26")).toBeInTheDocument();
+    expect(
+      screen.getByText("Kassa, bank och redovisningsmedel"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Balance control")).toBeInTheDocument();
+    expect(screen.getByText("Equity + liabilities")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Control passed: assets equal equity plus liabilities.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("SUMMA TILLGÅNGAR")).not.toBeInTheDocument();
+  });
+
   it("requires confirmation before rerunning account mapping when active mapping data exists", async () => {
     let trialBalanceRunCount = 0;
     const confirmSpy = vi

@@ -2375,7 +2375,7 @@ describe("executeAnnualReportAnalysisV1", () => {
     );
   });
 
-  it("strips legacy Gemini statement keys before building the final extraction contract", async () => {
+  it("strips legacy Gemini keys before building the final extraction contract", async () => {
     generateGeminiStructuredOutputMock.mockReset();
     generateGeminiStructuredOutputMock.mockImplementation(async (input) => {
       const userInstruction = String(input?.request?.userInstruction ?? "");
@@ -2442,10 +2442,46 @@ describe("executeAnnualReportAnalysisV1", () => {
         output: {
           schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
           netInterestContext: { notes: [], evidence: [] },
-          pensionContext: { flags: [], notes: [], evidence: [] },
-          leasingContext: { flags: [], notes: [], evidence: [] },
+          pensionContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+            pensionCosts: ["Pensionskostnader framgår av not 5."],
+            pensionObligations: ["Pensionsförpliktelser redovisas separat."],
+          },
+          taxExpenseContext: {
+            notes: [],
+            evidence: [],
+            recognizedTax: {
+              value: 120,
+              page: 26,
+              snippet: "Aktuell skatt 120",
+            },
+            reconciliation: ["Skatten avviker från schablonberäkningen."],
+          },
+          leasingContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+            leasingExpenses: ["Leasingkostnader under året uppgår till 12."],
+            leasingObligations: ["Framtida leasingåtaganden framgår av not 3."],
+          },
           groupContributionContext: { flags: [], notes: [], evidence: [] },
-          shareholdingContext: { flags: [], notes: [], evidence: [] },
+          shareholdingContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+            dividends: ["Utdelning från koncernföretag framgår av not 18."],
+            participationsInGroupCompanies: [
+              "Andelar i koncernföretag framgår av not 18.",
+            ],
+            participationsInAssociatedCompanies: [
+              "Inga intresseföretag redovisade under året.",
+            ],
+            otherLongTermSecurities: [
+              "Andra långfristiga värdepappersinnehav framgår av not 20.",
+            ],
+          },
           evidence: [],
         },
       };
@@ -2513,6 +2549,49 @@ describe("executeAnnualReportAnalysisV1", () => {
       incomeStatement: [{ code: "profit_before_tax", label: "Resultat före skatt", currentYearValue: 545286 }],
       balanceSheet: [{ code: "cash", label: "Kassa och bank", currentYearValue: 301521 }],
     });
+    expect(result.extraction.taxDeep.pensionContext.notes).toEqual(
+      expect.arrayContaining([
+        "Pensionskostnader framgår av not 5.",
+        "Pensionsförpliktelser redovisas separat.",
+      ]),
+    );
+    expect(result.extraction.taxDeep.pensionContext).not.toHaveProperty(
+      "pensionCosts",
+    );
+    expect(result.extraction.taxDeep.taxExpenseContext).toMatchObject({
+      currentTax: {
+        value: 120,
+        evidence: [{ page: 26, snippet: "Aktuell skatt 120" }],
+      },
+    });
+    expect(result.extraction.taxDeep.taxExpenseContext?.notes).toEqual(
+      expect.arrayContaining([
+        "Skatten avviker från schablonberäkningen.",
+      ]),
+    );
+    expect(result.extraction.taxDeep.taxExpenseContext).not.toHaveProperty(
+      "recognizedTax",
+    );
+    expect(result.extraction.taxDeep.leasingContext.notes).toEqual(
+      expect.arrayContaining([
+        "Leasingkostnader under året uppgår till 12.",
+        "Framtida leasingåtaganden framgår av not 3.",
+      ]),
+    );
+    expect(result.extraction.taxDeep.leasingContext).not.toHaveProperty(
+      "leasingExpenses",
+    );
+    expect(result.extraction.taxDeep.shareholdingContext.notes).toEqual(
+      expect.arrayContaining([
+        "Utdelning från koncernföretag framgår av not 18.",
+        "Andelar i koncernföretag framgår av not 18.",
+        "Inga intresseföretag redovisade under året.",
+        "Andra långfristiga värdepappersinnehav framgår av not 20.",
+      ]),
+    );
+    expect(result.extraction.taxDeep.shareholdingContext).not.toHaveProperty(
+      "participationsInGroupCompanies",
+    );
   });
 
   it("prefers AI statement-row profit before tax over deterministic seed fallback", async () => {

@@ -65,20 +65,24 @@ export function SessionGate() {
   });
 
   const shouldAutoDevLogin = isLocalDevHostV1();
-  const sessionMissingOrExpired =
-    sessionQuery.isError &&
-    sessionQuery.error instanceof ApiClientError &&
-    (sessionQuery.error.code === "SESSION_MISSING" ||
-      sessionQuery.error.code === "SESSION_INVALID_OR_EXPIRED");
+  const isSessionApiError =
+    sessionQuery.isError && sessionQuery.error instanceof ApiClientError;
+  const sessionApiError = isSessionApiError
+    ? (sessionQuery.error as ApiClientError)
+    : null;
+  const sessionMissingOrExpired = Boolean(
+    sessionApiError &&
+      (sessionApiError.code === "SESSION_MISSING" ||
+        sessionApiError.code === "SESSION_INVALID_OR_EXPIRED"),
+  );
+  const shouldAttemptLocalDevRecovery =
+    shouldAutoDevLogin &&
+    isSessionApiError &&
+    !devLoginMutation.isPending &&
+    !hasAttemptedAutoLogin;
 
   useEffect(() => {
-    if (!shouldAutoDevLogin) {
-      return;
-    }
-    if (!sessionQuery.isError || !sessionMissingOrExpired) {
-      return;
-    }
-    if (devLoginMutation.isPending || hasAttemptedAutoLogin) {
+    if (!shouldAttemptLocalDevRecovery) {
       return;
     }
 
@@ -88,9 +92,7 @@ export function SessionGate() {
   }, [
     devLoginMutation,
     hasAttemptedAutoLogin,
-    sessionMissingOrExpired,
-    sessionQuery.isError,
-    shouldAutoDevLogin,
+    shouldAttemptLocalDevRecovery,
   ]);
 
   if (sessionQuery.isPending) {
@@ -112,7 +114,7 @@ export function SessionGate() {
 
   const isAutoSigningIn =
     shouldAutoDevLogin &&
-    sessionMissingOrExpired &&
+    isSessionApiError &&
     (!hasAttemptedAutoLogin || devLoginMutation.isPending);
   if (isAutoSigningIn) {
     return (
@@ -157,7 +159,7 @@ export function SessionGate() {
   const defaultMessage = toUserFacingErrorMessage(sessionQuery.error);
   const shouldShowApiMessage =
     sessionQuery.error instanceof ApiClientError &&
-    sessionQuery.error.code !== "SESSION_MISSING";
+    !shouldAutoDevLogin;
 
   return (
     <CardV1 className="auth-card">

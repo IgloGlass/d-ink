@@ -703,8 +703,35 @@ async function isExtractionArtifactStillActiveV1(input: {
     await input.deps.artifactRepository.getActiveAnnualReportExtraction({
       tenantId: input.tenantId,
       workspaceId: input.workspaceId,
-    });
+  });
   return activeExtraction?.id === input.artifactId;
+}
+
+const EXTRACTION_ACTIVE_RETRY_ATTEMPTS_V1 = 6;
+const EXTRACTION_ACTIVE_RETRY_DELAY_MS_V1 = 50;
+
+async function delayV1(milliseconds: number): Promise<void> {
+  await new Promise((resolve) => {
+    globalThis.setTimeout(resolve, milliseconds);
+  });
+}
+
+async function waitForActiveExtractionArtifactV1(input: {
+  artifactId: string;
+  deps: AnnualReportProcessingDepsV1;
+  tenantId: string;
+  workspaceId: string;
+}): Promise<boolean> {
+  for (let attempt = 0; attempt < EXTRACTION_ACTIVE_RETRY_ATTEMPTS_V1; attempt += 1) {
+    if (await isExtractionArtifactStillActiveV1(input)) {
+      return true;
+    }
+    if (attempt < EXTRACTION_ACTIVE_RETRY_ATTEMPTS_V1 - 1) {
+      await delayV1(EXTRACTION_ACTIVE_RETRY_DELAY_MS_V1);
+    }
+  }
+
+  return false;
 }
 
 async function executeProcessingRunFromSourceBytesV1(input: {
@@ -893,13 +920,24 @@ async function executeProcessingRunFromSourceBytesV1(input: {
       return;
     }
     if (
-      !(await isExtractionArtifactStillActiveV1({
+      !(await waitForActiveExtractionArtifactV1({
         artifactId: persistedExtraction.artifact.id,
         deps,
         tenantId: currentRun.tenantId,
         workspaceId: currentRun.workspaceId,
       }))
     ) {
+      await markRunStatusV1({
+        deps,
+        run,
+        status: run.status,
+        resultExtractionArtifactId: persistedExtraction.artifact.id,
+        technicalDetails: [
+          ...extractionWarnings,
+          "tax_analysis.background.skipped",
+          "tax_analysis.background.skip_reason=extraction_not_active_after_retry_pre_analysis",
+        ],
+      });
       return;
     }
 
@@ -925,13 +963,24 @@ async function executeProcessingRunFromSourceBytesV1(input: {
     }
 
     if (
-      !(await isExtractionArtifactStillActiveV1({
+      !(await waitForActiveExtractionArtifactV1({
         artifactId: persistedExtraction.artifact.id,
         deps,
         tenantId: currentRun.tenantId,
         workspaceId: currentRun.workspaceId,
       }))
     ) {
+      await markRunStatusV1({
+        deps,
+        run,
+        status: run.status,
+        resultExtractionArtifactId: persistedExtraction.artifact.id,
+        technicalDetails: [
+          ...extractionWarnings,
+          "tax_analysis.background.skipped",
+          "tax_analysis.background.skip_reason=extraction_not_active_after_retry_pre_persist",
+        ],
+      });
       return;
     }
 
@@ -967,6 +1016,9 @@ async function executeProcessingRunFromSourceBytesV1(input: {
       resultTaxAnalysisArtifactId: persistedTaxAnalysis.artifact.id,
       technicalDetails: [
         ...extractionWarnings,
+        ...(taxAnalysisResult.taxAnalysis.aiRun?.usedFallback
+          ? ["tax_analysis.background.fallback_used"]
+          : []),
         "tax_analysis.background.completed",
       ],
       degradation: extractionIsPartial

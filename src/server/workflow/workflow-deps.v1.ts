@@ -12,6 +12,12 @@ import { createD1WorkspaceRepositoryV1 } from "../../db/repositories/workspace.r
 import type { Env } from "../../shared/types/env";
 import type { AnnualReportProcessingRunStatusV1 } from "../../shared/contracts/annual-report-processing-run.v1";
 import {
+  ANNUAL_REPORT_CODES_SV_V1,
+  getAnnualReportCodeDefinitionV1,
+  getAnnualReportCodeOrderV1,
+  type AnnualReportCodeDefinitionV1,
+} from "../../shared/contracts/annual-report-codes.v1";
+import {
   type AnnualReportAmountUnitV1,
   type AnnualReportRuntimeMetadataV1,
   type AnnualReportTaxDeepExtractionV1,
@@ -33,7 +39,10 @@ import {
 } from "../ai/document-prep/annual-report-document.v1";
 import { executeAnnualReportAnalysisV1 } from "../ai/modules/annual-report-analysis/executor.v1";
 import { loadAnnualReportAnalysisModuleConfigV1 } from "../ai/modules/annual-report-analysis/loader.v1";
-import { executeAnnualReportTaxAnalysisV1 } from "../ai/modules/annual-report-tax-analysis/executor.v1";
+import {
+  executeAnnualReportTaxAnalysisV1,
+  type AnnualReportTaxAnalysisRuntimeConfigV1,
+} from "../ai/modules/annual-report-tax-analysis/executor.v1";
 import { loadAnnualReportTaxAnalysisModuleConfigV1 } from "../ai/modules/annual-report-tax-analysis/loader.v1";
 import { executeMappingDecisionsModelV1 } from "../ai/modules/mapping-decisions/executor.v1";
 import { loadMappingDecisionsModuleConfigV1 } from "../ai/modules/mapping-decisions/loader.v1";
@@ -615,6 +624,833 @@ function resolveAnnualReportAmountMultiplierV1(
   return 1;
 }
 
+export function normalizeAnnualReportNumericFieldValueV1(
+  value: number | undefined,
+  unit: AnnualReportAmountUnitV1 | undefined,
+): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return value * resolveAnnualReportAmountMultiplierV1(unit);
+}
+
+export function normalizeAnnualReportOrganizationNumberV1(
+  value: string | undefined,
+): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value
+    .trim()
+    .replace(/[–—]/g, "-")
+    .replace(/\s+/g, "");
+  return /^\d{6}-\d{4}$/.test(normalized) ? normalized : value.trim();
+}
+
+function normalizeAnnualReportStatementMatchTextV1(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+type AnnualReportStatementContextV1 = {
+  groupSv?: string;
+  sectionSv?: string;
+  subgroupSv?: string;
+};
+
+type AnnualReportStatementNameSvV1 =
+  AnnualReportCodeDefinitionV1["statementSv"];
+
+const ANNUAL_REPORT_CODE_CANDIDATES_BY_LABEL_V1 = (() => {
+  const grouped = {
+    Balansräkning: new Map<string, AnnualReportCodeDefinitionV1[]>(),
+    Resultaträkning: new Map<string, AnnualReportCodeDefinitionV1[]>(),
+  } satisfies Record<
+    AnnualReportStatementNameSvV1,
+    Map<string, AnnualReportCodeDefinitionV1[]>
+  >;
+
+  for (const definition of ANNUAL_REPORT_CODES_SV_V1) {
+    const key = normalizeAnnualReportStatementMatchTextV1(definition.labelSv);
+    const candidates = grouped[definition.statementSv].get(key) ?? [];
+    candidates.push(definition);
+    grouped[definition.statementSv].set(key, candidates);
+  }
+
+  return grouped;
+})();
+
+const ANNUAL_REPORT_CONTEXT_MARKERS_V1 = (() => {
+  const markers = new Map<
+    string,
+    Array<{
+      level: "groupSv" | "sectionSv" | "subgroupSv";
+      value: string;
+    }>
+  >();
+  const addMarker = (
+    level: "groupSv" | "sectionSv" | "subgroupSv",
+    value: string | null,
+  ) => {
+    if (!value) {
+      return;
+    }
+    const normalized = normalizeAnnualReportStatementMatchTextV1(value);
+    if (normalized.length === 0) {
+      return;
+    }
+    const existing = markers.get(normalized) ?? [];
+    existing.push({ level, value });
+    markers.set(normalized, existing);
+  };
+
+  for (const definition of ANNUAL_REPORT_CODES_SV_V1) {
+    addMarker("sectionSv", definition.sectionSv);
+    addMarker("groupSv", definition.groupSv);
+    addMarker("subgroupSv", definition.subgroupSv);
+  }
+
+  return markers;
+})();
+
+const ANNUAL_REPORT_SUMMARY_LABELS_V1 = new Set<string>([
+  "summa tillgangar",
+  "summa eget kapital och skulder",
+  "rorelseresultat",
+  "resultat efter finansiella poster",
+  "resultat fore skatt",
+  "i ny rakning balanseras",
+  "balansrakning",
+  "resultatrakning",
+  "rorelsens intakter",
+  "rorelsens kostnader",
+  "finansiella poster",
+  "bokslutsdispositioner",
+  "skatt",
+  "tillgangar",
+  "eget kapital och skulder",
+]);
+
+function dedupeAnnualReportEvidenceV1<
+  TEvidence extends { page?: number; snippet: string },
+>(evidence: TEvidence[]): TEvidence[] {
+  const seen = new Set<string>();
+  const deduped: TEvidence[] = [];
+  for (const item of evidence) {
+    const key = `${item.page ?? "na"}:${item.snippet}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(item);
+  }
+  return deduped;
+}
+
+function sumOptionalAnnualReportAmountsV1(
+  left: number | undefined,
+  right: number | undefined,
+): number | undefined {
+  if (left === undefined && right === undefined) {
+    return undefined;
+  }
+  return (left ?? 0) + (right ?? 0);
+}
+
+function isAnnualReportContextHeadingV1(normalizedLabel: string): boolean {
+  return ANNUAL_REPORT_CONTEXT_MARKERS_V1.has(normalizedLabel);
+}
+
+function isAnnualReportSummaryLineV1(input: {
+  currentYearValue?: number;
+  label: string;
+  statementSv: AnnualReportStatementNameSvV1;
+}): boolean {
+  const normalizedLabel = normalizeAnnualReportStatementMatchTextV1(input.label);
+  if (normalizedLabel.length === 0) {
+    return true;
+  }
+
+  if (normalizedLabel.startsWith("summa ")) {
+    return true;
+  }
+  if (ANNUAL_REPORT_SUMMARY_LABELS_V1.has(normalizedLabel)) {
+    return true;
+  }
+  if (
+    input.statementSv === "Resultaträkning" &&
+    (normalizedLabel.includes("resultat fore skatt") ||
+      normalizedLabel.includes("resultat efter finansiella poster"))
+  ) {
+    return true;
+  }
+  if (
+    input.statementSv === "Balansräkning" &&
+    (normalizedLabel.includes("summa tillgangar") ||
+      normalizedLabel.includes("summa eget kapital och skulder"))
+  ) {
+    return true;
+  }
+
+  return (
+    input.currentYearValue === undefined &&
+    input.statementSv === "Balansräkning" &&
+    isAnnualReportContextHeadingV1(normalizedLabel)
+  );
+}
+
+function findAnnualReportStatementLineIndexOnPageV1(input: {
+  evidence: Array<{ page?: number; snippet: string }>;
+  label: string;
+  pageText: string;
+}): number {
+  const pageLines = input.pageText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const normalizedLabel = normalizeAnnualReportStatementMatchTextV1(input.label);
+  const normalizedEvidenceSnippets = input.evidence
+    .map((entry) => normalizeAnnualReportStatementMatchTextV1(entry.snippet))
+    .filter((entry) => entry.length > 0);
+
+  for (let index = 0; index < pageLines.length; index += 1) {
+    const normalizedLine = normalizeAnnualReportStatementMatchTextV1(
+      pageLines[index]!,
+    );
+    if (
+      normalizedEvidenceSnippets.some(
+        (snippet) =>
+          snippet.includes(normalizedLine) || normalizedLine.includes(snippet),
+      )
+    ) {
+      return index;
+    }
+    if (
+      normalizedLabel.length > 0 &&
+      (normalizedLine.includes(normalizedLabel) ||
+        normalizedLabel.includes(normalizedLine))
+    ) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function resolveAnnualReportStatementContextFromPageTextV1(input: {
+  evidence: Array<{ page?: number; snippet: string }>;
+  label: string;
+  pageTexts: string[];
+}): AnnualReportStatementContextV1 {
+  for (const evidence of input.evidence) {
+    if (!evidence.page || evidence.page < 1 || evidence.page > input.pageTexts.length) {
+      continue;
+    }
+    const pageText = input.pageTexts[evidence.page - 1] ?? "";
+    if (pageText.trim().length === 0) {
+      continue;
+    }
+    const pageLines = pageText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    const targetIndex = findAnnualReportStatementLineIndexOnPageV1({
+      evidence: input.evidence,
+      label: input.label,
+      pageText,
+    });
+    if (targetIndex < 0) {
+      continue;
+    }
+
+    const context: AnnualReportStatementContextV1 = {};
+    for (let index = targetIndex - 1; index >= 0; index -= 1) {
+      const normalizedLine = normalizeAnnualReportStatementMatchTextV1(
+        pageLines[index]!,
+      );
+      const markers = ANNUAL_REPORT_CONTEXT_MARKERS_V1.get(normalizedLine);
+      if (!markers) {
+        continue;
+      }
+      for (const marker of markers) {
+        if (!context[marker.level]) {
+          context[marker.level] = marker.value;
+        }
+      }
+      if (context.sectionSv && context.groupSv && context.subgroupSv) {
+        return context;
+      }
+    }
+
+    if (context.sectionSv || context.groupSv || context.subgroupSv) {
+      return context;
+    }
+  }
+
+  return {};
+}
+
+function resolveAnnualReportCodeCandidatesByLabelV1(input: {
+  label: string;
+  statementSv: AnnualReportStatementNameSvV1;
+}): AnnualReportCodeDefinitionV1[] {
+  const normalizedLabel = normalizeAnnualReportStatementMatchTextV1(input.label);
+  return (
+    ANNUAL_REPORT_CODE_CANDIDATES_BY_LABEL_V1[input.statementSv].get(
+      normalizedLabel,
+    ) ?? []
+  );
+}
+
+function selectAnnualReportCodeByContextV1(input: {
+  candidates: AnnualReportCodeDefinitionV1[];
+  context: AnnualReportStatementContextV1;
+}): AnnualReportCodeDefinitionV1 | undefined {
+  if (input.candidates.length <= 1) {
+    return input.candidates[0];
+  }
+
+  const normalizedSection = input.context.sectionSv
+    ? normalizeAnnualReportStatementMatchTextV1(input.context.sectionSv)
+    : undefined;
+  const normalizedGroup = input.context.groupSv
+    ? normalizeAnnualReportStatementMatchTextV1(input.context.groupSv)
+    : undefined;
+  const normalizedSubgroup = input.context.subgroupSv
+    ? normalizeAnnualReportStatementMatchTextV1(input.context.subgroupSv)
+    : undefined;
+
+  const exactSubgroupMatch = normalizedSubgroup
+    ? input.candidates.filter(
+        (candidate) =>
+          normalizeAnnualReportStatementMatchTextV1(
+            candidate.subgroupSv ?? "",
+          ) === normalizedSubgroup,
+      )
+    : [];
+  if (exactSubgroupMatch.length === 1) {
+    return exactSubgroupMatch[0];
+  }
+
+  const exactGroupMatch = normalizedGroup
+    ? input.candidates.filter(
+        (candidate) =>
+          normalizeAnnualReportStatementMatchTextV1(candidate.groupSv ?? "") ===
+          normalizedGroup,
+      )
+    : [];
+  if (exactGroupMatch.length === 1) {
+    return exactGroupMatch[0];
+  }
+
+  const exactSectionMatch = normalizedSection
+    ? input.candidates.filter(
+        (candidate) =>
+          normalizeAnnualReportStatementMatchTextV1(candidate.sectionSv) ===
+          normalizedSection,
+      )
+    : [];
+  if (exactSectionMatch.length === 1) {
+    return exactSectionMatch[0];
+  }
+
+  return input.candidates[0];
+}
+
+function resolveAnnualReportCodeByHeuristicV1(input: {
+  context: AnnualReportStatementContextV1;
+  currentYearValue?: number;
+  label: string;
+  statementSv: AnnualReportStatementNameSvV1;
+}): string | undefined {
+  const normalizedLabel = normalizeAnnualReportStatementMatchTextV1(input.label);
+  const normalizedGroup = normalizeAnnualReportStatementMatchTextV1(
+    input.context.groupSv ?? "",
+  );
+  const normalizedSection = normalizeAnnualReportStatementMatchTextV1(
+    input.context.sectionSv ?? "",
+  );
+  const isLongTermAssetContext =
+    normalizedSection === normalizeAnnualReportStatementMatchTextV1("Tillgångar") &&
+    normalizedGroup.includes("anlaggningstillgang");
+  const isShortTermReceivableContext =
+    normalizedGroup.includes("kortfristiga fordringar");
+  const isShortTermPlacementContext =
+    normalizedGroup.includes("kortfristiga placeringar");
+  const isLongTermDebtContext = normalizedGroup.includes("langfristiga skulder");
+  const isShortTermDebtContext =
+    normalizedGroup.includes("kortfristiga skulder") ||
+    normalizedSection === normalizeAnnualReportStatementMatchTextV1("Skulder");
+
+  if (input.statementSv === "Resultaträkning") {
+    if (normalizedLabel.includes("nettoomsattning")) {
+      return "3.1";
+    }
+    if (
+      normalizedLabel.includes("forandring av lager") ||
+      (normalizedLabel.includes("lager") &&
+        normalizedLabel.includes("pagaende arbete"))
+    ) {
+      return "3.2";
+    }
+    if (normalizedLabel.includes("aktiverat arbete")) {
+      return "3.3";
+    }
+    if (normalizedLabel.includes("ovriga rorelseintakter")) {
+      return "3.4";
+    }
+    if (
+      normalizedLabel.includes("ravaror") ||
+      normalizedLabel.includes("fornodenheter")
+    ) {
+      return "3.5";
+    }
+    if (normalizedLabel.includes("handelsvaror")) {
+      return "3.6";
+    }
+    if (normalizedLabel.includes("ovriga externa kostnader")) {
+      return "3.7";
+    }
+    if (normalizedLabel.includes("personalkostnader")) {
+      return "3.8";
+    }
+    if (
+      normalizedLabel.includes("av och nedskrivningar") ||
+      normalizedLabel.includes("avskrivningar av materiella") ||
+      normalizedLabel.includes("avskrivningar av immateriella")
+    ) {
+      return "3.9";
+    }
+    if (normalizedLabel.includes("nedskrivningar av omsattningstillgangar")) {
+      return "3.10";
+    }
+    if (normalizedLabel.includes("ovriga rorelsekostnader")) {
+      return "3.11";
+    }
+    if (
+      normalizedLabel.includes("andelar i koncernforetag") &&
+      normalizedLabel.includes("resultat")
+    ) {
+      return "3.12";
+    }
+    if (
+      normalizedLabel.includes("andelar i intresseforetag") &&
+      normalizedLabel.includes("resultat")
+    ) {
+      return "3.13";
+    }
+    if (
+      normalizedLabel.includes("ovriga foretag") &&
+      normalizedLabel.includes("agarintresse")
+    ) {
+      return "3.14";
+    }
+    if (
+      normalizedLabel.includes("ovriga finansiella anlaggningstillgangar") &&
+      normalizedLabel.includes("resultat")
+    ) {
+      return "3.15";
+    }
+    if (normalizedLabel.includes("ranteintakt")) {
+      return "3.16";
+    }
+    if (normalizedLabel.includes("nedskrivningar av finansiella")) {
+      return "3.17";
+    }
+    if (normalizedLabel.includes("rantekostnad")) {
+      return "3.18";
+    }
+    if (normalizedLabel.includes("lamnade koncernbidrag")) {
+      return "3.19";
+    }
+    if (normalizedLabel.includes("mottagna koncernbidrag")) {
+      return "3.20";
+    }
+    if (normalizedLabel.includes("aterforing av periodiseringsfond")) {
+      return "3.21";
+    }
+    if (normalizedLabel.includes("avsattning till periodiseringsfond")) {
+      return "3.22";
+    }
+    if (normalizedLabel.includes("overavskrivningar")) {
+      return "3.23";
+    }
+    if (normalizedLabel.includes("ovriga bokslutsdispositioner")) {
+      return "3.24";
+    }
+    if (normalizedLabel.includes("skatt pa arets resultat")) {
+      return "3.25";
+    }
+    if (normalizedLabel.includes("arets resultat")) {
+      return input.currentYearValue !== undefined && input.currentYearValue < 0
+        ? "3.27"
+        : "3.26";
+    }
+
+    return undefined;
+  }
+
+  if (
+    normalizedLabel.includes("koncessioner") ||
+    normalizedLabel.includes("goodwill") ||
+    normalizedLabel.includes("hyresratter") ||
+    normalizedLabel.includes("programvaror")
+  ) {
+    return "2.1";
+  }
+  if (
+    normalizedLabel.includes("forskott") &&
+    normalizedLabel.includes("immateriella")
+  ) {
+    return "2.2";
+  }
+  if (normalizedLabel.includes("byggnader") || normalizedLabel.includes("mark")) {
+    return "2.3";
+  }
+  if (
+    normalizedLabel.includes("maskiner") ||
+    normalizedLabel.includes("inventarier") ||
+    normalizedLabel.includes("datorer")
+  ) {
+    return "2.4";
+  }
+  if (normalizedLabel.includes("forbattringsutgifter")) {
+    return "2.5";
+  }
+  if (normalizedLabel.includes("pagaende nyanlaggningar")) {
+    return "2.6";
+  }
+  if (normalizedLabel.includes("andelar i koncernforetag")) {
+    return isShortTermPlacementContext ? "2.24" : "2.7";
+  }
+  if (
+    normalizedLabel.includes("andelar i intresseforetag") ||
+    normalizedLabel.includes("gemensamt styrda")
+  ) {
+    return "2.8";
+  }
+  if (
+    normalizedLabel.includes("vardepappersinnehav") ||
+    normalizedLabel.includes("agarintressen i ovriga foretag")
+  ) {
+    return isShortTermPlacementContext ? "2.25" : "2.9";
+  }
+  if (
+    normalizedLabel.includes("fordringar hos koncern") ||
+    normalizedLabel.includes("fordringar hos intresse")
+  ) {
+    return isLongTermAssetContext ? "2.10" : "2.20";
+  }
+  if (normalizedLabel.includes("lan till delagare")) {
+    return "2.11";
+  }
+  if (
+    normalizedLabel.includes("ovriga langfristiga fordringar") ||
+    normalizedLabel.includes("andra langfristiga fordringar")
+  ) {
+    return "2.12";
+  }
+  if (
+    normalizedLabel.includes("ovriga fordringar") ||
+    normalizedLabel.includes("fordringar hos ovriga")
+  ) {
+    return isLongTermAssetContext ? "2.12" : "2.21";
+  }
+  if (
+    normalizedLabel.includes("ravaror") ||
+    normalizedLabel.includes("fornodenheter")
+  ) {
+    return "2.13";
+  }
+  if (normalizedLabel.includes("varor under tillverkning")) {
+    return "2.14";
+  }
+  if (
+    normalizedLabel.includes("fardiga varor") ||
+    normalizedLabel.includes("handelsvaror")
+  ) {
+    return "2.15";
+  }
+  if (normalizedLabel.includes("ovriga lagertillgangar")) {
+    return "2.16";
+  }
+  if (
+    normalizedLabel.includes("pagaende arbeten for annans rakning") &&
+    !isShortTermDebtContext
+  ) {
+    return "2.17";
+  }
+  if (normalizedLabel.includes("forskott till leverantorer")) {
+    return "2.18";
+  }
+  if (normalizedLabel.includes("kundfordringar")) {
+    return "2.19";
+  }
+  if (normalizedLabel.includes("skattefordran")) {
+    return "2.21";
+  }
+  if (normalizedLabel.includes("upparbetad men ej fakturerad")) {
+    return "2.22";
+  }
+  if (normalizedLabel.includes("upparbetade ej fakturerade")) {
+    return "2.22";
+  }
+  if (
+    normalizedLabel.includes("forutbetalda kostnader") ||
+    normalizedLabel.includes("upplupna intakter")
+  ) {
+    return "2.23";
+  }
+  if (normalizedLabel.includes("ovriga kortfristiga placeringar")) {
+    return "2.25";
+  }
+  if (
+    normalizedLabel.includes("kassa") ||
+    normalizedLabel.includes("bank") ||
+    normalizedLabel.includes("redovisningsmedel")
+  ) {
+    return "2.26";
+  }
+  if (
+    normalizedLabel.includes("bundet eget kapital") ||
+    normalizedLabel.includes("aktiekapital") ||
+    normalizedLabel.includes("reservfond")
+  ) {
+    return "2.27";
+  }
+  if (
+    normalizedLabel.includes("fritt eget kapital") ||
+    normalizedLabel.includes("balanserat resultat") ||
+    normalizedLabel.includes("balanserad vinst") ||
+    normalizedLabel.includes("arets resultat")
+  ) {
+    return "2.28";
+  }
+  if (normalizedLabel.includes("periodiseringsfond")) {
+    return "2.29";
+  }
+  if (normalizedLabel.includes("overavskrivningar")) {
+    return "2.30";
+  }
+  if (normalizedLabel.includes("obeskattade reserver")) {
+    return "2.31";
+  }
+  if (normalizedLabel.includes("ovriga obeskattade reserver")) {
+    return "2.31";
+  }
+  if (
+    normalizedLabel.includes("pensioner") &&
+    normalizedLabel.includes("1967 531")
+  ) {
+    return "2.32";
+  }
+  if (
+    normalizedLabel.includes("pensioner") ||
+    normalizedLabel.includes("pensionsforpliktelser")
+  ) {
+    return "2.33";
+  }
+  if (normalizedLabel.includes("ovriga avsattningar")) {
+    return "2.34";
+  }
+  if (normalizedLabel.includes("obligationslan")) {
+    return "2.35";
+  }
+  if (normalizedLabel.includes("checkrakningskredit")) {
+    return isLongTermDebtContext ? "2.36" : "2.40";
+  }
+  if (normalizedLabel.includes("skulder till kreditinstitut")) {
+    return isLongTermDebtContext ? "2.37" : "2.41";
+  }
+  if (normalizedLabel.includes("ovriga langfristiga skulder")) {
+    return "2.39";
+  }
+  if (
+    normalizedLabel.includes("skulder till koncern") ||
+    normalizedLabel.includes("skulder till intresse")
+  ) {
+    return isLongTermDebtContext ? "2.38" : "2.47";
+  }
+  if (
+    normalizedLabel.includes("skulder till ovriga") ||
+    normalizedLabel.includes("ovriga skulder")
+  ) {
+    return isLongTermDebtContext ? "2.39" : "2.48";
+  }
+  if (normalizedLabel.includes("forskott fran kunder")) {
+    return "2.42";
+  }
+  if (
+    normalizedLabel.includes("pagaende arbeten for annans rakning") &&
+    isShortTermDebtContext
+  ) {
+    return "2.43";
+  }
+  if (normalizedLabel.includes("fakturerad men ej upparbetad")) {
+    return "2.44";
+  }
+  if (normalizedLabel.includes("leverantorsskulder")) {
+    return "2.45";
+  }
+  if (normalizedLabel.includes("vaxelskulder")) {
+    return "2.46";
+  }
+  if (normalizedLabel.includes("skatteskulder")) {
+    return "2.49";
+  }
+  if (
+    normalizedLabel.includes("upplupna kostnader") ||
+    normalizedLabel.includes("forutbetalda intakter")
+  ) {
+    return "2.50";
+  }
+
+  if (isShortTermReceivableContext && normalizedLabel.includes("fordringar")) {
+    return "2.21";
+  }
+
+  return undefined;
+}
+
+export function alignAnnualReportStatementsToInk2CodesV1(input: {
+  pageTexts: string[];
+  taxDeep: AnnualReportTaxDeepExtractionV1;
+}): {
+  taxDeep: AnnualReportTaxDeepExtractionV1;
+  warnings: string[];
+} {
+  const alignLines = <
+    TLine extends AnnualReportTaxDeepExtractionV1["ink2rExtracted"]["incomeStatement"][number],
+  >(
+    lines: TLine[],
+    statementSv: AnnualReportStatementNameSvV1,
+  ) => {
+    const aligned = new Map<string, TLine>();
+    const unmappedLabels = new Set<string>();
+
+    for (const line of lines) {
+      const label = line.label.trim();
+      if (
+        label.length === 0 ||
+        isAnnualReportSummaryLineV1({
+          label,
+          statementSv,
+          currentYearValue: line.currentYearValue,
+        })
+      ) {
+        continue;
+      }
+      const context = resolveAnnualReportStatementContextFromPageTextV1({
+        evidence: line.evidence,
+        label,
+        pageTexts: input.pageTexts,
+      });
+      const exactCandidates = resolveAnnualReportCodeCandidatesByLabelV1({
+        label,
+        statementSv,
+      });
+      const exactMatch = selectAnnualReportCodeByContextV1({
+        candidates: exactCandidates,
+        context,
+      });
+      const resolvedCode =
+        exactMatch?.code ??
+        resolveAnnualReportCodeByHeuristicV1({
+          context,
+          currentYearValue: line.currentYearValue,
+          label,
+          statementSv,
+        });
+
+      if (!resolvedCode) {
+        unmappedLabels.add(label);
+        continue;
+      }
+
+      const codeDefinition = getAnnualReportCodeDefinitionV1(resolvedCode);
+      if (!codeDefinition) {
+        unmappedLabels.add(label);
+        continue;
+      }
+
+      const existing = aligned.get(resolvedCode);
+      const nextLine = {
+        ...line,
+        code: resolvedCode,
+        label: codeDefinition.labelSv,
+        evidence: dedupeAnnualReportEvidenceV1(line.evidence),
+      } satisfies TLine;
+
+      if (!existing) {
+        aligned.set(resolvedCode, nextLine);
+        continue;
+      }
+
+      aligned.set(resolvedCode, {
+        ...existing,
+        currentYearValue: sumOptionalAnnualReportAmountsV1(
+          existing.currentYearValue,
+          nextLine.currentYearValue,
+        ),
+        priorYearValue: sumOptionalAnnualReportAmountsV1(
+          existing.priorYearValue,
+          nextLine.priorYearValue,
+        ),
+        evidence: dedupeAnnualReportEvidenceV1([
+          ...existing.evidence,
+          ...nextLine.evidence,
+        ]),
+      } satisfies TLine);
+    }
+
+    const alignedLines = [...aligned.values()].sort(
+      (left, right) =>
+        getAnnualReportCodeOrderV1(left.code) -
+        getAnnualReportCodeOrderV1(right.code),
+    );
+    const warnings =
+      alignedLines.length > 0 && unmappedLabels.size > 0
+        ? [
+            `statement_alignment.${statementSv === "Balansräkning" ? "balance_sheet" : "income_statement"}.unmapped=${[...unmappedLabels]
+              .slice(0, 8)
+              .join(" | ")}`,
+          ]
+        : [];
+
+    return {
+      lines: alignedLines.length > 0 ? alignedLines : lines,
+      warnings,
+    };
+  };
+
+  const incomeStatement = alignLines(
+    input.taxDeep.ink2rExtracted.incomeStatement,
+    "Resultaträkning",
+  );
+  const balanceSheet = alignLines(
+    input.taxDeep.ink2rExtracted.balanceSheet,
+    "Balansräkning",
+  );
+
+  return {
+    taxDeep: {
+      ...input.taxDeep,
+      ink2rExtracted: {
+        ...input.taxDeep.ink2rExtracted,
+        incomeStatement: incomeStatement.lines,
+        balanceSheet: balanceSheet.lines,
+      },
+    },
+    warnings: [...incomeStatement.warnings, ...balanceSheet.warnings],
+  };
+}
+
 function normalizeAnnualReportValueWithEvidenceV1<TValue extends {
   currency?: string;
   evidence: Array<unknown>;
@@ -631,27 +1467,457 @@ function normalizeAnnualReportValueWithEvidenceV1<TValue extends {
   };
 }
 
+function extractAnnualReportStatementSnippetAmountsV1(
+  snippet: string | undefined,
+): number[] {
+  if (typeof snippet !== "string" || snippet.trim().length === 0) {
+    return [];
+  }
+
+  const normalized = snippet.replace(/\u00a0/g, " ").replace(/[−–—]/g, "-");
+  const groupMatches = normalized.match(/-?\d{1,3}/g) ?? [];
+  const parseAmountTokens = (tokens: string[]): number | undefined => {
+    if (tokens.length === 0) {
+      return undefined;
+    }
+    if (
+      !tokens.slice(1).every((token) => token.replace("-", "").length === 3)
+    ) {
+      return undefined;
+    }
+
+    const parsed = Number(tokens.join(""));
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+  const prefixLooksLikeNoteRefs = (tokens: string[]): boolean =>
+    tokens.every((token) => {
+      const digits = token.replace("-", "");
+      return !token.startsWith("-") && digits.length <= 2;
+    });
+  const hasTrailingDash = /(?:^|\s)-\s*$/.test(normalized);
+
+  if (hasTrailingDash && groupMatches.length >= 2) {
+    for (
+      let amountGroupCount = Math.min(3, groupMatches.length);
+      amountGroupCount >= 1;
+      amountGroupCount -= 1
+    ) {
+      const amountTokens = groupMatches.slice(
+        groupMatches.length - amountGroupCount,
+      );
+      const prefixTokens = groupMatches.slice(
+        0,
+        groupMatches.length - amountGroupCount,
+      );
+      const parsed = parseAmountTokens(amountTokens);
+      if (
+        parsed !== undefined &&
+        (prefixTokens.length === 0 || prefixLooksLikeNoteRefs(prefixTokens))
+      ) {
+        return [parsed];
+      }
+    }
+  }
+
+  let bestTwoAmountSplit:
+    | {
+        currentAmount: number;
+        priorAmount: number;
+        score: number;
+      }
+    | undefined;
+
+  for (let currentGroupCount = 1; currentGroupCount <= 3; currentGroupCount += 1) {
+    for (let priorGroupCount = 1; priorGroupCount <= 3; priorGroupCount += 1) {
+      const suffixGroupCount = currentGroupCount + priorGroupCount;
+      if (suffixGroupCount > groupMatches.length) {
+        continue;
+      }
+
+      const prefixTokens = groupMatches.slice(0, groupMatches.length - suffixGroupCount);
+      const currentTokens = groupMatches.slice(
+        groupMatches.length - suffixGroupCount,
+        groupMatches.length - priorGroupCount,
+      );
+      const priorTokens = groupMatches.slice(groupMatches.length - priorGroupCount);
+      const currentAmount = parseAmountTokens(currentTokens);
+      const priorAmount = parseAmountTokens(priorTokens);
+      if (currentAmount === undefined || priorAmount === undefined) {
+        continue;
+      }
+
+      const score =
+        (currentGroupCount === priorGroupCount ? 100 : 0) +
+        (prefixLooksLikeNoteRefs(prefixTokens) ? 50 - prefixTokens.length * 10 : -100) +
+        suffixGroupCount;
+      if (!bestTwoAmountSplit || score > bestTwoAmountSplit.score) {
+        bestTwoAmountSplit = {
+          currentAmount,
+          priorAmount,
+          score,
+        };
+      }
+    }
+  }
+
+  if (bestTwoAmountSplit && bestTwoAmountSplit.score >= 100) {
+    return [bestTwoAmountSplit.currentAmount, bestTwoAmountSplit.priorAmount];
+  }
+
+  if (groupMatches.length === 2) {
+    const parsed = parseAmountTokens(groupMatches);
+    return parsed === undefined ? [] : [parsed];
+  }
+  if (groupMatches.length === 3 && groupMatches[0]?.replace("-", "").length === 2) {
+    const parsed = parseAmountTokens(groupMatches.slice(1));
+    return parsed === undefined ? [] : [parsed];
+  }
+  if (
+    groupMatches.length === 4 &&
+    groupMatches[0]?.replace("-", "").length === 2 &&
+    groupMatches[1]?.replace("-", "").length === 1
+  ) {
+    const parsed = parseAmountTokens(groupMatches.slice(1));
+    return parsed === undefined ? [] : [parsed];
+  }
+
+  return [];
+}
+
+function cleanAnnualReportStatementLabelV1(value: string): string {
+  const tokens = value.trim().split(/\s+/).filter((token) => token.length > 0);
+  while (
+    tokens.length > 0 &&
+    /^\d+(?:,\d+)?(?:-\d+)?$/.test(tokens[tokens.length - 1] ?? "")
+  ) {
+    tokens.pop();
+  }
+
+  return tokens.join(" ").replace(/[-,:;]+$/g, "").trim();
+}
+
+function buildDeterministicStatementLinesFromPageTextV1(input: {
+  pageTexts: string[];
+  pages: number[];
+}): AnnualReportTaxDeepExtractionV1["ink2rExtracted"]["incomeStatement"] {
+  const lines: AnnualReportTaxDeepExtractionV1["ink2rExtracted"]["incomeStatement"] =
+    [];
+  let currentSectionLabel: string | undefined;
+
+  for (const page of input.pages) {
+    const pageLines = (input.pageTexts[page - 1] ?? "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    for (const line of pageLines) {
+      const normalizedLine = normalizeAnnualReportStatementMatchTextV1(line);
+      if (
+        normalizedLine.length === 0 ||
+        normalizedLine.startsWith("resultatrakning") ||
+        normalizedLine.startsWith("balansrakning") ||
+        normalizedLine.startsWith("belopp i ") ||
+        normalizedLine.startsWith("deloitte ab") ||
+        normalizedLine.startsWith("org nr") ||
+        /^\d{4}-\d{2}-\d{2}\b/.test(line) ||
+        normalizedLine.startsWith("not 20") ||
+        normalizedLine === "tillgangar" ||
+        normalizedLine === "eget kapital och skulder"
+      ) {
+        continue;
+      }
+
+      const amounts = extractAnnualReportStatementSnippetAmountsV1(line);
+      if (amounts.length === 0) {
+        currentSectionLabel = cleanAnnualReportStatementLabelV1(line);
+        continue;
+      }
+
+      const amountSuffixMatch = line.match(
+        /(-?\d{1,3}(?:\s\d{3})+?(?:\s+-?\d{1,3}(?:\s\d{3})+?)?)$/,
+      );
+      const labelRaw = amountSuffixMatch
+        ? line.slice(0, amountSuffixMatch.index).trim()
+        : line;
+      const cleanedLabel = cleanAnnualReportStatementLabelV1(labelRaw);
+      const label =
+        cleanedLabel.length > 0
+          ? cleanedLabel
+          : labelRaw.length === 0 && currentSectionLabel
+            ? currentSectionLabel.startsWith("Summa ")
+              ? currentSectionLabel
+              : `Summa ${currentSectionLabel}`
+            : "";
+      if (label.length === 0) {
+        continue;
+      }
+
+      lines.push({
+        code: label,
+        label,
+        currentYearValue: amounts[0],
+        priorYearValue: amounts[1],
+        evidence: [{ snippet: line, page }],
+      });
+    }
+  }
+
+  return lines;
+}
+
+function resolveAnnualReportStatementUnitFromPageTextsV1(input: {
+  pageTexts: string[];
+  pages: number[];
+}): AnnualReportAmountUnitV1 | undefined {
+  for (const page of input.pages) {
+    const text = (input.pageTexts[page - 1] ?? "").toLowerCase();
+    if (text.includes("belopp i msek") || text.includes("amounts in msek")) {
+      return "msek";
+    }
+    if (text.includes("belopp i ksek") || text.includes("amounts in ksek")) {
+      return "ksek";
+    }
+    if (text.includes("belopp i sek") || text.includes("amounts in sek")) {
+      return "sek";
+    }
+  }
+
+  return undefined;
+}
+
+function buildAnnualReportStatementEvidenceFromPagesV1(input: {
+  label: string;
+  pageTexts: string[];
+  pages: number[];
+}): Array<{ snippet: string; page?: number }> {
+  const normalizedLabel = normalizeAnnualReportStatementMatchTextV1(input.label);
+  if (normalizedLabel.length === 0) {
+    return [];
+  }
+
+  for (const page of input.pages) {
+    const lines = (input.pageTexts[page - 1] ?? "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index]!;
+      const normalizedLine = normalizeAnnualReportStatementMatchTextV1(line);
+      if (
+        !normalizedLine.includes(normalizedLabel) &&
+        !normalizedLabel.includes(normalizedLine)
+      ) {
+        continue;
+      }
+
+      const nextLine = lines[index + 1];
+      const snippet =
+        extractAnnualReportStatementSnippetAmountsV1(line).length > 0 ||
+        !nextLine
+          ? line
+          : `${line} ${nextLine}`;
+      return [{ snippet, page }];
+    }
+  }
+
+  return [];
+}
+
+export function hydrateAnnualReportStatementEvidenceFromPageTextV1(input: {
+  taxDeep: AnnualReportTaxDeepExtractionV1;
+  pageTexts: string[];
+  incomeStatementRanges: Array<{ startPage: number; endPage: number }>;
+  balanceSheetRanges: Array<{ startPage: number; endPage: number }>;
+}): AnnualReportTaxDeepExtractionV1 {
+  if (input.pageTexts.length === 0) {
+    return input.taxDeep;
+  }
+
+  const toPages = (ranges: Array<{ startPage: number; endPage: number }>) => {
+    const pages: number[] = [];
+    for (const range of ranges) {
+      for (let page = range.startPage; page <= range.endPage; page += 1) {
+        if (page >= 1 && page <= input.pageTexts.length) {
+          pages.push(page);
+        }
+      }
+    }
+    return [...new Set(pages)];
+  };
+
+  const incomeStatementPages = toPages(input.incomeStatementRanges);
+  const balanceSheetPages = toPages(input.balanceSheetRanges);
+  const statementPages = [...new Set([...incomeStatementPages, ...balanceSheetPages])];
+  const shouldReplaceWithDeterministicIncome =
+    input.taxDeep.ink2rExtracted.incomeStatement.length === 0 ||
+    input.taxDeep.ink2rExtracted.incomeStatement.every(
+      (line) => line.code === "unclassified_line" || line.label === "Unknown line",
+    );
+  const shouldReplaceWithDeterministicBalance =
+    input.taxDeep.ink2rExtracted.balanceSheet.length === 0 ||
+    input.taxDeep.ink2rExtracted.balanceSheet.every(
+      (line) => line.code === "unclassified_line" || line.label === "Unknown line",
+    );
+
+  const hydrateLines = <
+    TLine extends {
+      label: string;
+      currentYearValue?: number;
+      priorYearValue?: number;
+      evidence: Array<{ snippet: string; page?: number }>;
+    },
+  >(
+    lines: TLine[],
+    pages: number[],
+  ): TLine[] =>
+    lines.map((line) => {
+      const hasRecoverableEvidence = line.evidence.some(
+        (evidence) =>
+          extractAnnualReportStatementSnippetAmountsV1(evidence.snippet).length > 0,
+      );
+      const shouldHydrate =
+        line.evidence.length === 0 ||
+        ((!hasRecoverableEvidence ||
+          line.currentYearValue === undefined ||
+          line.priorYearValue === undefined) &&
+          pages.length > 0);
+      if (!shouldHydrate) {
+        return line;
+      }
+
+      const hydratedEvidence = buildAnnualReportStatementEvidenceFromPagesV1({
+        label: line.label,
+        pageTexts: input.pageTexts,
+        pages,
+      });
+      if (hydratedEvidence.length === 0) {
+        return line;
+      }
+
+      return {
+        ...line,
+        evidence:
+          line.evidence.length > 0
+            ? [...line.evidence, ...hydratedEvidence]
+            : hydratedEvidence,
+      };
+    });
+
+  return {
+    ...input.taxDeep,
+    ink2rExtracted: {
+      ...input.taxDeep.ink2rExtracted,
+      statementUnit:
+        input.taxDeep.ink2rExtracted.statementUnit ??
+        resolveAnnualReportStatementUnitFromPageTextsV1({
+          pageTexts: input.pageTexts,
+          pages: statementPages,
+        }),
+      incomeStatement: shouldReplaceWithDeterministicIncome
+        ? buildDeterministicStatementLinesFromPageTextV1({
+            pageTexts: input.pageTexts,
+            pages: incomeStatementPages,
+          })
+        : hydrateLines(
+            input.taxDeep.ink2rExtracted.incomeStatement,
+            incomeStatementPages,
+          ),
+      balanceSheet: shouldReplaceWithDeterministicBalance
+        ? buildDeterministicStatementLinesFromPageTextV1({
+            pageTexts: input.pageTexts,
+            pages: balanceSheetPages,
+          })
+        : hydrateLines(
+            input.taxDeep.ink2rExtracted.balanceSheet,
+            balanceSheetPages,
+          ),
+    },
+  };
+}
+
+function recoverAnnualReportStatementLineValuesV1<
+  TLine extends {
+    currentYearValue?: number;
+    priorYearValue?: number;
+    evidence?: Array<{ snippet: string }>;
+  },
+>(line: TLine): TLine {
+  const evidenceWithAmounts = (line.evidence ?? [])
+    .map((evidence) => ({
+      snippet: evidence.snippet,
+      amounts: extractAnnualReportStatementSnippetAmountsV1(evidence.snippet),
+    }))
+    .find((entry) => entry.amounts.length > 0);
+
+  if (
+    typeof line.currentYearValue === "number" &&
+    typeof line.priorYearValue === "number" &&
+    (!evidenceWithAmounts ||
+      evidenceWithAmounts.amounts.length !== 1 ||
+      !/(?:^|\s)-\s*$/.test(
+        evidenceWithAmounts.snippet.replace(/\u00a0/g, " ").replace(/[−–—]/g, "-"),
+      ))
+  ) {
+    return line;
+  }
+
+  const snippetAmounts = evidenceWithAmounts?.amounts;
+
+  if (!snippetAmounts || snippetAmounts.length === 0) {
+    return line;
+  }
+
+  if (snippetAmounts.length === 1) {
+    return {
+      ...line,
+      currentYearValue: snippetAmounts[0],
+      priorYearValue: undefined,
+    };
+  }
+
+  const currentYearValue =
+    line.currentYearValue ??
+    (snippetAmounts.length >= 2
+      ? snippetAmounts[snippetAmounts.length - 2]
+      : snippetAmounts[0]);
+  const priorYearValue =
+    line.priorYearValue ??
+    (snippetAmounts.length >= 2
+      ? snippetAmounts[snippetAmounts.length - 1]
+      : undefined);
+
+  return {
+    ...line,
+    currentYearValue,
+    priorYearValue,
+  };
+}
+
 function normalizeAnnualReportStatementLinesV1<
   TLine extends {
     currentYearValue?: number;
     priorYearValue?: number;
+    evidence?: Array<{ snippet: string }>;
   },
 >(lines: TLine[], multiplier: number): TLine[] {
-  if (multiplier === 1) {
-    return lines;
-  }
+  return lines.map((line) => {
+    const recoveredLine = recoverAnnualReportStatementLineValuesV1(line);
+    if (multiplier === 1) {
+      return recoveredLine;
+    }
 
-  return lines.map((line) => ({
-    ...line,
-    currentYearValue:
-      line.currentYearValue === undefined
-        ? undefined
-        : line.currentYearValue * multiplier,
-    priorYearValue:
-      line.priorYearValue === undefined
-        ? undefined
-        : line.priorYearValue * multiplier,
-  }));
+    return {
+      ...recoveredLine,
+      currentYearValue:
+        recoveredLine.currentYearValue === undefined
+          ? undefined
+          : recoveredLine.currentYearValue * multiplier,
+      priorYearValue:
+        recoveredLine.priorYearValue === undefined
+          ? undefined
+          : recoveredLine.priorYearValue * multiplier,
+    };
+  });
 }
 
 function normalizeAnnualReportAssetMovementLinesV1<
@@ -1008,15 +2274,26 @@ export function sanitizeAnnualReportTaxDeepV1(
     },
     taxExpenseContext: taxExpenseContext
       ? {
-          currentTax: sanitizeAnnualReportValueWithEvidenceV1(taxExpenseContext.currentTax),
+          currentTax:
+            sanitizeAnnualReportValueWithEvidenceV1(taxExpenseContext.currentTax) ??
+            sanitizeAnnualReportValueWithEvidenceV1(taxExpenseContext.recognizedTax),
           deferredTax: sanitizeAnnualReportValueWithEvidenceV1(taxExpenseContext.deferredTax),
           totalTaxExpense: sanitizeAnnualReportValueWithEvidenceV1(taxExpenseContext.totalTaxExpense),
-          notes: sanitizeAnnualReportNotesV1(
-            Array.isArray(taxExpenseContext.notes) ? taxExpenseContext.notes : [],
-          ),
-          evidence: Array.isArray(taxExpenseContext.evidence)
-            ? taxExpenseContext.evidence.flatMap((entry) => sanitizeAnnualReportEvidenceReferenceV1(entry))
-            : [],
+          notes: sanitizeAnnualReportNotesV1([
+            ...(Array.isArray(taxExpenseContext.notes) ? taxExpenseContext.notes : []),
+            ...(Array.isArray(taxExpenseContext.reconciliation)
+              ? taxExpenseContext.reconciliation
+              : []),
+          ]),
+          evidence: [
+            ...(Array.isArray(taxExpenseContext.evidence)
+              ? taxExpenseContext.evidence.flatMap((entry) =>
+                  sanitizeAnnualReportEvidenceReferenceV1(entry),
+                )
+              : []),
+            ...sanitizeAnnualReportEvidenceReferenceV1(taxExpenseContext.recognizedTax),
+            ...sanitizeAnnualReportEvidenceReferenceV1(taxExpenseContext.totalTaxExpense),
+          ],
         }
       : undefined,
     leasingContext: {
@@ -1024,8 +2301,12 @@ export function sanitizeAnnualReportTaxDeepV1(
       notes: sanitizeAnnualReportNotesV1([
         ...taxDeep.leasingContext.notes,
         ...(Array.isArray(leasingContext.leasingCosts) ? leasingContext.leasingCosts : []),
+        ...(Array.isArray(leasingContext.leasingExpenses) ? leasingContext.leasingExpenses : []),
         ...(Array.isArray(leasingContext.futureLeasingCommitments)
           ? leasingContext.futureLeasingCommitments
+          : []),
+        ...(Array.isArray(leasingContext.leasingObligations)
+          ? leasingContext.leasingObligations
           : []),
       ]),
       evidence: Array.isArray(leasingContext.evidence)
@@ -1053,11 +2334,23 @@ export function sanitizeAnnualReportTaxDeepV1(
       flags: taxDeep.shareholdingContext.flags,
       notes: sanitizeAnnualReportNotesV1([
         ...taxDeep.shareholdingContext.notes,
+        ...(Array.isArray(shareholdingContext.dividends)
+          ? shareholdingContext.dividends
+          : []),
         ...(Array.isArray(shareholdingContext.proposedDividend)
           ? shareholdingContext.proposedDividend
           : []),
         ...(Array.isArray(shareholdingContext.financialAssets)
           ? shareholdingContext.financialAssets
+          : []),
+        ...(Array.isArray(shareholdingContext.participationsInGroupCompanies)
+          ? shareholdingContext.participationsInGroupCompanies
+          : []),
+        ...(Array.isArray(shareholdingContext.participationsInAssociatedCompanies)
+          ? shareholdingContext.participationsInAssociatedCompanies
+          : []),
+        ...(Array.isArray(shareholdingContext.otherLongTermSecurities)
+          ? shareholdingContext.otherLongTermSecurities
           : []),
       ]),
       evidence: Array.isArray(shareholdingContext.evidence)
@@ -1485,14 +2778,25 @@ async function extractAnnualReportWithPrimaryAiV1(input: {
       field: fields.fiscalYearEnd,
       fieldKey: "fiscalYearEnd",
     });
-    const normalizedTaxDeep = normalizeAnnualReportTaxDeepV1(
+    const sanitizedTaxDeep = sanitizeAnnualReportTaxDeepV1(
       aiResult.extraction.taxDeep,
     );
-    const statementValueMultiplier = resolveAnnualReportAmountMultiplierV1(
-      normalizedTaxDeep.ink2rExtracted.statementUnit,
+    const hydratedTaxDeep = hydrateAnnualReportStatementEvidenceFromPageTextV1({
+      taxDeep: sanitizedTaxDeep,
+      pageTexts: preparedDocument.sourceText?.pageTexts ?? [],
+      incomeStatementRanges: preparedDocument.pdfRouting?.sections.incomeStatement ?? [],
+      balanceSheetRanges: preparedDocument.pdfRouting?.sections.balanceSheet ?? [],
+    });
+    const normalizedTaxDeep = normalizeAnnualReportTaxDeepV1(
+      hydratedTaxDeep,
     );
+    const alignedTaxDeepResult = alignAnnualReportStatementsToInk2CodesV1({
+      taxDeep: normalizedTaxDeep,
+      pageTexts: preparedDocument.sourceText?.pageTexts ?? [],
+    });
+    const alignedTaxDeep = alignedTaxDeepResult.taxDeep;
     const fullExtractionMissing =
-      !hasAnnualReportFullExtractionV1(normalizedTaxDeep) &&
+      !hasAnnualReportFullExtractionV1(alignedTaxDeep) &&
       aiResult.extraction.documentWarnings.some(
         (warning) =>
           warning.includes("Gemini statements extraction skipped") ||
@@ -1501,6 +2805,7 @@ async function extractAnnualReportWithPrimaryAiV1(input: {
     const extractionWarnings = [
       ...sourceDiagnostics,
       ...aiResult.extraction.documentWarnings,
+      ...alignedTaxDeepResult.warnings,
       ...[fiscalYearStartResult.warning, fiscalYearEndResult.warning].filter(
         (warning): warning is string => typeof warning === "string",
       ),
@@ -1525,7 +2830,9 @@ async function extractAnnualReportWithPrimaryAiV1(input: {
       organizationNumber: {
         status: fields.organizationNumber.status,
         confidence: fields.organizationNumber.confidence,
-        value: fields.organizationNumber.valueText,
+        value: normalizeAnnualReportOrganizationNumberV1(
+          fields.organizationNumber.valueText,
+        ),
         sourceSnippet: fields.organizationNumber.snippet
           ? {
               snippet: fields.organizationNumber.snippet,
@@ -1554,10 +2861,10 @@ async function extractAnnualReportWithPrimaryAiV1(input: {
       profitBeforeTax: {
         status: fields.profitBeforeTax.status,
         confidence: fields.profitBeforeTax.confidence,
-        value:
-          fields.profitBeforeTax.normalizedValue === undefined
-            ? undefined
-            : fields.profitBeforeTax.normalizedValue * statementValueMultiplier,
+        value: normalizeAnnualReportNumericFieldValueV1(
+          fields.profitBeforeTax.normalizedValue,
+          hydratedTaxDeep.ink2rExtracted.statementUnit,
+        ),
         sourceSnippet: fields.profitBeforeTax.snippet
           ? {
               snippet: fields.profitBeforeTax.snippet,
@@ -1584,7 +2891,7 @@ async function extractAnnualReportWithPrimaryAiV1(input: {
       },
       taxSignals: aiResult.extraction.taxSignals,
       documentWarnings: extractionWarnings,
-      taxDeep: normalizedTaxDeep,
+      taxDeep: alignedTaxDeep,
       aiRun: aiResult.aiRun,
       confirmation: {
         isConfirmed: false,
@@ -1623,6 +2930,261 @@ async function extractAnnualReportWithPrimaryAiV1(input: {
   }
 }
 
+function buildAnnualReportTaxAnalysisFallbackFindingV1(input: {
+  area: string;
+  evidence?: Array<{ page?: number; snippet: string }>;
+  policyRuleReference: string;
+  rationale: string;
+  recommendedFollowUp?: string;
+  severity: "low" | "medium" | "high";
+  title: string;
+}) {
+  return {
+    id: crypto.randomUUID(),
+    area: input.area,
+    title: input.title,
+    severity: input.severity,
+    rationale: input.rationale,
+    recommendedFollowUp: input.recommendedFollowUp,
+    missingInformation: [],
+    policyRuleReference: input.policyRuleReference,
+    evidence: dedupeAnnualReportEvidenceV1(input.evidence ?? []),
+  };
+}
+
+export function buildDeterministicAnnualReportTaxAnalysisFallbackV1(input: {
+  config:
+    | AnnualReportTaxAnalysisRuntimeConfigV1
+    | null;
+  extraction: ReturnType<typeof parseAnnualReportExtractionPayloadV1>;
+  extractionArtifactId: string;
+  fallbackReason: string;
+  modelName: string;
+  policyVersion: string;
+}): AnnualReportTaxAnalysisPayloadV1 {
+  const taxDeep = input.extraction.taxDeep ?? createEmptyAnnualReportTaxDeepV1();
+  const findings: AnnualReportTaxAnalysisPayloadV1["findings"] = [];
+  const recommendedNextActions = new Set<string>();
+  const missingInformation = new Set<string>();
+  const degradedWarning = input.extraction.documentWarnings.find(
+    (warning) =>
+      warning.includes("degraded.tax_notes") ||
+      warning.includes("statement_alignment") ||
+      warning.includes("limited page range"),
+  );
+
+  if (degradedWarning) {
+    missingInformation.add(
+      "Detailed note extraction was limited, so some tax-sensitive disclosures still need manual review.",
+    );
+    recommendedNextActions.add(
+      "Review note disclosures manually where the technical details show degraded extraction.",
+    );
+  }
+
+  if (
+    taxDeep.depreciationContext.assetAreas.length > 0 ||
+    taxDeep.assetMovements.lines.length > 0
+  ) {
+    findings.push(
+      buildAnnualReportTaxAnalysisFallbackFindingV1({
+        area: "depreciation_differences",
+        evidence: [
+          ...taxDeep.depreciationContext.evidence,
+          ...taxDeep.assetMovements.evidence,
+        ],
+        policyRuleReference:
+          "annual-report-tax-analysis.fallback.depreciation.v1",
+        rationale:
+          "The annual report contains fixed-asset movements or depreciation disclosures that should be reconciled to the tax depreciation schedule.",
+        recommendedFollowUp:
+          "Compare the reported asset movements to the fixed-asset register and tax depreciation base.",
+        severity: "medium",
+        title: "Depreciation disclosures require reconciliation",
+      }),
+    );
+    recommendedNextActions.add(
+      "Reconcile the fixed-asset note to the tax depreciation schedule.",
+    );
+  }
+
+  if (taxDeep.reserveContext.movements.length > 0) {
+    findings.push(
+      buildAnnualReportTaxAnalysisFallbackFindingV1({
+        area: "untaxed_reserves",
+        evidence: taxDeep.reserveContext.evidence,
+        policyRuleReference:
+          "annual-report-tax-analysis.fallback.untaxed-reserves.v1",
+        rationale:
+          "Untaxed reserves are present and should be matched to the tax return and prior-year workpapers.",
+        recommendedFollowUp:
+          "Verify periodiseringsfonder and over-depreciation balances against the tax workpapers.",
+        severity: "medium",
+        title: "Untaxed reserves should be traced into the tax return",
+      }),
+    );
+    recommendedNextActions.add(
+      "Trace untaxed reserve balances to the prior-year tax files.",
+    );
+  }
+
+  if (
+    taxDeep.netInterestContext.interestIncome?.value !== undefined ||
+    taxDeep.netInterestContext.interestExpense?.value !== undefined ||
+    taxDeep.netInterestContext.netInterest?.value !== undefined ||
+    taxDeep.netInterestContext.notes.length > 0
+  ) {
+    findings.push(
+      buildAnnualReportTaxAnalysisFallbackFindingV1({
+        area: "net_interest",
+        evidence: taxDeep.netInterestContext.evidence,
+        policyRuleReference:
+          "annual-report-tax-analysis.fallback.net-interest.v1",
+        rationale:
+          "Finance income or expense is present in the report and should be reviewed for interest limitation and non-deductibility issues.",
+        recommendedFollowUp:
+          "Review the finance note and assess whether any interest limitation analysis is needed.",
+        severity: "medium",
+        title: "Finance items require tax review",
+      }),
+    );
+    recommendedNextActions.add(
+      "Review finance income and expense against any group debt or tax-account interest.",
+    );
+  }
+
+  if (taxDeep.groupContributionContext.notes.length > 0) {
+    findings.push(
+      buildAnnualReportTaxAnalysisFallbackFindingV1({
+        area: "group_contributions",
+        evidence: taxDeep.groupContributionContext.evidence,
+        policyRuleReference:
+          "annual-report-tax-analysis.fallback.group-contributions.v1",
+        rationale:
+          "Group contribution references are present and should be matched to the group contribution treatment in the tax return.",
+        recommendedFollowUp:
+          "Confirm whether received or paid group contributions affect the return.",
+        severity: "medium",
+        title: "Group contribution disclosures are present",
+      }),
+    );
+    recommendedNextActions.add(
+      "Confirm the tax treatment of any disclosed group contributions.",
+    );
+  }
+
+  if (
+    taxDeep.taxExpenseContext?.currentTax?.value !== undefined ||
+    taxDeep.taxExpenseContext?.deferredTax?.value !== undefined ||
+    taxDeep.taxExpenseContext?.totalTaxExpense?.value !== undefined ||
+    (taxDeep.taxExpenseContext?.notes.length ?? 0) > 0
+  ) {
+    findings.push(
+      buildAnnualReportTaxAnalysisFallbackFindingV1({
+        area: "tax_expense",
+        evidence: taxDeep.taxExpenseContext?.evidence ?? [],
+        policyRuleReference:
+          "annual-report-tax-analysis.fallback.tax-expense.v1",
+        rationale:
+          "The report contains a tax-expense note that should be reconciled to the return and any deferred-tax positions.",
+        recommendedFollowUp:
+          "Tie the tax-expense note to the draft tax computation and deferred-tax workpapers.",
+        severity: "low",
+        title: "Tax-expense note is available for reconciliation",
+      }),
+    );
+    recommendedNextActions.add(
+      "Reconcile the tax-expense note to the draft tax calculation.",
+    );
+  }
+
+  if (
+    taxDeep.shareholdingContext.dividendsPaid?.value !== undefined ||
+    taxDeep.shareholdingContext.dividendsReceived?.value !== undefined ||
+    taxDeep.shareholdingContext.notes.length > 0
+  ) {
+    findings.push(
+      buildAnnualReportTaxAnalysisFallbackFindingV1({
+        area: "shareholdings_dividends",
+        evidence: taxDeep.shareholdingContext.evidence,
+        policyRuleReference:
+          "annual-report-tax-analysis.fallback.shareholdings.v1",
+        rationale:
+          "Dividend or shareholding disclosures are present and may require a tax classification review.",
+        recommendedFollowUp:
+          "Review dividends and participations for tax-exempt income or withholding considerations.",
+        severity: "low",
+        title: "Dividend and shareholding disclosures are present",
+      }),
+    );
+    recommendedNextActions.add(
+      "Review dividends and shareholding notes for tax treatment.",
+    );
+  }
+
+  if (findings.length === 0) {
+    findings.push(
+      buildAnnualReportTaxAnalysisFallbackFindingV1({
+        area: "manual_review",
+        policyRuleReference:
+          "annual-report-tax-analysis.fallback.manual-review.v1",
+        rationale:
+          "The extracted annual report data is usable, but the AI forensic review could not produce a richer structured assessment for this run.",
+        recommendedFollowUp:
+          "Review the annual report manually before relying on the forensic summary.",
+        severity: "low",
+        title: "Manual forensic review is still recommended",
+      }),
+    );
+    recommendedNextActions.add(
+      "Review the annual report manually before finalizing the tax position.",
+    );
+  }
+
+  const accountingStandardValue = input.extraction.fields.accountingStandard.value;
+  if (!accountingStandardValue) {
+    missingInformation.add(
+      "The accounting standard needs confirmation before relying on the forensic review.",
+    );
+  }
+
+  return {
+    schemaVersion: "annual_report_tax_analysis_v1",
+    sourceExtractionArtifactId: input.extractionArtifactId as `${string}`,
+    policyVersion: input.policyVersion,
+    basedOn: taxDeep,
+    executiveSummary:
+      "Forensic review completed using deterministic fallback signals because the AI review did not return a usable structured result.",
+    accountingStandardAssessment: {
+      status: accountingStandardValue ? "aligned" : "needs_review",
+      rationale: accountingStandardValue
+        ? `${accountingStandardValue} is available in the extracted core facts and can be used for the initial tax review.`
+        : "The accounting standard was not available in the extracted core facts and should be confirmed manually.",
+    },
+    findings,
+    missingInformation: [
+      ...missingInformation,
+      `AI fallback reason: ${input.fallbackReason.slice(0, 180)}`,
+    ],
+    recommendedNextActions: [...recommendedNextActions],
+    aiRun: input.config
+      ? parseAiRunMetadataV1({
+          runId: crypto.randomUUID(),
+          moduleId: input.config.moduleSpec.moduleId,
+          moduleVersion: input.config.moduleSpec.moduleVersion,
+          promptVersion: input.config.moduleSpec.promptVersion,
+          policyVersion: input.config.policyPack.policyVersion,
+          activePatchVersions: input.config.moduleSpec.policy.activePatchVersions,
+          provider: "gemini",
+          model: input.modelName,
+          modelTier: input.config.moduleSpec.runtime.modelTier,
+          generatedAt: new Date().toISOString(),
+          usedFallback: true,
+        })
+      : undefined,
+  };
+}
+
 async function analyzeAnnualReportTaxWithPrimaryAiV1(input: {
   env: Env;
   extraction: ReturnType<typeof parseAnnualReportExtractionPayloadV1>;
@@ -1640,26 +3202,27 @@ async function analyzeAnnualReportTaxWithPrimaryAiV1(input: {
     }
 > {
   const apiKey = getGeminiApiKeyV1(input.env);
-  if (!apiKey) {
-    return {
-      ok: false,
-      error: {
-        code: "CONFIG_INVALID",
-        message: "Gemini API key is not configured.",
-        context: {},
-      },
-    };
-  }
-
   const configResult = loadAnnualReportTaxAnalysisModuleConfigV1();
-  if (!configResult.ok) {
+  const config = configResult.ok ? configResult.config : null;
+  const modelConfig = getGeminiModelConfigV1(input.env);
+  const fallbackModelName = modelConfig.fastModel;
+  const configFailureMessage = configResult.ok
+    ? undefined
+    : configResult.error.message;
+
+  if (!apiKey || !config) {
     return {
-      ok: false,
-      error: {
-        code: "CONFIG_INVALID",
-        message: configResult.error.message,
-        context: {},
-      },
+      ok: true,
+      taxAnalysis: buildDeterministicAnnualReportTaxAnalysisFallbackV1({
+        config,
+        extraction: input.extraction,
+        extractionArtifactId: input.extractionArtifactId,
+        fallbackReason: !apiKey
+          ? "Gemini API key is not configured."
+          : (configFailureMessage ?? "Annual-report tax-analysis config failed."),
+        modelName: fallbackModelName,
+        policyVersion: input.policyVersion,
+      }),
     };
   }
 
@@ -1668,12 +3231,12 @@ async function analyzeAnnualReportTaxWithPrimaryAiV1(input: {
     execute: async () => {
       const analysisResult = await executeAnnualReportTaxAnalysisV1({
         apiKey,
-        config: configResult.config,
+        config,
         extraction: input.extraction,
         extractionArtifactId: input.extractionArtifactId,
         generateId: () => crypto.randomUUID(),
         generatedAt: new Date().toISOString(),
-        modelConfig: getGeminiModelConfigV1(input.env),
+        modelConfig,
         policyVersion: input.policyVersion,
       });
       if (!analysisResult.ok) {
@@ -1687,7 +3250,17 @@ async function analyzeAnnualReportTaxWithPrimaryAiV1(input: {
     },
   });
   if (!result.ok) {
-    return result;
+    return {
+      ok: true,
+      taxAnalysis: buildDeterministicAnnualReportTaxAnalysisFallbackV1({
+        config,
+        extraction: input.extraction,
+        extractionArtifactId: input.extractionArtifactId,
+        fallbackReason: result.error.message,
+        modelName: fallbackModelName,
+        policyVersion: input.policyVersion,
+      }),
+    };
   }
 
   return {
