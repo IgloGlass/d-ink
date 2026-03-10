@@ -1,0 +1,20 @@
+
+ ⛅️ wrangler 4.68.0 (update available 4.71.0)
+─────────────────────────────────────────────
+Using vars defined in .dev.vars
+Your Worker has access to the following bindings:
+Binding                                          Resource                  Mode
+env.DB (d-ink-v1)                                D1 Database               local
+env.AUTH_TOKEN_HMAC_SECRET ("(hidden)")          Environment Variable      local
+env.AI_PROVIDER_API_KEY ("(hidden)")             Environment Variable      local
+env.GEMINI_API_KEY ("(hidden)")                  Environment Variable      local
+env.GEMINI_FAST_MODEL ("(hidden)")               Environment Variable      local
+env.GEMINI_THINKING_MODEL ("(hidden)")           Environment Variable      local
+env.APP_BASE_URL ("(hidden)")                    Environment Variable      local
+env.DEV_AUTH_BYPASS_ENABLED ("(hidden)")         Environment Variable      local
+env.DEV_AUTH_DEFAULT_TENANT_ID ("(hidden)")      Environment Variable      local
+env.DEV_AUTH_DEFAULT_EMAIL ("(hidden)")          Environment Variable      local
+env.DEV_AUTH_DEFAULT_ROLE ("(hidden)")           Environment Variable      local
+
+⎔ Starting local server...
+[wrangler:info] Ready on http://127.0.0.1:8788

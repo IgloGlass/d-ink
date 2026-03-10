@@ -150,5 +150,11 @@ When a major product or architecture decision changes:
 - 2026-03-03: Implemented frontend overhaul cutover for primary V1 shell: V4 tokenized light theme foundation, fixed 56px global header, Ctrl+J workspace context launcher, i18n scaffolding (English active), new IA routes (selector, group control panel, workbench, module shell), compatibility redirects, tax-adjustments grouped sidebar with pinned final-calculation panel, and premium INK2 replica canvas. Added client integration tests for selector/workbench/module shell navigation.
 - 2026-03-03: Account-mapping module now uses virtualized row rendering in the new shell with `View All`/`Exceptions Only`, search-first category override UI, and inline AI command preview adapter. `@tanstack/react-virtual` package installation was blocked locally by npm auth/runtime constraints, so V1 ships with an internal deterministic virtualizer implementation pending dependency-install remediation.
 - 2026-03-05: Completed final frontend consistency and cutover sweep (FEP-12). UI gate now enforces coherent V4 token usage, selector -> workbench -> module flow stability, and semantic keyboard-accessible interaction cleanup (removed redundant ARIA roles on native list/button controls).
+- 2026-03-05: Performed "Scorched Earth" UI/UX overhaul to implement the **Deloitte Ascend** design language.
+  - Migrated to a **High-Contrast Zinc palette** with Deloitte Green accents.
+  - Implemented **Search-First Hero** entry point (`CompanySelectorPageV1`).
+  - Modularized and polished all core workbenches: `AccountMappingGridV1` (virtualized, resizable), `TaxAdjustmentsWorkbenchV1` (dual-pane), and `Ink2FormReplicaV1`.
+  - Established **Drag-and-Drop** as a primary input pattern for PDF and Excel.
+  - Implemented **State Persistence** across tab navigation via CSS hiding, ensuring AI background processes remain uninterrupted.
 - 2026-03-05: Locked V1 demo authentication to automatic localhost Admin session and moved invite/magic-link auth from active V1 scope to V2.
 - 2026-03-05: Added a dedicated `Company` module (`companies_v1` table, company contracts/repository/workflow/HTTP routes) and shifted `/app/workspaces` into a company-first premium hub with create-company flow, seed demo companies action, and workspace bootstrap per company.

@@ -6,6 +6,11 @@ import tbPipelineArtifactsMigrationSql from "../../src/db/migrations/0003_tb_pip
 import mappingPreferencesMigrationSql from "../../src/db/migrations/0004_mapping_preferences_v1.sql?raw";
 import coreTaxModulesMigrationSql from "../../src/db/migrations/0005_core_tax_modules_v1.sql?raw";
 import companiesMigrationSql from "../../src/db/migrations/0006_companies_v1.sql?raw";
+import workspaceArtifactTaxAnalysisMigrationSql from "../../src/db/migrations/0007_workspace_artifact_tax_analysis_v1.sql?raw";
+import annualReportProcessingRunsMigrationSql from "../../src/db/migrations/0008_annual_report_processing_runs_v1.sql?raw";
+import annualReportUploadSessionsMigrationSql from "../../src/db/migrations/0009_annual_report_upload_sessions_v1.sql?raw";
+import annualReportProcessingRunDegradationMigrationSql from "../../src/db/migrations/0010_annual_report_processing_run_degradation_v1.sql?raw";
+import annualReportProcessingRunStatusContractMigrationSql from "../../src/db/migrations/0011_annual_report_processing_run_status_contract_v1.sql?raw";
 
 function splitSqlStatements(migrationSql: string): string[] {
   return migrationSql
@@ -25,6 +30,11 @@ export async function applyWorkspaceAuditSchemaForTests(): Promise<void> {
     mappingPreferencesMigrationSql,
     coreTaxModulesMigrationSql,
     companiesMigrationSql,
+    workspaceArtifactTaxAnalysisMigrationSql,
+    annualReportProcessingRunsMigrationSql,
+    annualReportUploadSessionsMigrationSql,
+    annualReportProcessingRunDegradationMigrationSql,
+    annualReportProcessingRunStatusContractMigrationSql,
   ];
 
   for (const migrationSql of migrationSqlList) {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { AiRunMetadataV1Schema } from "./ai-run.v1";
 import { UuidV4Schema } from "./common.v1";
 import { MappingDecisionSetPayloadV1Schema } from "./mapping.v1";
 
@@ -110,6 +111,7 @@ export const TaxAdjustmentDecisionSetPayloadV1Schema = z
   .object({
     schemaVersion: z.literal("tax_adjustments_v1"),
     policyVersion: z.string().trim().min(1),
+    aiRuns: z.array(AiRunMetadataV1Schema).default([]),
     summary: TaxAdjustmentDecisionSummaryV1Schema,
     generatedFrom: z
       .object({

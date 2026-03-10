@@ -21,16 +21,23 @@ D.ink is an AI-assisted tax return drafting and review app for Swedish corporate
 
 Core principle: AI proposes, humans review/approve, deterministic code computes final totals and form population.
 
-## Resolved Discrepancies (as of 2026-02-24)
+## Resolved Discrepancies (as of 2026-03-05)
 
-### 1) Roles (V1)
+### 1) UI/UX Design Language (V1 Baseline)
+V1 implementation follows the **Deloitte Ascend** ("Next-Gen Enterprise") standard:
+- **Palette**: High-contrast Zinc (`Zinc-50` to `Zinc-900`) with Deloitte Green (`#86BC25`) as the sole accent.
+- **Aesthetic**: Sharp corners (`radius: 0`), bold typography, and dense data layouts.
+- **Entry Flow**: Search-first Hero (`CompanySelectorPageV1`) -> Stats Workbench -> Sequential Task Tabs.
+- **Key Interactions**:
+  - First-class Drag-and-Drop for Excel and PDF.
+  - High-performance virtualized grids with column resizing.
+  - Persistent background processes (navigation does not interrupt AI tasks).
 
+### 2) Roles (V1)
 V1 role model is:
-
 - `Admin`
 - `Editor`
-
-`Preparer`/`Reviewer` split is deferred to V2 unless explicitly reintroduced.
+`Preparer`/`Reviewer` split is deferred to V2.
 
 ### 2) Hosting, auth, and AI integration
 

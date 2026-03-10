@@ -1,229 +1,877 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { type ReactNode, useState } from "react";
+import { useParams } from "react-router-dom";
 
+import type {
+  AnnualReportAmountUnitV1,
+  AnnualReportExtractionPayloadV1,
+  AnnualReportRuntimeMetadataV1,
+  AnnualReportStatementLineV1,
+} from "../../../shared/contracts/annual-report-extraction.v1";
+import { MAX_ANNUAL_REPORT_UPLOAD_BYTES_V1 } from "../../../shared/contracts/annual-report-upload-session.v1";
+import type {
+  AnnualReportProcessingRunV1,
+} from "../../../shared/contracts/annual-report-processing-run.v1";
 import {
-  type SilverfinTaxCategoryCodeV1,
-  listSilverfinTaxCategoriesV1,
-} from "../../../shared/contracts/mapping.v1";
+  coreModuleDefinitionsV1,
+  type CoreModuleDefinitionV1,
+  type CoreModuleSlugV1,
+} from "../../app/core-modules.v1";
 import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
 import { ButtonV1 } from "../../components/button-v1";
 import { CardV1 } from "../../components/card-v1";
 import { EmptyStateV1 } from "../../components/empty-state-v1";
-import { GuidanceBannerV1 } from "../../components/guidance-banner-v1";
-import { InputV1 } from "../../components/input-v1";
-import { SidebarNavV1 } from "../../components/sidebar-nav-v1";
 import { SkeletonV1 } from "../../components/skeleton-v1";
-import { TabsV1 } from "../../components/tabs-v1";
-import { inlineAiCommandAdapterV1 } from "../../lib/adapters/inline-ai-command-adapter.v1";
+import { UploadDropZoneV1 } from "../../components/upload-drop-zone.v1";
+import { WorkspaceReviewPanelV1 } from "../../components/workspace-review-panel.v1";
+import {
+  formatAnnualReportRunElapsedLabelV1,
+  isAnnualReportOpenRunStaleV1,
+  isAnnualReportProcessingOpenStatusV1,
+  selectAnnualReportProgressDetailsV1,
+  useAnnualReportUploadControllerV1,
+} from "../annual-report/use-annual-report-upload-controller.v1";
+import {
+  createPdfExportV1,
+  getActiveAnnualReportExtractionV1,
+  getActiveAnnualReportTaxAnalysisV1,
+  getActiveInk2FormV1,
+  getLatestAnnualReportProcessingRunV1,
+  getActiveMappingDecisionsV1,
+  getActiveTaxAdjustmentsV1,
+  getActiveTaxSummaryV1,
+  getWorkspaceByIdV1,
+  runInk2FormV1,
+  runTaxAdjustmentsV1,
+  runTaxSummaryV1,
+  runTrialBalancePipelineV1,
+} from "../../lib/http/workspace-api";
+import {
+  fileToBase64V1,
+  inferTrialBalanceFileTypeV1,
+} from "../../lib/workspace-files.v1";
 import {
   ApiClientError,
   toUserFacingErrorMessage,
 } from "../../lib/http/api-client";
 import {
-  applyMappingOverridesV1,
-  getActiveInk2FormV1,
-  getActiveMappingDecisionsV1,
-  getActiveTaxAdjustmentsV1,
-  getActiveTaxSummaryV1,
-} from "../../lib/http/workspace-api";
-import { useI18nV1 } from "../../lib/i18n/use-i18n.v1";
+  buildWorkflowSnapshotV1,
+  getModuleWorkflowStateV1,
+} from "../../lib/workflow-v1";
 
-type CoreModuleSlugV1 =
-  | "annual-report-analysis"
-  | "account-mapping"
-  | "tax-adjustments"
-  | "tax-return-ink2";
+const ANNUAL_REPORT_POLICY_VERSION_V1 = "annual-report-manual-first.v1";
+const TRIAL_BALANCE_POLICY_VERSION_V1 = "deterministic-bas.v1";
+const TAX_ADJUSTMENTS_POLICY_VERSION_V1 = "tax-adjustments.v1";
 
-type MappingStateLabelV1 =
-  | "AI Confident"
-  | "Approved"
-  | "Manual Override"
-  | "Pending Review";
-
-const coreModuleOrderV1: CoreModuleSlugV1[] = [
-  "annual-report-analysis",
-  "account-mapping",
-  "tax-adjustments",
-  "tax-return-ink2",
-];
-
-const mappingGridRowHeightV1 = 44;
-const mappingGridViewportHeightV1 = 520;
-const mappingGridOverscanV1 = 10;
-const mappingGridTemplateColumnsV1 = "56px 1.2fr 2fr 1fr 1.6fr 1fr 1.2fr";
-
-const taxAdjustmentGroupsV1 = {
-  common: [
-    "General Client Information",
-    "Trial Balance to Local GAAP",
-    "Disallowed Expenses",
-    "Non-Taxable Income",
-    "Provisions",
-    "Depreciation on Tangible and Acquired Intangible Assets",
-    "Group Contributions",
-    "Items Not Included in the Books",
-    "Tax Losses Carried Forward",
-  ],
-  advancedFrequent: [
-    "Property Tax and Property Fee",
-    "Warranty Provision",
-    "Pension Costs and Basis for Special Employer's Contribution",
-    "Buildings, Building Improvements, Leasehold Improvements, Land Improvements, and Capital Gains on Sale of Commercial Property",
-    "Capital Assets and Unrealized Changes",
-    "Obsolescence Reserve for Inventory",
-    "Shares and Participations",
-    "Shares and Participations - Average Method",
-    "Partnership Interest (Handelsbolag) - N3B",
-  ],
-  advancedSpecialized: [
-    "CFC Taxation",
-    "Yield Tax, Risk Tax, and Renewable Energy",
-    "Hybrid and Targeted Interest Limitation Rules, and Offsetting of Net Interest",
-    "Deductible Net Interest Under the General Interest Deduction Limitation Rule",
-    "Notional Income on Tax Allocation Reserve",
-    "Reversal of Tax Allocation Reserve",
-    "Allocation to Tax Allocation Reserve",
-    "Increased Deduction for Restricted Tax Losses Carried Forward (TLCF)",
-  ],
-  calculation: [
-    "Tax Calculation Before Deduction of Prior-Year Losses and Negative Net Interest",
-    "Tax Calculation After Deduction for Negative Net Interest and Tax Losses Carried Forward",
-    "Tax Calculation After Deduction for Negative Net Interest, Tax Allocation Reserve, and Tax Losses",
-  ],
-  final: ["Final Tax Calculation"],
-};
-
-function toSlugV1(label: string): string {
-  return label
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
+function formatCurrencyV1(value: number): string {
+  return new Intl.NumberFormat("sv-SE").format(value);
 }
 
-const allTaxSubmoduleLabelsV1 = [
-  ...taxAdjustmentGroupsV1.common,
-  ...taxAdjustmentGroupsV1.advancedFrequent,
-  ...taxAdjustmentGroupsV1.advancedSpecialized,
-  ...taxAdjustmentGroupsV1.calculation,
-  ...taxAdjustmentGroupsV1.final,
-];
-
-const taxSubmoduleLabelBySlugV1 = new Map(
-  allTaxSubmoduleLabelsV1.map((label) => [toSlugV1(label), label]),
-);
-
-function toMappingStateLabelV1(input: {
-  confidence: number;
-  reviewFlag: boolean;
-  status: string;
-}): MappingStateLabelV1 {
-  if (input.status === "overridden") {
-    return "Manual Override";
+function formatSeverityLabelV1(input: "low" | "medium" | "high"): string {
+  if (input === "high") {
+    return "High";
   }
-  if (input.reviewFlag || input.confidence < 0.8) {
-    return "Pending Review";
+  if (input === "medium") {
+    return "Medium";
   }
-  if (input.confidence >= 0.9) {
-    return "AI Confident";
-  }
-  return "Approved";
+  return "Low";
 }
 
-function isMappingExceptionV1(input: {
-  reviewFlag: boolean;
-  status: string;
-  confidence: number;
-}): boolean {
+function ModuleStageIntroV1({
+  description,
+  heading,
+  moduleDefinition,
+  subModule,
+}: {
+  description: string;
+  heading: string;
+  moduleDefinition: CoreModuleDefinitionV1;
+  subModule: string | undefined;
+}) {
   return (
-    input.reviewFlag || input.status === "overridden" || input.confidence < 0.8
+    <div className="module-stage-card__header">
+      <div>
+        <div className="module-shell__eyebrow">Module {moduleDefinition.step}</div>
+        <h1>{heading}</h1>
+        <p>{description}</p>
+        {subModule ? (
+          <div className="module-stage-card__submodule">
+            Focus area: {subModule.replace(/-/g, " ")}
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
-function getCoreModuleLabelV1(
-  moduleSlug: CoreModuleSlugV1,
-  labels: Record<CoreModuleSlugV1, string>,
-): string {
-  return labels[moduleSlug];
+function ModuleSummaryGridV1({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return <div className="module-summary-grid">{children}</div>;
+}
+
+function ModuleSummaryItemV1({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="module-summary-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function formatCountValueV1(value: number | undefined): string {
+  return value === undefined ? "-" : formatCurrencyV1(value);
+}
+
+function formatOptionalCurrencyV1(value: number | undefined): string {
+  return value === undefined ? "-" : formatCurrencyV1(value);
+}
+
+function formatStatementUnitLabelV1(
+  statementUnit: AnnualReportAmountUnitV1 | undefined,
+): string | null {
+  if (!statementUnit || statementUnit === "sek") {
+    return null;
+  }
+
+  return statementUnit === "ksek"
+    ? "Normalized from kSEK to SEK"
+    : "Normalized from MSEK to SEK";
+}
+
+function hasAnnualReportStatementDataV1(
+  extraction: AnnualReportExtractionPayloadV1 | undefined,
+): boolean {
+  return Boolean(
+    extraction?.taxDeep &&
+      extraction.taxDeep.ink2rExtracted.incomeStatement.length > 0 &&
+      extraction.taxDeep.ink2rExtracted.balanceSheet.length > 0,
+  );
+}
+
+function hasLegacyAnnualReportWarningSignatureV1(
+  warnings: string[],
+): boolean {
+  return warnings.some(
+    (warning) =>
+      warning.includes("Gemini statements extraction skipped") ||
+      warning.includes("maximum allowed nesting depth") ||
+      warning.includes("Full financial extraction is missing"),
+  );
+}
+
+type AnnualReportActiveResultStatusV1 =
+  | "empty"
+  | "ready"
+  | "legacy"
+  | "partial";
+
+function normalizeAnnualReportTechnicalWarningsV1(
+  warnings: string[],
+): string[] {
+  return warnings.filter(
+    (warning) =>
+      !warning.includes("Full financial extraction is missing on this artifact."),
+  );
+}
+
+function deriveAnnualReportResultStateV1(input: {
+  extraction: AnnualReportExtractionPayloadV1 | undefined;
+  runtime: AnnualReportRuntimeMetadataV1 | undefined;
+  warnings: string[];
+}): {
+  helperText: string;
+  reviewLabel: string;
+  status: AnnualReportActiveResultStatusV1;
+  statusLabel: string;
+  technicalWarnings: string[];
+} {
+  const hasFullExtraction = hasAnnualReportStatementDataV1(input.extraction);
+  const technicalWarnings = normalizeAnnualReportTechnicalWarningsV1(
+    input.warnings,
+  );
+  if (!input.extraction) {
+    return {
+      status: "empty",
+      statusLabel: "No annual report uploaded",
+      reviewLabel: "Upload annual report",
+      helperText:
+        "Upload an annual report to extract financial statements and tax context.",
+      technicalWarnings,
+    };
+  }
+  const runtimeFingerprintMismatch = Boolean(
+    input.runtime &&
+      input.extraction?.engineMetadata &&
+      input.extraction.engineMetadata.runtimeFingerprint !==
+        input.runtime.runtimeFingerprint,
+  );
+  const engineVersionMismatch = Boolean(
+    input.runtime &&
+      input.extraction?.engineMetadata &&
+      input.extraction.engineMetadata.extractionEngineVersion !==
+        input.runtime.extractionEngineVersion,
+  );
+  const legacyResult =
+    !hasFullExtraction &&
+    (hasLegacyAnnualReportWarningSignatureV1(input.warnings) ||
+      runtimeFingerprintMismatch ||
+      engineVersionMismatch ||
+      !input.extraction?.engineMetadata);
+
+  if (legacyResult) {
+    return {
+      status: "legacy",
+      statusLabel: "Legacy result",
+      reviewLabel: "Upload again",
+      helperText:
+        "This saved result was created with an older extraction engine and is missing full statements and tax-note context. Upload the annual report again to refresh it.",
+      technicalWarnings,
+    };
+  }
+
+  if (!hasFullExtraction) {
+    return {
+      status: "partial",
+      statusLabel: "Partial extraction",
+      reviewLabel: "Upload again",
+      helperText:
+        "Analysis completed, but the financial statements or note context are still incomplete. Upload the annual report again to refresh this result.",
+      technicalWarnings,
+    };
+  }
+
+  return {
+    status: "ready",
+    statusLabel: "Extracted",
+    reviewLabel: "Upload a new annual report",
+    helperText:
+      "The extracted financial data is saved and available for downstream tax modules.",
+    technicalWarnings,
+  };
+}
+
+function buildAnnualReportValueRowsV1(
+  items: Array<{ label: string; value?: number }>,
+): Array<{ label: string; value: string }> {
+  return items
+    .filter((item) => item.value !== undefined)
+    .map((item) => ({
+      label: item.label,
+      value: formatCurrencyV1(item.value ?? 0),
+    }));
+}
+
+function AnnualReportValueListV1({
+  items,
+}: {
+  items: Array<{ label: string; value: string }>;
+}) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <ul className="annual-report-sidebar__list">
+      {items.map((item) => (
+        <li key={`${item.label}-${item.value}`}>
+          <span>{item.label}</span>
+          <strong>{item.value}</strong>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function confirmActiveDataOverrideV1(message: string): boolean {
+  if (typeof window === "undefined" || typeof window.confirm !== "function") {
+    return true;
+  }
+
+  return window.confirm(message);
+}
+
+function AnnualReportStatementSectionV1({
+  lines,
+  title,
+}: {
+  lines: AnnualReportStatementLineV1[];
+  title: string;
+}) {
+  if (lines.length === 0) {
+    return null;
+  }
+
+  const hasPriorYearValues = lines.some((line) => line.priorYearValue !== undefined);
+
+  return (
+    <div className="annual-report-sidebar__section">
+      <div className="annual-report-sidebar__label">{title}</div>
+      <table className="annual-report-sidebar__statement-table">
+        <thead>
+          <tr>
+            <th>Line item</th>
+            <th>Current year</th>
+            {hasPriorYearValues ? <th>Prior year</th> : null}
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((line) => (
+            <tr key={`${title}-${line.code}-${line.label}`}>
+              <td>{line.label}</td>
+              <td>{formatOptionalCurrencyV1(line.currentYearValue)}</td>
+              {hasPriorYearValues ? (
+                <td>{formatOptionalCurrencyV1(line.priorYearValue)}</td>
+              ) : null}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AnnualReportWarningDisclosureV1({
+  warnings,
+}: {
+  warnings: string[];
+}) {
+  if (warnings.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="annual-report-sidebar__section">
+      <details className="annual-report-sidebar__details">
+        <summary>Technical details ({warnings.length})</summary>
+        <ul className="annual-report-sidebar__notes annual-report-sidebar__notes--compact">
+          {warnings.map((warning) => (
+            <li key={warning}>{warning}</li>
+          ))}
+        </ul>
+      </details>
+    </div>
+  );
+}
+
+function AnnualReportSidebarV1({
+  annualDocumentWarnings,
+  annualFields,
+  annualReportClearPending,
+  annualReportMutationPending,
+  hasActiveExtraction,
+  extraction,
+  onClearRequested,
+  onRecoveryRequested,
+  processingRun,
+  recoveryActionLabel,
+  runtime,
+}: {
+  annualDocumentWarnings: string[];
+  annualFields: AnnualReportExtractionPayloadV1["fields"] | undefined;
+  annualReportClearPending: boolean;
+  annualReportMutationPending: boolean;
+  hasActiveExtraction: boolean;
+  extraction: AnnualReportExtractionPayloadV1 | undefined;
+  onClearRequested: () => void;
+  onRecoveryRequested: () => void;
+  processingRun: AnnualReportProcessingRunV1 | undefined;
+  recoveryActionLabel: string;
+  runtime: AnnualReportRuntimeMetadataV1 | undefined;
+}) {
+  const statementUnitLabel = formatStatementUnitLabelV1(
+    extraction?.taxDeep?.ink2rExtracted.statementUnit,
+  );
+  const extractionState = deriveAnnualReportResultStateV1({
+    extraction,
+    runtime,
+    warnings: annualDocumentWarnings,
+  });
+  const assetMovementRows =
+    extraction?.taxDeep?.depreciationContext.assetAreas.length
+      ? extraction.taxDeep.depreciationContext.assetAreas
+      : extraction?.taxDeep?.assetMovements.lines ?? [];
+  const reserveMovements = extraction?.taxDeep?.reserveContext.movements ?? [];
+  const financialContextValues = buildAnnualReportValueRowsV1([
+    {
+      label: "Net interest",
+      value: extraction?.taxDeep?.netInterestContext.netInterest?.value,
+    },
+    {
+      label: "Finance expense",
+      value: extraction?.taxDeep?.netInterestContext.financeExpense?.value,
+    },
+    {
+      label: "Special payroll tax",
+      value: extraction?.taxDeep?.pensionContext.specialPayrollTax?.value,
+    },
+    {
+      label: "Current tax",
+      value: extraction?.taxDeep?.taxExpenseContext?.currentTax?.value,
+    },
+    {
+      label: "Deferred tax",
+      value: extraction?.taxDeep?.taxExpenseContext?.deferredTax?.value,
+    },
+    {
+      label: "Total tax expense",
+      value: extraction?.taxDeep?.taxExpenseContext?.totalTaxExpense?.value,
+    },
+    {
+      label: "Dividends paid",
+      value: extraction?.taxDeep?.shareholdingContext.dividendsPaid?.value,
+    },
+    {
+      label: "Dividends received",
+      value: extraction?.taxDeep?.shareholdingContext.dividendsReceived?.value,
+    },
+  ]);
+  const interestNotes = extraction?.taxDeep?.netInterestContext.notes ?? [];
+  const pensionNotes = extraction?.taxDeep?.pensionContext.notes ?? [];
+  const taxExpenseNotes = extraction?.taxDeep?.taxExpenseContext?.notes ?? [];
+  const reserveNotes = extraction?.taxDeep?.reserveContext.notes ?? [];
+  const leasingNotes = extraction?.taxDeep?.leasingContext.notes ?? [];
+  const groupContributionNotes =
+    extraction?.taxDeep?.groupContributionContext.notes ?? [];
+  const shareholdingNotes = extraction?.taxDeep?.shareholdingContext.notes ?? [];
+  const showRecoveryActions =
+    extractionState.status === "legacy" || extractionState.status === "partial";
+  const processingRunStale = isAnnualReportOpenRunStaleV1(processingRun);
+  const processingOpen = isAnnualReportProcessingOpenStatusV1(
+    processingRun?.status,
+  ) && !processingRunStale;
+  const processingStatusLabel = processingOpen
+    ? processingRun?.statusMessage
+    : processingRunStale
+      ? "Processing stalled"
+    : processingRun?.status === "failed"
+      ? "Extraction failed"
+      : processingRun?.status === "partial"
+        ? "Incomplete extraction"
+        : null;
+  const processingElapsedLabel = formatAnnualReportRunElapsedLabelV1(processingRun);
+  const processingProgressDetails = selectAnnualReportProgressDetailsV1(processingRun);
+
+  return (
+    <aside className="annual-report-sidebar">
+      <CardV1 className="annual-report-sidebar__card">
+        <div className="annual-report-sidebar__header">
+          <div>
+            <div className="review-panel__eyebrow">Extraction review</div>
+            <h2>Financial data</h2>
+            {statementUnitLabel ? (
+              <div className="annual-report-sidebar__caption">{statementUnitLabel}</div>
+            ) : null}
+          </div>
+          <div className="annual-report-sidebar__status-block">
+            <div className="module-data-card__status">
+              {processingStatusLabel ?? extractionState.statusLabel}
+            </div>
+            <strong>{extractionState.reviewLabel}</strong>
+            {hasActiveExtraction ? (
+              <ButtonV1
+                variant="secondary"
+                size="sm"
+                onClick={onClearRequested}
+                disabled={annualReportClearPending || annualReportMutationPending}
+              >
+                Clear annual report data
+              </ButtonV1>
+            ) : null}
+          </div>
+        </div>
+
+        {annualFields ? (
+          <>
+            {processingRun?.hasPreviousActiveResult && processingOpen ? (
+              <div className="annual-report-sidebar__section">
+                <div className="annual-report-sidebar__label">Replacement in progress</div>
+                <div className="annual-report-sidebar__status-message">
+                  {processingRun.statusMessage}. The current extracted dataset stays
+                  active until the new upload completes successfully.
+                </div>
+                {processingElapsedLabel ? (
+                  <div className="annual-report-sidebar__caption">{processingElapsedLabel}</div>
+                ) : null}
+                {processingProgressDetails.length > 0 ? (
+                  <ul className="annual-report-sidebar__notes annual-report-sidebar__notes--compact">
+                    {processingProgressDetails.map((detail) => (
+                      <li key={detail}>{detail}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
+            {processingRunStale ? (
+              <div className="annual-report-sidebar__section annual-report-sidebar__section--attention">
+                <div className="annual-report-sidebar__label">Processing appears stalled</div>
+                <div className="annual-report-sidebar__status-message">
+                  No run progress has been recorded for at least 90 seconds. Upload
+                  a replacement annual report to continue.
+                </div>
+              </div>
+            ) : null}
+            {processingOpen &&
+            !processingRun?.hasPreviousActiveResult &&
+            (processingElapsedLabel || processingProgressDetails.length > 0) ? (
+              <div className="annual-report-sidebar__section">
+                <div className="annual-report-sidebar__label">Processing progress</div>
+                <div className="annual-report-sidebar__status-message">
+                  {processingRun?.statusMessage}
+                </div>
+                {processingElapsedLabel ? (
+                  <div className="annual-report-sidebar__caption">{processingElapsedLabel}</div>
+                ) : null}
+                {processingProgressDetails.length > 0 ? (
+                  <ul className="annual-report-sidebar__notes annual-report-sidebar__notes--compact">
+                    {processingProgressDetails.map((detail) => (
+                      <li key={detail}>{detail}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div
+              className={`annual-report-sidebar__section${
+                showRecoveryActions
+                  ? " annual-report-sidebar__section--attention"
+                  : ""
+              }`}
+            >
+              <div className="annual-report-sidebar__status-message">
+                {extractionState.helperText}
+              </div>
+              <div className="annual-report-sidebar__actions">
+                <ButtonV1
+                  variant="black"
+                  size="sm"
+                  onClick={onRecoveryRequested}
+                  disabled={annualReportMutationPending}
+                >
+                  {recoveryActionLabel}
+                </ButtonV1>
+              </div>
+            </div>
+
+            {showRecoveryActions ? (
+              <div className="annual-report-sidebar__section annual-report-sidebar__section--attention">
+                <div className="annual-report-sidebar__label">Missing from this run</div>
+                <ul className="annual-report-sidebar__notes">
+                  <li>Full income statement rows</li>
+                  <li>Full balance sheet rows</li>
+                  <li>Tax-note context for downstream AI review</li>
+                </ul>
+              </div>
+            ) : null}
+
+            <div className="annual-report-sidebar__section">
+              <div className="annual-report-sidebar__label">Core facts</div>
+              <dl className="annual-report-sidebar__facts">
+                <div>
+                  <dt>Company</dt>
+                  <dd>{annualFields.companyName.value ?? "Missing"}</dd>
+                </div>
+                <div>
+                  <dt>Org no</dt>
+                  <dd>{annualFields.organizationNumber.value ?? "Missing"}</dd>
+                </div>
+                <div>
+                  <dt>Framework</dt>
+                  <dd>{annualFields.accountingStandard.value ?? "Missing"}</dd>
+                </div>
+                <div>
+                  <dt>Year start</dt>
+                  <dd>{annualFields.fiscalYearStart.value ?? "Missing"}</dd>
+                </div>
+                <div>
+                  <dt>Year end</dt>
+                  <dd>{annualFields.fiscalYearEnd.value ?? "Missing"}</dd>
+                </div>
+                <div>
+                  <dt>Profit before tax</dt>
+                  <dd>
+                    {annualFields.profitBeforeTax.value !== undefined
+                      ? formatCurrencyV1(annualFields.profitBeforeTax.value)
+                      : "Missing"}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            <AnnualReportStatementSectionV1
+              title="Income statement"
+              lines={extraction?.taxDeep?.ink2rExtracted.incomeStatement ?? []}
+            />
+
+            <AnnualReportStatementSectionV1
+              title="Balance sheet"
+              lines={extraction?.taxDeep?.ink2rExtracted.balanceSheet ?? []}
+            />
+
+            {financialContextValues.length > 0 ? (
+              <div className="annual-report-sidebar__section">
+                <div className="annual-report-sidebar__label">Interest, tax, and financing</div>
+                <AnnualReportValueListV1 items={financialContextValues} />
+              </div>
+            ) : null}
+
+            {assetMovementRows.length > 0 ? (
+              <div className="annual-report-sidebar__section">
+                <div className="annual-report-sidebar__label">Depreciation and movements</div>
+                <div className="annual-report-sidebar__movement-grid">
+                  {assetMovementRows.map((row) => (
+                    <div className="annual-report-sidebar__movement-card" key={row.assetArea}>
+                      <div className="annual-report-sidebar__movement-title">
+                        {row.assetArea}
+                      </div>
+                      <dl className="annual-report-sidebar__movement-values">
+                        <div>
+                          <dt>Acq</dt>
+                          <dd>{formatCountValueV1(row.acquisitions)}</dd>
+                        </div>
+                        <div>
+                          <dt>Disp</dt>
+                          <dd>{formatCountValueV1(row.disposals)}</dd>
+                        </div>
+                        <div>
+                          <dt>Depr</dt>
+                          <dd>{formatCountValueV1(row.depreciationForYear)}</dd>
+                        </div>
+                        <div>
+                          <dt>Close</dt>
+                          <dd>{formatCountValueV1(row.closingCarryingAmount)}</dd>
+                        </div>
+                      </dl>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {reserveMovements.length > 0 ? (
+              <div className="annual-report-sidebar__section">
+                <div className="annual-report-sidebar__label">Reserve movements</div>
+                <ul className="annual-report-sidebar__list">
+                  {reserveMovements.map((movement) => (
+                    <li key={movement.reserveType}>
+                      <span>{movement.reserveType}</span>
+                      <strong>{formatCountValueV1(movement.closingBalance)}</strong>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {interestNotes.length > 0 ? (
+              <div className="annual-report-sidebar__section">
+                <div className="annual-report-sidebar__label">Interest notes</div>
+                <ul className="annual-report-sidebar__notes">
+                  {interestNotes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {pensionNotes.length > 0 ? (
+              <div className="annual-report-sidebar__section">
+                <div className="annual-report-sidebar__label">Pension notes</div>
+                <ul className="annual-report-sidebar__notes">
+                  {pensionNotes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {taxExpenseNotes.length > 0 ? (
+              <div className="annual-report-sidebar__section">
+                <div className="annual-report-sidebar__label">Current and deferred tax</div>
+                <ul className="annual-report-sidebar__notes">
+                  {taxExpenseNotes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {reserveNotes.length > 0 ? (
+              <div className="annual-report-sidebar__section">
+                <div className="annual-report-sidebar__label">Reserve notes</div>
+                <ul className="annual-report-sidebar__notes">
+                  {reserveNotes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {leasingNotes.length > 0 ? (
+              <div className="annual-report-sidebar__section">
+                <div className="annual-report-sidebar__label">Leasing notes</div>
+                <ul className="annual-report-sidebar__notes">
+                  {leasingNotes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {groupContributionNotes.length > 0 ? (
+              <div className="annual-report-sidebar__section">
+                <div className="annual-report-sidebar__label">Group contributions</div>
+                <ul className="annual-report-sidebar__notes">
+                  {groupContributionNotes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {shareholdingNotes.length > 0 ? (
+              <div className="annual-report-sidebar__section">
+                <div className="annual-report-sidebar__label">Shareholdings and dividends</div>
+                <ul className="annual-report-sidebar__notes">
+                  {shareholdingNotes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            <AnnualReportWarningDisclosureV1
+              warnings={extractionState.technicalWarnings}
+            />
+          </>
+        ) : (
+          <>
+            {processingRun ? (
+              <div className="annual-report-sidebar__section annual-report-sidebar__section--attention">
+                <div className="annual-report-sidebar__label">
+                  {processingRun.status === "failed"
+                    ? "Extraction failed"
+                    : processingRun.status === "partial"
+                      ? "Incomplete extraction"
+                      : "Analysis in progress"}
+                </div>
+                <div className="annual-report-sidebar__status-message">
+                  {processingRun.error?.userMessage ?? processingRun.statusMessage}
+                </div>
+                <div className="annual-report-sidebar__actions">
+                  <ButtonV1
+                    variant="black"
+                    size="sm"
+                    onClick={onRecoveryRequested}
+                    disabled={annualReportMutationPending}
+                  >
+                    {recoveryActionLabel}
+                  </ButtonV1>
+                  <ButtonV1
+                    variant="secondary"
+                    size="sm"
+                    onClick={onClearRequested}
+                    disabled={annualReportClearPending || annualReportMutationPending}
+                  >
+                    Clear annual report data
+                  </ButtonV1>
+                </div>
+              </div>
+            ) : (
+              <div className="workspace-empty-state">
+                Upload an annual report to populate the financial extraction sidebar.
+              </div>
+            )}
+
+            <AnnualReportWarningDisclosureV1 warnings={annualDocumentWarnings} />
+          </>
+        )}
+      </CardV1>
+    </aside>
+  );
 }
 
 export function CoreModuleShellPageV1() {
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const principal = useRequiredSessionPrincipalV1();
-  const { t } = useI18nV1();
+  const queryClient = useQueryClient();
   const { workspaceId, coreModule, subModule } = useParams();
+
+  const [trialBalanceFile, setTrialBalanceFile] = useState<File | null>(null);
+
   const resolvedWorkspaceId = workspaceId ?? "";
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [mappingViewMode, setMappingViewMode] = useState<"all" | "exceptions">(
-    "all",
-  );
-  const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
-  const [categoryQuery, setCategoryQuery] = useState("");
-  const [categorySelection, setCategorySelection] =
-    useState<SilverfinTaxCategoryCodeV1 | null>(null);
-  const [commandText, setCommandText] = useState("");
-  const [commandPreview, setCommandPreview] = useState<string | null>(null);
-  const [mappingScrollTop, setMappingScrollTop] = useState(0);
-  const mappingScrollRef = useRef<HTMLDivElement | null>(null);
-  const mappingScrollRafRef = useRef<number | null>(null);
+  const normalizedCoreModule =
+    (coreModule as CoreModuleSlugV1) ?? "annual-report-analysis";
+  const activeModuleDefinition =
+    coreModuleDefinitionsV1.find(
+      (moduleDefinition) => moduleDefinition.slug === normalizedCoreModule,
+    ) ?? coreModuleDefinitionsV1[0];
 
-  function setRowSelectedV1(decisionId: string, shouldSelect: boolean) {
-    setSelectedRowIds((current) => {
-      const alreadySelected = current.includes(decisionId);
-      if (shouldSelect && !alreadySelected) {
-        return [...current, decisionId];
+  const workspaceQuery = useQuery({
+    queryKey: ["workspace", principal.tenantId, resolvedWorkspaceId],
+    queryFn: () =>
+      getWorkspaceByIdV1({
+        tenantId: principal.tenantId,
+        workspaceId: resolvedWorkspaceId,
+      }),
+    enabled: resolvedWorkspaceId.length > 0,
+  });
+
+  const annualReportQuery = useQuery({
+    queryKey: ["active-annual-report", principal.tenantId, resolvedWorkspaceId],
+    queryFn: () =>
+      getActiveAnnualReportExtractionV1({
+        tenantId: principal.tenantId,
+        workspaceId: resolvedWorkspaceId,
+      }),
+    enabled: resolvedWorkspaceId.length > 0,
+    retry: false,
+  });
+
+  const annualReportProcessingRunQuery = useQuery({
+    queryKey: [
+      "latest-annual-report-processing-run",
+      principal.tenantId,
+      resolvedWorkspaceId,
+    ],
+    queryFn: async () => {
+      try {
+        return await getLatestAnnualReportProcessingRunV1({
+          tenantId: principal.tenantId,
+          workspaceId: resolvedWorkspaceId,
+        });
+      } catch (error) {
+        if (
+          error instanceof ApiClientError &&
+          error.code === "PROCESSING_RUN_NOT_FOUND"
+        ) {
+          return null;
+        }
+
+        throw error;
       }
-      if (!shouldSelect && alreadySelected) {
-        return current.filter((id) => id !== decisionId);
-      }
-      return current;
-    });
-  }
-
-  const normalizedCoreModule = coreModuleOrderV1.includes(
-    (coreModule as CoreModuleSlugV1) ?? "annual-report-analysis",
-  )
-    ? ((coreModule as CoreModuleSlugV1) ?? "annual-report-analysis")
-    : "annual-report-analysis";
-
-  const moduleLabelMap = useMemo<Record<CoreModuleSlugV1, string>>(
-    () => ({
-      "annual-report-analysis": t("module.tabs.annualReport"),
-      "account-mapping": t("module.tabs.mapping"),
-      "tax-adjustments": t("module.tabs.adjustments"),
-      "tax-return-ink2": t("module.tabs.ink2"),
-    }),
-    [t],
-  );
-
-  useEffect(() => {
-    if (resolvedWorkspaceId.length === 0) {
-      return;
-    }
-    if (!coreModule) {
-      navigate(
-        `/app/workspaces/${resolvedWorkspaceId}/${normalizedCoreModule}`,
-        {
-          replace: true,
-        },
-      );
-      return;
-    }
-    if (!coreModuleOrderV1.includes(coreModule as CoreModuleSlugV1)) {
-      navigate(
-        `/app/workspaces/${resolvedWorkspaceId}/annual-report-analysis`,
-        {
-          replace: true,
-        },
-      );
-    }
-  }, [coreModule, navigate, normalizedCoreModule, resolvedWorkspaceId]);
-
-  const moduleTabs = coreModuleOrderV1.map((moduleSlug) => ({
-    id: moduleSlug,
-    label: getCoreModuleLabelV1(moduleSlug, moduleLabelMap),
-  }));
+    },
+    enabled:
+      resolvedWorkspaceId.length > 0 &&
+      normalizedCoreModule === "annual-report-analysis",
+    retry: false,
+    refetchInterval: ({ state }) => {
+      const data = state.data as
+        | { run: AnnualReportProcessingRunV1 }
+        | null
+        | undefined;
+      return isAnnualReportProcessingOpenStatusV1(data?.run?.status)
+        ? 2_000
+        : false;
+    },
+  });
 
   const mappingQuery = useQuery({
     queryKey: ["active-mapping", principal.tenantId, resolvedWorkspaceId],
@@ -232,26 +880,33 @@ export function CoreModuleShellPageV1() {
         tenantId: principal.tenantId,
         workspaceId: resolvedWorkspaceId,
       }),
-    enabled:
-      resolvedWorkspaceId.length > 0 &&
-      normalizedCoreModule === "account-mapping",
+    enabled: resolvedWorkspaceId.length > 0,
+    retry: false,
+  });
+
+  const annualReportTaxAnalysisQuery = useQuery({
+    queryKey: [
+      "active-annual-report-tax-analysis",
+      principal.tenantId,
+      resolvedWorkspaceId,
+    ],
+    queryFn: () =>
+      getActiveAnnualReportTaxAnalysisV1({
+        tenantId: principal.tenantId,
+        workspaceId: resolvedWorkspaceId,
+      }),
+    enabled: resolvedWorkspaceId.length > 0,
     retry: false,
   });
 
   const taxAdjustmentsQuery = useQuery({
-    queryKey: [
-      "active-tax-adjustments",
-      principal.tenantId,
-      resolvedWorkspaceId,
-    ],
+    queryKey: ["active-tax-adjustments", principal.tenantId, resolvedWorkspaceId],
     queryFn: () =>
       getActiveTaxAdjustmentsV1({
         tenantId: principal.tenantId,
         workspaceId: resolvedWorkspaceId,
       }),
-    enabled:
-      resolvedWorkspaceId.length > 0 &&
-      normalizedCoreModule === "tax-adjustments",
+    enabled: resolvedWorkspaceId.length > 0,
     retry: false,
   });
 
@@ -262,9 +917,7 @@ export function CoreModuleShellPageV1() {
         tenantId: principal.tenantId,
         workspaceId: resolvedWorkspaceId,
       }),
-    enabled:
-      resolvedWorkspaceId.length > 0 &&
-      normalizedCoreModule === "tax-adjustments",
+    enabled: resolvedWorkspaceId.length > 0,
     retry: false,
   });
 
@@ -275,735 +928,959 @@ export function CoreModuleShellPageV1() {
         tenantId: principal.tenantId,
         workspaceId: resolvedWorkspaceId,
       }),
-    enabled:
-      resolvedWorkspaceId.length > 0 &&
-      normalizedCoreModule === "tax-return-ink2",
+    enabled: resolvedWorkspaceId.length > 0,
     retry: false,
   });
 
-  const applyMappingOverrideMutation = useMutation({
+  const trialBalanceMutation = useMutation({
     mutationFn: async () => {
-      if (!mappingQuery.data?.active || !categorySelection) {
-        throw new Error("Select rows and a category before applying override.");
-      }
-      if (selectedRowIds.length === 0) {
-        throw new Error("Select at least one account row.");
+      if (!trialBalanceFile) {
+        throw new Error("Select a trial balance file first.");
       }
 
-      return applyMappingOverridesV1({
+      return runTrialBalancePipelineV1({
         tenantId: principal.tenantId,
         workspaceId: resolvedWorkspaceId,
-        expectedActiveMapping: {
-          artifactId: mappingQuery.data.active.artifactId,
-          version: mappingQuery.data.active.version,
-        },
-        overrides: selectedRowIds.map((decisionId) => ({
-          decisionId,
-          selectedCategoryCode: categorySelection,
-          scope: "return",
-          reason: "Manual override from account mapping workbench.",
-        })),
+        fileName: trialBalanceFile.name,
+        fileType: inferTrialBalanceFileTypeV1(trialBalanceFile.name),
+        fileBytesBase64: await fileToBase64V1(trialBalanceFile),
+        policyVersion: TRIAL_BALANCE_POLICY_VERSION_V1,
       });
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ["active-mapping", principal.tenantId, resolvedWorkspaceId],
       });
-      setSelectedRowIds([]);
-      setCategorySelection(null);
-      setCategoryQuery("");
-      setCommandPreview(null);
-      setCommandText("");
+      setTrialBalanceFile(null);
     },
   });
 
-  const mappingAllRows = mappingQuery.data?.mapping.decisions ?? [];
+  const taxAdjustmentsMutation = useMutation({
+    mutationFn: async () => {
+      const adjustments = await runTaxAdjustmentsV1({
+        tenantId: principal.tenantId,
+        workspaceId: resolvedWorkspaceId,
+        policyVersion: TAX_ADJUSTMENTS_POLICY_VERSION_V1,
+      });
 
-  const mappingRows = useMemo(() => {
-    const rows = mappingAllRows;
-    if (mappingViewMode === "all") {
-      return rows;
-    }
-    return rows.filter((row) => isMappingExceptionV1(row));
-  }, [mappingAllRows, mappingViewMode]);
+      await runTaxSummaryV1({
+        tenantId: principal.tenantId,
+        workspaceId: resolvedWorkspaceId,
+      });
 
-  const mappingExceptionCount = useMemo(
-    () => mappingAllRows.filter((row) => isMappingExceptionV1(row)).length,
-    [mappingAllRows],
-  );
-
-  const mappingVirtualRows = useMemo(() => {
-    const startIndex = Math.max(
-      0,
-      Math.floor(mappingScrollTop / mappingGridRowHeightV1) -
-        mappingGridOverscanV1,
-    );
-    const endIndex = Math.min(
-      mappingRows.length,
-      Math.ceil(
-        (mappingScrollTop + mappingGridViewportHeightV1) /
-          mappingGridRowHeightV1,
-      ) + mappingGridOverscanV1,
-    );
-    return {
-      totalSize: mappingRows.length * mappingGridRowHeightV1,
-      rows: mappingRows.slice(startIndex, endIndex).map((row, index) => {
-        const absoluteIndex = startIndex + index;
-        return {
-          index: absoluteIndex,
-          start: absoluteIndex * mappingGridRowHeightV1,
-          row,
-        };
-      }),
-    };
-  }, [mappingRows, mappingScrollTop]);
-
-  const selectedRowIdSet = useMemo(
-    () => new Set(selectedRowIds),
-    [selectedRowIds],
-  );
-
-  useEffect(() => {
-    const availableRowIds = new Set(mappingAllRows.map((row) => row.id));
-    setSelectedRowIds((current) =>
-      current.filter((rowId) => availableRowIds.has(rowId)),
-    );
-  }, [mappingAllRows]);
-
-  useEffect(() => {
-    const maxScrollTop = Math.max(
-      0,
-      mappingRows.length * mappingGridRowHeightV1 - mappingGridViewportHeightV1,
-    );
-    if (mappingScrollTop <= maxScrollTop) {
-      return;
-    }
-    setMappingScrollTop(maxScrollTop);
-    if (mappingScrollRef.current) {
-      mappingScrollRef.current.scrollTop = maxScrollTop;
-    }
-  }, [mappingRows.length, mappingScrollTop]);
-
-  useEffect(() => {
-    if (commandText.trim().length === 0 || selectedRowIds.length === 0) {
-      setCommandPreview(null);
-    }
-  }, [commandText, selectedRowIds.length]);
-
-  useEffect(() => {
-    return () => {
-      if (mappingScrollRafRef.current !== null) {
-        cancelAnimationFrame(mappingScrollRafRef.current);
-      }
-    };
-  }, []);
-
-  const categoryOptions = useMemo(() => {
-    const allCategories = listSilverfinTaxCategoriesV1();
-    const query = categoryQuery.trim().toLowerCase();
-    if (query.length === 0) {
-      return allCategories.slice(0, 8);
-    }
-    return allCategories
-      .filter((category) => {
-        return (
-          category.code.toLowerCase().includes(query) ||
-          category.name.toLowerCase().includes(query)
-        );
-      })
-      .slice(0, 8);
-  }, [categoryQuery]);
-
-  const taxSidebarSections = [
-    {
-      id: "common",
-      title: t("module.sidebar.common"),
-      items: taxAdjustmentGroupsV1.common.map((label, index) => {
-        const slug = toSlugV1(label);
-        const basePath = `/app/workspaces/${resolvedWorkspaceId}/tax-adjustments`;
-        if (index === 0) {
-          return {
-            id: slug,
-            label,
-            to: basePath,
-            exact: true,
-          };
-        }
-        return {
-          id: slug,
-          label,
-          to: `${basePath}/${slug}`,
-        };
-      }),
+      return adjustments;
     },
-    {
-      id: "advanced",
-      title: t("module.sidebar.advanced"),
-      collapsible: true,
-      collapsed: !showAdvanced,
-      onToggle: () => setShowAdvanced((current) => !current),
-      items: [
-        ...taxAdjustmentGroupsV1.advancedFrequent,
-        ...taxAdjustmentGroupsV1.advancedSpecialized,
-      ].map((label) => ({
-        id: toSlugV1(label),
-        label,
-        to: `/app/workspaces/${resolvedWorkspaceId}/tax-adjustments/${toSlugV1(label)}`,
-      })),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["active-tax-adjustments", principal.tenantId, resolvedWorkspaceId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["active-tax-summary", principal.tenantId, resolvedWorkspaceId],
+        }),
+      ]);
     },
-  ];
+  });
 
-  const taxPinnedItems = [
-    ...taxAdjustmentGroupsV1.calculation.map((label) => ({
-      id: toSlugV1(label),
-      label,
-      to: `/app/workspaces/${resolvedWorkspaceId}/tax-adjustments/${toSlugV1(label)}`,
-    })),
-    ...taxAdjustmentGroupsV1.final.map((label) => ({
-      id: toSlugV1(label),
-      label,
-      to: `/app/workspaces/${resolvedWorkspaceId}/tax-adjustments/${toSlugV1(label)}`,
-    })),
-  ];
+  const ink2Mutation = useMutation({
+    mutationFn: async () =>
+      runInk2FormV1({
+        tenantId: principal.tenantId,
+        workspaceId: resolvedWorkspaceId,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["active-ink2-form", principal.tenantId, resolvedWorkspaceId],
+      });
+    },
+  });
 
-  if (resolvedWorkspaceId.length === 0) {
-    return <EmptyStateV1 title={t("module.notFound")} description="" />;
+  const exportPdfMutation = useMutation({
+    mutationFn: async () =>
+      createPdfExportV1({
+        tenantId: principal.tenantId,
+        workspaceId: resolvedWorkspaceId,
+      }),
+  });
+
+  const latestAnnualReportRun = annualReportProcessingRunQuery.data?.run;
+  const activeAnnualReportData = annualReportQuery.isSuccess
+    ? annualReportQuery.data
+    : undefined;
+  const activeAnnualReportTaxAnalysis = annualReportTaxAnalysisQuery.isSuccess
+    ? annualReportTaxAnalysisQuery.data
+    : undefined;
+  const hasActiveAnnualReportExtraction = Boolean(activeAnnualReportData?.active);
+  const {
+    annualReportFile,
+    annualReportFileTooLarge,
+    annualReportMutation,
+    annualReportMutationErrorCode,
+    annualReportRunIsOpen,
+    annualReportRunIsStale,
+    annualReportUploadBlockedByRun,
+    annualUploadProgressPercent,
+    clearAnnualReportMutation,
+    clearActiveData,
+    recoveryActionLabel,
+    runRecoveryAction,
+    setAnnualReportFile,
+    startUpload,
+  } = useAnnualReportUploadControllerV1({
+    tenantId: principal.tenantId,
+    workspaceId: resolvedWorkspaceId,
+    policyVersion: ANNUAL_REPORT_POLICY_VERSION_V1,
+    latestRun: latestAnnualReportRun,
+    hasActiveExtraction: hasActiveAnnualReportExtraction,
+    uploadPanelId: "annual-report-upload-panel",
+    latestRunQueryKey: [
+      "latest-annual-report-processing-run",
+      principal.tenantId,
+      resolvedWorkspaceId,
+    ],
+    uploadSuccessInvalidateQueryKeys: [
+      [
+        "latest-annual-report-processing-run",
+        principal.tenantId,
+        resolvedWorkspaceId,
+      ],
+      ["active-annual-report", principal.tenantId, resolvedWorkspaceId],
+      [
+        "active-annual-report-tax-analysis",
+        principal.tenantId,
+        resolvedWorkspaceId,
+      ],
+    ],
+    clearSuccessRemoveQueryKeys: [
+      [
+        "latest-annual-report-processing-run",
+        principal.tenantId,
+        resolvedWorkspaceId,
+      ],
+      ["active-annual-report", principal.tenantId, resolvedWorkspaceId],
+      [
+        "active-annual-report-tax-analysis",
+        principal.tenantId,
+        resolvedWorkspaceId,
+      ],
+    ],
+    clearSuccessInvalidateQueryKeys: [
+      ["active-annual-report", principal.tenantId, resolvedWorkspaceId],
+      [
+        "active-annual-report-tax-analysis",
+        principal.tenantId,
+        resolvedWorkspaceId,
+      ],
+      ["active-tax-adjustments", principal.tenantId, resolvedWorkspaceId],
+      ["active-tax-summary", principal.tenantId, resolvedWorkspaceId],
+      ["active-ink2-form", principal.tenantId, resolvedWorkspaceId],
+      [
+        "latest-annual-report-processing-run",
+        principal.tenantId,
+        resolvedWorkspaceId,
+      ],
+    ],
+    settledRunInvalidateQueryKeys: [
+      ["active-annual-report", principal.tenantId, resolvedWorkspaceId],
+      [
+        "active-annual-report-tax-analysis",
+        principal.tenantId,
+        resolvedWorkspaceId,
+      ],
+      ["active-tax-adjustments", principal.tenantId, resolvedWorkspaceId],
+      ["active-tax-summary", principal.tenantId, resolvedWorkspaceId],
+      ["active-ink2-form", principal.tenantId, resolvedWorkspaceId],
+    ],
+  });
+
+  if (resolvedWorkspaceId.length === 0 || workspaceQuery.isError) {
+    return (
+      <EmptyStateV1
+        title="Module unavailable"
+        description="Open a company dashboard first."
+      />
+    );
   }
 
-  return (
-    <section className="page-wrap module-shell-v1">
-      <CardV1>
-        <TabsV1
-          items={moduleTabs}
-          activeId={normalizedCoreModule}
-          onChange={(moduleId) =>
-            navigate(`/app/workspaces/${resolvedWorkspaceId}/${moduleId}`)
-          }
-        />
-      </CardV1>
+  const workspace = workspaceQuery.data?.workspace;
+  if (!workspace) {
+    return <div className="workspace-empty-state">Loading workspace…</div>;
+  }
 
-      {normalizedCoreModule !== "annual-report-analysis" ? (
-        <GuidanceBannerV1 tone="advisory">
-          {t("module.advisoryOutOfOrder")}
-        </GuidanceBannerV1>
-      ) : null}
+  const displayedAnnualExtraction =
+    activeAnnualReportData?.extraction ??
+    (!hasActiveAnnualReportExtraction
+      ? latestAnnualReportRun?.previewExtraction
+      : undefined);
+  const displayedAnnualRuntime =
+    activeAnnualReportData?.runtime ?? latestAnnualReportRun?.runtime;
+  const annualReportConfirmed =
+    activeAnnualReportData?.extraction.confirmation.isConfirmed ?? false;
+  const mappingDecisions = mappingQuery.data?.mapping.decisions ?? [];
+  const taxAdjustmentDecisions =
+    taxAdjustmentsQuery.data?.adjustments.decisions ?? [];
+  const taxSummary = taxSummaryQuery.data?.summary;
+  const ink2Fields = ink2Query.data?.form.fields ?? [];
+  const annualFields = displayedAnnualExtraction?.fields;
+  const annualTaxAnalysis = activeAnnualReportTaxAnalysis?.taxAnalysis;
+  const annualDocumentWarnings =
+    displayedAnnualExtraction?.documentWarnings ??
+    latestAnnualReportRun?.technicalDetails ??
+    [];
+  const annualAiRun = displayedAnnualExtraction?.aiRun;
+  const annualUsedFallback = annualAiRun?.usedFallback ?? false;
+  const annualPendingStatusMessage =
+    latestAnnualReportRun?.statusMessage ??
+    "Annual report AI analysis is in progress.";
+  const annualResultState = deriveAnnualReportResultStateV1({
+    extraction: displayedAnnualExtraction,
+    runtime: displayedAnnualRuntime,
+    warnings: annualDocumentWarnings,
+  });
+  const hasActiveMappingDecisions = Boolean(mappingQuery.data?.mapping);
+  const showReplacementBanner =
+    annualReportRunIsOpen &&
+    latestAnnualReportRun?.hasPreviousActiveResult === true &&
+    hasActiveAnnualReportExtraction;
+  const latestAnnualReportRunNeedsAttention =
+    latestAnnualReportRun?.status === "failed" ||
+    latestAnnualReportRun?.status === "partial";
 
-      {normalizedCoreModule === "annual-report-analysis" ? (
-        <CardV1 id="module-panel-annual-report-analysis" role="tabpanel">
-          <p className="micro-label">{t("module.annualReport")}</p>
-          <h1 className="page-title">{t("module.annualReport")}</h1>
-          <p className="hint-text">
-            Upload, extract, and confirm annual report values in this module.
-          </p>
-          <p className="hint-text">
-            Detailed extraction actions remain available in legacy flow while
-            this premium shell is rolled out.
-          </p>
-          <ButtonV1
-            onClick={() =>
-              navigate(`/app/workspaces/${resolvedWorkspaceId}/legacy-detail`)
-            }
-          >
-            Open detailed workflow
-          </ButtonV1>
-        </CardV1>
-      ) : null}
+  const handleTrialBalanceRunV1 = () => {
+    if (
+      hasActiveMappingDecisions &&
+      !confirmActiveDataOverrideV1(
+        "Import trial balance again? This will replace the active account mapping data and current mapping review state for this workspace.",
+      )
+    ) {
+      return;
+    }
 
-      {normalizedCoreModule === "account-mapping" ? (
-        <CardV1 id="module-panel-account-mapping" role="tabpanel">
-          <div className="section-heading-row">
-            <div>
-              <p className="micro-label">{t("module.accountMapping")}</p>
-              <h1 className="page-title">{t("module.accountMapping")}</h1>
+    trialBalanceMutation.mutate();
+  };
+
+  const workflowSnapshot = buildWorkflowSnapshotV1({
+    annualReportConfirmed,
+    hasMapping: mappingQuery.isSuccess,
+    hasTaxAdjustments: taxAdjustmentsQuery.isSuccess,
+    hasTaxSummary: taxSummaryQuery.isSuccess,
+    hasInk2Draft: ink2Query.isSuccess,
+  });
+
+  const moduleWorkflowState = getModuleWorkflowStateV1({
+    definition: activeModuleDefinition,
+    snapshot: workflowSnapshot,
+  });
+
+  let moduleBody: ReactNode;
+
+  if (normalizedCoreModule === "annual-report-analysis") {
+    moduleBody = (
+      <>
+        <CardV1 className="module-stage-card card-v1--hero">
+          <ModuleStageIntroV1
+            heading={activeModuleDefinition.longLabel}
+            description={activeModuleDefinition.description}
+            moduleDefinition={activeModuleDefinition}
+            subModule={subModule}
+          />
+
+          <div className="module-stage-card__body">
+            <div className="module-stage-card__control-panel">
+              <div
+                className="module-stage-card__input-group"
+                id="annual-report-upload-panel"
+              >
+                <UploadDropZoneV1
+                  idPrefix="annual-report-upload"
+                  title="Upload annual report"
+                  helperText="Drag and drop a PDF or DOCX annual report here, or browse for a file."
+                  accept=".pdf,.docx"
+                  buttonLabel="Choose annual report"
+                  file={annualReportFile}
+                  onFileSelected={setAnnualReportFile}
+                  isDisabled={
+                    annualReportMutation.isPending || annualReportUploadBlockedByRun
+                  }
+                />
+                <p className="module-stage-card__note">
+                  Upload the signed annual report to extract financial
+                  statements and tax context. A new upload replaces the active
+                  annual-report dataset automatically.
+                </p>
+                {annualReportFileTooLarge ? (
+                  <div className="workspace-inline-error" role="alert">
+                    The annual report file is too large. Upload a file smaller than
+                    25 MB.
+                  </div>
+                ) : null}
+                {annualReportMutation.isError ? (
+                  <div className="workspace-inline-error" role="alert">
+                    {toUserFacingErrorMessage(annualReportMutation.error)}
+                  </div>
+                ) : null}
+                {annualReportMutationErrorCode === "PROCESSING_RUN_UNAVAILABLE" ? (
+                  <div className="workspace-inline-info" role="status">
+                    Annual-report processing runtime is unavailable. Verify local queue
+                    and file bindings, then retry.
+                  </div>
+                ) : null}
+                {annualReportMutationErrorCode === "RUNTIME_MISMATCH" ? (
+                  <div className="workspace-inline-info" role="status">
+                    Runtime mismatch detected. Restart the local app so web and API use
+                    the same runtime fingerprint.
+                  </div>
+                ) : null}
+                {!annualReportMutation.isPending && annualReportFile ? (
+                  <div className="workspace-inline-info" role="status">
+                    File selected. Ready to upload and run AI analysis.
+                  </div>
+                ) : null}
+                {showReplacementBanner ? (
+                  <div className="workspace-inline-info" role="status">
+                    A new annual report is processing. The current extracted
+                    data stays visible until the replacement succeeds.
+                  </div>
+                ) : null}
+                {annualReportProcessingRunQuery.isError ? (
+                  <div className="workspace-inline-error" role="alert">
+                    {toUserFacingErrorMessage(annualReportProcessingRunQuery.error)}
+                  </div>
+                ) : null}
+                {annualReportRunIsOpen && !annualReportRunIsStale ? (
+                  <div className="module-ai-progress" role="status" aria-live="polite">
+                    <div className="module-ai-progress__indicator" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                    <div className="module-ai-progress__content">
+                      <strong>AI analysis in progress</strong>
+                      <p>{annualPendingStatusMessage}</p>
+                    </div>
+                  </div>
+                ) : null}
+                {annualReportRunIsStale ? (
+                  <div className="workspace-inline-error" role="alert">
+                    Annual-report processing appears stuck (no update for at least 5
+                    minutes). You can upload a replacement file now.
+                  </div>
+                ) : null}
+                {annualReportMutation.isPending &&
+                annualUploadProgressPercent !== null ? (
+                  <div className="workspace-inline-info" role="status">
+                    Uploading file ({annualUploadProgressPercent}%).
+                  </div>
+                ) : null}
+                {latestAnnualReportRun?.status === "completed" ? (
+                  <div className="workspace-inline-success" role="status">
+                    Annual report analysis completed. The latest extraction is now active.
+                  </div>
+                ) : null}
+                {latestAnnualReportRunNeedsAttention &&
+                latestAnnualReportRun?.error ? (
+                  <div
+                    className={
+                      latestAnnualReportRun.status === "failed"
+                        ? "workspace-inline-error"
+                        : "workspace-inline-info"
+                    }
+                    role="status"
+                  >
+                    {latestAnnualReportRun.error.userMessage}
+                  </div>
+                ) : null}
+                {clearAnnualReportMutation.isError ? (
+                  <div className="workspace-inline-error" role="alert">
+                    {toUserFacingErrorMessage(clearAnnualReportMutation.error)}
+                  </div>
+                ) : null}
+                {clearAnnualReportMutation.isSuccess ? (
+                  <div className="workspace-inline-success" role="status">
+                    Active annual-report data cleared from this workspace.
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="module-stage-card__actions">
+                <ButtonV1
+                  variant="black"
+                  onClick={startUpload}
+                  disabled={
+                    !annualReportFile ||
+                    annualReportFileTooLarge ||
+                    annualReportMutation.isPending ||
+                    annualReportUploadBlockedByRun
+                  }
+                >
+                  {hasActiveAnnualReportExtraction
+                    ? "Upload a new annual report"
+                    : activeModuleDefinition.ctaLabel}
+                </ButtonV1>
+                {hasActiveAnnualReportExtraction ? (
+                  <ButtonV1
+                    variant="secondary"
+                    onClick={clearActiveData}
+                    disabled={
+                      clearAnnualReportMutation.isPending ||
+                      annualReportMutation.isPending ||
+                      annualReportRunIsOpen
+                    }
+                  >
+                    Clear annual report data
+                  </ButtonV1>
+                ) : null}
+              </div>
             </div>
-            <div className="inline-row" style={{ width: "340px" }}>
-              <ButtonV1
-                variant={mappingViewMode === "all" ? "primary" : "secondary"}
-                pressed={mappingViewMode === "all"}
-                onClick={() => setMappingViewMode("all")}
-              >
-                {t("mapping.viewAll")}
-              </ButtonV1>
-              <ButtonV1
-                variant={
-                  mappingViewMode === "exceptions" ? "primary" : "secondary"
-                }
-                pressed={mappingViewMode === "exceptions"}
-                onClick={() => setMappingViewMode("exceptions")}
-              >
-                {t("mapping.exceptionsOnly")}
-              </ButtonV1>
+          </div>
+        </CardV1>
+
+        <CardV1 className="module-data-card">
+          <div className="module-data-card__header">
+            <div>
+              <div className="workspace-panel-header__eyebrow">AI analysis</div>
+              <h2>Forensic tax review</h2>
+            </div>
+            <div className="module-data-card__status">
+              {annualReportRunIsOpen && !annualReportRunIsStale
+                ? latestAnnualReportRun?.statusMessage
+                : annualReportRunIsStale
+                  ? "Stalled run"
+                : latestAnnualReportRun?.status === "failed"
+                  ? "Failed"
+                  : latestAnnualReportRun?.status === "partial"
+                    ? "Incomplete extraction"
+                : annualResultState.status === "legacy"
+                  ? "Legacy result"
+                : annualResultState.status === "partial"
+                  ? "Partial extraction"
+                : annualUsedFallback
+                  ? "Fallback only"
+                : annualTaxAnalysis
+                  ? `${annualTaxAnalysis.findings.length} findings`
+                  : annualResultState.status === "ready"
+                    ? "Extracted"
+                    : "Pending first run"}
+            </div>
+          </div>
+
+          {annualReportRunIsOpen && !annualReportRunIsStale ? (
+            <div className="module-ai-analysis-card">
+              <div className="module-ai-analysis-card__summary">
+                <strong>AI is reviewing tax-sensitive areas now.</strong>
+                <p>
+                  {latestAnnualReportRun?.hasPreviousActiveResult
+                    ? "A new annual report is processing. The current results stay visible until the replacement completes."
+                    : "D.ink is extracting financial data first, then generating a forensic tax-risk assessment for downstream modules."}
+                </p>
+              </div>
+            </div>
+          ) : annualReportRunIsStale ? (
+            <div className="module-ai-analysis-card">
+              <div className="module-ai-analysis-card__summary">
+                <strong>The latest annual-report run appears stalled.</strong>
+                <p>
+                  No progress has been recorded for more than 5 minutes. Upload a
+                  replacement report to continue the workflow.
+                </p>
+              </div>
+            </div>
+          ) : annualTaxAnalysis ? (
+            <div className="module-ai-analysis-card">
+              {latestAnnualReportRunNeedsAttention &&
+              latestAnnualReportRun?.hasPreviousActiveResult ? (
+                <div className="module-ai-analysis-card__summary">
+                  <strong>
+                    {latestAnnualReportRun.status === "failed"
+                      ? "The latest upload did not replace the active result."
+                      : "The latest upload is incomplete and did not replace the active result."}
+                  </strong>
+                  <p>
+                    {latestAnnualReportRun.error?.userMessage ??
+                      "The previous annual-report analysis remains active."}
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="module-ai-analysis-card__summary">
+                <strong>{annualTaxAnalysis.executiveSummary}</strong>
+                <p>{annualTaxAnalysis.accountingStandardAssessment.rationale}</p>
+              </div>
+
+              <ModuleSummaryGridV1>
+                <ModuleSummaryItemV1
+                  label="Accounting standard"
+                  value={annualFields?.accountingStandard.value ?? "Missing"}
+                />
+                <ModuleSummaryItemV1
+                  label="Risk findings"
+                  value={String(annualTaxAnalysis.findings.length)}
+                />
+                <ModuleSummaryItemV1
+                  label="Next actions"
+                  value={String(annualTaxAnalysis.recommendedNextActions.length)}
+                />
+              </ModuleSummaryGridV1>
+
+              {annualTaxAnalysis.findings.length > 0 ? (
+                <div className="module-ai-analysis-list">
+                  {annualTaxAnalysis.findings.slice(0, 5).map((finding) => (
+                    <div className="module-ai-analysis-item" key={finding.id}>
+                      <div className="module-ai-analysis-item__header">
+                        <strong>{finding.title}</strong>
+                        <span
+                          className="module-ai-analysis-item__severity"
+                          data-severity={finding.severity}
+                        >
+                          {formatSeverityLabelV1(finding.severity)}
+                        </span>
+                      </div>
+                      <p>{finding.rationale}</p>
+                      {finding.recommendedFollowUp ? (
+                        <div className="module-ai-analysis-item__follow-up">
+                          Next step: {finding.recommendedFollowUp}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {annualTaxAnalysis.recommendedNextActions.length > 0 ? (
+                <div className="module-ai-analysis-actions">
+                  <div className="module-ai-analysis-actions__label">
+                    Recommended next actions
+                  </div>
+                  <ul className="module-ai-analysis-actions__list">
+                    {annualTaxAnalysis.recommendedNextActions.map((action) => (
+                      <li key={action}>{action}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : latestAnnualReportRun?.status === "failed" ? (
+            <div className="module-ai-analysis-card">
+              <div className="module-ai-analysis-card__summary">
+                <strong>Analysis failed, please retry.</strong>
+                <p>
+                  {latestAnnualReportRun.error?.userMessage ??
+                    "The annual report could not be processed."}
+                </p>
+              </div>
+              <div className="module-ai-analysis-card__actions">
+                <ButtonV1
+                  variant="black"
+                  size="sm"
+                  onClick={runRecoveryAction}
+                  disabled={
+                    annualReportMutation.isPending || annualReportUploadBlockedByRun
+                  }
+                >
+                  {recoveryActionLabel}
+                </ButtonV1>
+              </div>
+            </div>
+          ) : latestAnnualReportRun?.status === "partial" &&
+            !activeAnnualReportData?.extraction ? (
+            <div className="module-ai-analysis-card">
+              <div className="module-ai-analysis-card__summary">
+                <strong>Analysis completed with limited financial data.</strong>
+                <p>
+                  {latestAnnualReportRun.error?.userMessage ??
+                    "The financial statements or note context are incomplete for this run."}
+                </p>
+              </div>
+              <div className="module-ai-analysis-card__actions">
+                <ButtonV1
+                  variant="black"
+                  size="sm"
+                  onClick={runRecoveryAction}
+                  disabled={
+                    annualReportMutation.isPending || annualReportUploadBlockedByRun
+                  }
+                >
+                  {recoveryActionLabel}
+                </ButtonV1>
+              </div>
+            </div>
+          ) : annualResultState.status === "legacy" ||
+            annualResultState.status === "partial" ? (
+            <div className="module-ai-analysis-card">
+              <div className="module-ai-analysis-card__summary">
+                <strong>
+                  {annualResultState.status === "legacy"
+                    ? "This result needs to be refreshed."
+                    : "Financial extraction is incomplete."}
+                </strong>
+                <p>{annualResultState.helperText}</p>
+              </div>
+              <div className="module-ai-analysis-card__actions">
+                <ButtonV1
+                  variant="black"
+                  size="sm"
+                  onClick={runRecoveryAction}
+                  disabled={
+                    annualReportMutation.isPending || annualReportUploadBlockedByRun
+                  }
+                >
+                  {recoveryActionLabel}
+                </ButtonV1>
+              </div>
+            </div>
+          ) : activeAnnualReportData?.extraction ? (
+            <div className="module-ai-analysis-card">
+              <div className="module-ai-analysis-card__summary">
+                <strong>Financial extraction is saved.</strong>
+                <p>
+                  The structured annual-report data is available, but the
+                  forensic tax review is not available for this saved run. Upload
+                  the annual report again if you want to refresh the AI review.
+                </p>
+              </div>
+            </div>
+          ) : annualUsedFallback ? (
+            <div className="module-ai-analysis-card">
+              <div className="module-ai-analysis-card__summary">
+                <strong>Analysis completed with limited financial data.</strong>
+                <p>
+                  The upload was saved, but the extracted financial data is
+                  incomplete. Upload the annual report again to refresh the
+                  result before relying on downstream tax analysis.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="workspace-empty-state">
+              Upload an annual report to trigger extraction and forensic tax review.
+            </div>
+          )}
+        </CardV1>
+      </>
+    );
+  } else if (normalizedCoreModule === "account-mapping") {
+    const highConfidenceCount = mappingDecisions.filter(
+      (decision) => decision.confidence >= 0.85,
+    ).length;
+
+    moduleBody = (
+      <>
+        <CardV1 className="module-stage-card card-v1--hero">
+          <ModuleStageIntroV1
+            heading={activeModuleDefinition.longLabel}
+            description={activeModuleDefinition.description}
+            moduleDefinition={activeModuleDefinition}
+            subModule={subModule}
+          />
+
+          <div className="module-stage-card__body">
+            <div className="module-stage-card__control-panel">
+              <div className="module-stage-card__input-group">
+                <UploadDropZoneV1
+                  idPrefix="trial-balance-upload"
+                  title="Upload trial balance"
+                  helperText="Drag and drop an Excel or CSV trial balance here, or browse for a file."
+                  accept=".xlsx,.xls,.xlsm,.xlsb,.csv"
+                  buttonLabel="Choose trial balance"
+                  file={trialBalanceFile}
+                  onFileSelected={setTrialBalanceFile}
+                  isDisabled={trialBalanceMutation.isPending}
+                />
+                <p className="module-stage-card__note">
+                  The V1 pipeline imports the trial balance and runs the mapping
+                  engine in the same deterministic step. Review still happens
+                  here before moving on.
+                </p>
+                {trialBalanceMutation.isError ? (
+                  <div className="workspace-inline-error" role="alert">
+                    {toUserFacingErrorMessage(trialBalanceMutation.error)}
+                  </div>
+                ) : null}
+                {trialBalanceMutation.isSuccess ? (
+                  <div className="workspace-inline-success" role="status">
+                    Trial balance uploaded and mapping pipeline completed.
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="module-stage-card__actions">
+                <ButtonV1
+                  variant="black"
+                  onClick={handleTrialBalanceRunV1}
+                  disabled={!trialBalanceFile || trialBalanceMutation.isPending}
+                >
+                  {activeModuleDefinition.ctaLabel}
+                </ButtonV1>
+              </div>
+            </div>
+          </div>
+        </CardV1>
+
+        <CardV1 className="module-data-card">
+          <div className="module-data-card__header">
+            <div>
+              <div className="workspace-panel-header__eyebrow">Review</div>
+              <h2>Mapped account preview</h2>
+            </div>
+            <div className="module-data-card__status">
+              {mappingDecisions.length > 0
+                ? `${mappingDecisions.length} accounts mapped`
+                : "No mapping run yet"}
             </div>
           </div>
 
           {mappingQuery.isPending ? (
-            <div className="panel-stack">
-              <SkeletonV1 height={40} />
-              <SkeletonV1 height={40} />
-              <SkeletonV1 height={40} />
-            </div>
-          ) : null}
-
-          {mappingQuery.isError ? (
-            mappingQuery.error instanceof ApiClientError &&
-            mappingQuery.error.code === "MAPPING_NOT_FOUND" ? (
-              <EmptyStateV1
-                title={t("mapping.empty")}
-                description="Run trial-balance mapping to populate this grid."
-                action={
-                  <ButtonV1
-                    variant="secondary"
-                    onClick={() =>
-                      navigate(
-                        `/app/workspaces/${resolvedWorkspaceId}/annual-report-analysis`,
-                      )
-                    }
-                  >
-                    Open annual report
-                  </ButtonV1>
-                }
-              />
-            ) : (
-              <EmptyStateV1
-                title="Mapping data unavailable"
-                description={toUserFacingErrorMessage(mappingQuery.error)}
-                tone="error"
-                role="alert"
-                action={
-                  <ButtonV1 onClick={() => mappingQuery.refetch()}>
-                    Retry
-                  </ButtonV1>
-                }
-              />
-            )
-          ) : null}
-
-          {mappingQuery.isSuccess ? (
-            <div className="panel-stack">
-              <div className="form-grid form-grid--inline">
-                <label htmlFor="mapping-category-search">
-                  <span className="micro-label">
-                    {t("mapping.searchCategory")}
-                  </span>
-                  <InputV1
-                    id="mapping-category-search"
-                    value={categoryQuery}
-                    placeholder={t("mapping.searchCategory")}
-                    onChange={(event) => {
-                      setCategoryQuery(event.target.value);
-                      setCategorySelection(null);
-                    }}
-                  />
-                </label>
-                <div>
-                  <span className="micro-label">Suggestions</span>
-                  <div
-                    className="search-combobox-menu"
-                    style={{ position: "relative" }}
-                  >
-                    {categoryOptions.map((category) => (
-                      <button
-                        key={category.code}
-                        type="button"
-                        className="search-combobox-option"
-                        aria-selected={categorySelection === category.code}
-                        onClick={() => {
-                          setCategorySelection(category.code);
-                          setCategoryQuery(
-                            `${category.code} - ${category.name}`,
-                          );
-                        }}
-                      >
-                        {category.code} - {category.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <ButtonV1
-                  variant="primary"
-                  onClick={() => applyMappingOverrideMutation.mutate()}
-                  busy={applyMappingOverrideMutation.isPending}
-                  disabled={
-                    selectedRowIds.length === 0 ||
-                    !categorySelection
-                  }
-                >
-                  Apply override
-                </ButtonV1>
-              </div>
-
-              <GuidanceBannerV1
-                tone={selectedRowIds.length > 0 ? "active" : "neutral"}
-                ariaLive="polite"
-              >
-                {selectedRowIds.length > 0
-                  ? `${selectedRowIds.length} row(s) selected for override.`
-                  : "Select one or more rows to enable override and AI command actions."}
-              </GuidanceBannerV1>
-              <div className="mapping-grid-state-legend" aria-label="Row state legend">
-                <span className="mapping-grid-state" data-state="ai-confident">
-                  AI Confident
-                </span>
-                <span className="mapping-grid-state" data-state="approved">
-                  Approved
-                </span>
-                <span className="mapping-grid-state" data-state="manual-override">
-                  Manual Override
-                </span>
-                <span className="mapping-grid-state" data-state="pending-review">
-                  Pending Review
-                </span>
-                <span className="mapping-grid-legend-summary">
-                  Exceptions: {mappingExceptionCount}
-                </span>
-              </div>
-
-              <div className="form-grid form-grid--inline">
-                <InputV1
-                  value={commandText}
-                  monospace
-                  placeholder={t("mapping.inlineCommandPlaceholder")}
-                  invalid={
-                    commandText.trim().length > 0 && selectedRowIds.length === 0
-                  }
-                  onChange={(event) => setCommandText(event.target.value)}
+            <SkeletonV1 height={220} />
+          ) : mappingDecisions.length > 0 ? (
+            <>
+              <ModuleSummaryGridV1>
+                <ModuleSummaryItemV1
+                  label="Mapped accounts"
+                  value={String(mappingDecisions.length)}
                 />
+                <ModuleSummaryItemV1
+                  label="High-confidence rows"
+                  value={String(highConfidenceCount)}
+                />
+                <ModuleSummaryItemV1
+                  label="Next action"
+                  value="Review exceptions"
+                />
+              </ModuleSummaryGridV1>
+
+              <table className="module-data-table">
+                <thead>
+                  <tr>
+                    <th>Account</th>
+                    <th>Description</th>
+                    <th>Category</th>
+                    <th>Confidence</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mappingDecisions.slice(0, 8).map((decision) => (
+                    <tr key={decision.id}>
+                      <td>{decision.sourceAccountNumber}</td>
+                      <td>{decision.accountName}</td>
+                      <td>{decision.selectedCategory.name}</td>
+                      <td>{Math.round(decision.confidence * 100)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          ) : (
+            <div className="workspace-empty-state">
+              Import the trial balance to populate the account table.
+            </div>
+          )}
+        </CardV1>
+      </>
+    );
+  } else if (normalizedCoreModule === "tax-adjustments") {
+    moduleBody = (
+      <>
+        <CardV1 className="module-stage-card card-v1--hero">
+          <ModuleStageIntroV1
+            heading={activeModuleDefinition.longLabel}
+            description={activeModuleDefinition.description}
+            moduleDefinition={activeModuleDefinition}
+            subModule={subModule}
+          />
+
+          <div className="module-stage-card__body">
+            <div className="module-stage-card__control-panel">
+              <p className="module-stage-card__note">
+                Generate the draft adjustment set after mapping is reviewed.
+                This action also refreshes the deterministic tax summary used by
+                the INK2 draft.
+              </p>
+
+              <div className="module-stage-card__actions">
                 <ButtonV1
-                  onClick={() => {
-                    const preview = inlineAiCommandAdapterV1.preview({
-                      command: commandText,
-                      selectedRowIds,
-                    });
-                    setCommandPreview(preview.previewMessage);
-                  }}
-                  disabled={
-                    commandText.trim().length === 0 ||
-                    selectedRowIds.length === 0
-                  }
+                  variant="black"
+                  onClick={() => taxAdjustmentsMutation.mutate()}
+                  disabled={taxAdjustmentsMutation.isPending}
                 >
-                  {t("mapping.applyCommand")}
+                  {activeModuleDefinition.ctaLabel}
                 </ButtonV1>
               </div>
-              {commandPreview ? (
-                <p className="hint-text">{commandPreview}</p>
-              ) : null}
-
-              <section
-                className="table-wrap mapping-grid-wrap"
-                ref={mappingScrollRef}
-                style={{
-                  height: `${mappingGridViewportHeightV1}px`,
-                  minWidth: "980px",
-                }}
-                aria-label="Account mapping grid"
-                onScroll={(event) => {
-                  const nextTop = event.currentTarget.scrollTop;
-                  if (mappingScrollRafRef.current !== null) {
-                    cancelAnimationFrame(mappingScrollRafRef.current);
-                  }
-                  mappingScrollRafRef.current = requestAnimationFrame(() => {
-                    setMappingScrollTop((current) =>
-                      current === nextTop ? current : nextTop,
-                    );
-                    mappingScrollRafRef.current = null;
-                  });
-                }}
-              >
-                <div
-                  className="mapping-grid-header"
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: mappingGridTemplateColumnsV1,
-                    position: "sticky",
-                    top: 0,
-                    minHeight: `${mappingGridRowHeightV1}px`,
-                    alignItems: "center",
-                  }}
-                >
-                  <div />
-                  <div className="micro-label">
-                    {t("mapping.table.account")}
-                  </div>
-                  <div className="micro-label">
-                    {t("mapping.table.description")}
-                  </div>
-                  <div className="micro-label">{t("mapping.table.amount")}</div>
-                  <div className="micro-label">
-                    {t("mapping.table.category")}
-                  </div>
-                  <div className="micro-label">
-                    {t("mapping.table.confidence")}
-                  </div>
-                  <div className="micro-label">{t("mapping.table.state")}</div>
-                </div>
-
-                <div
-                  className="mapping-grid-virtual-body"
-                  style={{
-                    height: `${mappingVirtualRows.totalSize}px`,
-                    position: "relative",
-                  }}
-                >
-                  {mappingVirtualRows.rows.map((virtualRow) => {
-                    const row = virtualRow.row;
-                    const selected = selectedRowIdSet.has(row.id);
-                    const isManualOverride = row.status === "overridden";
-                    const isAiHighlighted = row.confidence >= 0.9;
-                    const isException = isMappingExceptionV1(row);
-                    const stateLabel = toMappingStateLabelV1(row);
-                    return (
-                      <div
-                        key={row.id}
-                        className="mapping-grid-row"
-                        data-selected={selected ? "true" : undefined}
-                        data-ai-highlighted={
-                          isAiHighlighted ? "true" : undefined
-                        }
-                        data-manual-override={
-                          isManualOverride ? "true" : undefined
-                        }
-                        data-exception={isException ? "true" : undefined}
-                        style={{
-                          position: "absolute",
-                          top: 0,
-                          left: 0,
-                          transform: `translateY(${virtualRow.start}px)`,
-                          willChange: "transform",
-                          display: "grid",
-                          gridTemplateColumns: mappingGridTemplateColumnsV1,
-                          minHeight: `${mappingGridRowHeightV1}px`,
-                          alignItems: "center",
-                          width: "100%",
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          className="mapping-grid-row-checkbox"
-                          onChange={(event) => {
-                            setRowSelectedV1(row.id, event.target.checked);
-                          }}
-                          aria-label={`Select account ${row.sourceAccountNumber}`}
-                        />
-                        <div>{row.sourceAccountNumber}</div>
-                        <div>{row.accountName}</div>
-                        <div className="numeric">{row.accountNumber}</div>
-                        <div>{row.selectedCategory.code}</div>
-                        <div>{Math.round(row.confidence * 100)}%</div>
-                        <div>
-                          <span
-                            className="mapping-grid-state"
-                            data-state={stateLabel
-                              .toLowerCase()
-                              .replace(/\s+/g, "-")}
-                          >
-                            {stateLabel}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
             </div>
-          ) : null}
-
-          {applyMappingOverrideMutation.isError ? (
-            <p className="error-text">
-              {toUserFacingErrorMessage(applyMappingOverrideMutation.error)}
-            </p>
-          ) : null}
+          </div>
         </CardV1>
-      ) : null}
 
-      {normalizedCoreModule === "tax-adjustments" ? (
-        <section
-          id="module-panel-tax-adjustments"
-          role="tabpanel"
-          className="workspace-layout workspace-layout--tax"
-        >
-          <div className="workspace-layout-sidebar workspace-layout-sidebar--tax">
-            <SidebarNavV1
-              sections={taxSidebarSections}
-              pinnedItems={taxPinnedItems}
-              pinnedTitle="Calculation Chain"
-              density="dense"
-            />
+        <CardV1 className="module-data-card">
+          <div className="module-data-card__header">
+            <div>
+              <div className="workspace-panel-header__eyebrow">Review</div>
+              <h2>Tax effect summary</h2>
+            </div>
+            <div className="module-data-card__status">
+              {taxAdjustmentsQuery.isSuccess
+                ? `${taxAdjustmentDecisions.length} adjustments generated`
+                : "No adjustment set yet"}
+            </div>
           </div>
 
-          <div className="module-shell-v1-main module-shell-v1-main--tax">
-            <CardV1>
-              <p className="micro-label">{t("module.taxAdjustments")}</p>
-              <h1 className="page-title">
-                {subModule
-                  ? (taxSubmoduleLabelBySlugV1.get(subModule) ?? subModule)
-                  : "General Client Information"}
-              </h1>
-              <p className="hint-text">
-                Use the left navigation to work through common and advanced tax
-                adjustment modules.
+          {taxSummaryQuery.isPending ? (
+            <SkeletonV1 height={180} />
+          ) : taxSummary ? (
+            <ModuleSummaryGridV1>
+              <ModuleSummaryItemV1
+                label="Taxable income"
+                value={formatCurrencyV1(taxSummary.taxableIncome)}
+              />
+              <ModuleSummaryItemV1
+                label="Corporate tax"
+                value={formatCurrencyV1(taxSummary.corporateTax)}
+              />
+              <ModuleSummaryItemV1
+                label="Draft adjustments"
+                value={String(taxAdjustmentDecisions.length)}
+              />
+            </ModuleSummaryGridV1>
+          ) : (
+            <div className="workspace-empty-state">
+              Generate tax adjustments to produce the tax summary.
+            </div>
+          )}
+        </CardV1>
+      </>
+    );
+  } else {
+    moduleBody = (
+      <>
+        <CardV1 className="module-stage-card card-v1--hero">
+          <ModuleStageIntroV1
+            heading={activeModuleDefinition.longLabel}
+            description={activeModuleDefinition.description}
+            moduleDefinition={activeModuleDefinition}
+            subModule={subModule}
+          />
+
+          <div className="module-stage-card__body">
+            <div className="module-stage-card__control-panel">
+              <p className="module-stage-card__note">
+                Generate the INK2 draft once the tax summary is reviewed. Export
+                remains available only after a draft exists.
               </p>
-              {taxAdjustmentsQuery.isPending ? (
-                <div className="panel-stack">
-                  <SkeletonV1 width={240} height={16} />
-                  <SkeletonV1 width={200} height={16} />
-                  <SkeletonV1 width={260} height={16} />
-                </div>
-              ) : null}
-              {taxAdjustmentsQuery.isSuccess ? (
-                <p className="hint-text">
-                  Active adjustments version{" "}
-                  {taxAdjustmentsQuery.data.active.version}
-                </p>
-              ) : null}
-              {taxAdjustmentsQuery.isError ? (
-                taxAdjustmentsQuery.error instanceof ApiClientError &&
-                taxAdjustmentsQuery.error.code === "ADJUSTMENTS_NOT_FOUND" ? (
-                  <EmptyStateV1
-                    title="No adjustment artifact yet"
-                    description="Run annual report and account mapping first, then return here for adjustments."
-                  />
-                ) : (
-                  <EmptyStateV1
-                    title="Tax adjustments unavailable"
-                    description={toUserFacingErrorMessage(
-                      taxAdjustmentsQuery.error,
-                    )}
-                    tone="error"
-                    role="alert"
-                    action={
-                      <ButtonV1 onClick={() => taxAdjustmentsQuery.refetch()}>
-                        Retry
-                      </ButtonV1>
-                    }
-                  />
-                )
-              ) : null}
-            </CardV1>
 
-            <CardV1 className="module-shell-v1-summary-card module-shell-v1-summary-card--tax">
-              <p className="micro-label">{t("module.sidebar.finalTax")}</p>
-              {taxSummaryQuery.isPending ? (
-                <div className="panel-stack">
-                  <SkeletonV1 width={160} height={28} />
-                  <SkeletonV1 width={120} height={14} />
-                  <SkeletonV1 width={160} height={28} />
-                  <SkeletonV1 width={120} height={14} />
-                </div>
-              ) : null}
-              {taxSummaryQuery.isSuccess ? (
-                <>
-                  <p className="section-title numeric">
-                    {taxSummaryQuery.data.summary.taxableIncome}
-                  </p>
-                  <p className="hint-text">Taxable income</p>
-                  <p className="section-title numeric">
-                    {taxSummaryQuery.data.summary.corporateTax}
-                  </p>
-                  <p className="hint-text">Corporate tax</p>
-                </>
-              ) : null}
-              {taxSummaryQuery.isError ? (
-                taxSummaryQuery.error instanceof ApiClientError &&
-                taxSummaryQuery.error.code === "ADJUSTMENTS_NOT_FOUND" ? (
-                  <EmptyStateV1
-                    title="Summary pending"
-                    description="No final summary available yet."
-                  />
-                ) : (
-                  <EmptyStateV1
-                    title="Final summary unavailable"
-                    description={toUserFacingErrorMessage(
-                      taxSummaryQuery.error,
-                    )}
-                    tone="error"
-                    role="alert"
-                    action={
-                      <ButtonV1 onClick={() => taxSummaryQuery.refetch()}>
-                        Retry
-                      </ButtonV1>
-                    }
-                  />
-                )
-              ) : null}
-            </CardV1>
-          </div>
-        </section>
-      ) : null}
-
-      {normalizedCoreModule === "tax-return-ink2" ? (
-        <CardV1 id="module-panel-tax-return-ink2" role="tabpanel">
-          <p className="micro-label">{t("ink2.title")}</p>
-          <h1 className="page-title">{t("ink2.title")}</h1>
-          <p className="hint-text">{t("ink2.subtitle")}</p>
-          {ink2Query.isPending ? (
-            <div className="ink2-canvas">
-              <div className="panel-stack">
-                <SkeletonV1 height={36} />
-                <SkeletonV1 height={36} />
-                <SkeletonV1 height={36} />
-                <SkeletonV1 height={36} />
-                <SkeletonV1 height={36} />
+              <div className="module-stage-card__actions">
+                <ButtonV1
+                  variant="black"
+                  onClick={() => ink2Mutation.mutate()}
+                  disabled={ink2Mutation.isPending}
+                >
+                  {activeModuleDefinition.ctaLabel}
+                </ButtonV1>
+                <ButtonV1
+                  variant="secondary"
+                  onClick={() => exportPdfMutation.mutate()}
+                  disabled={!ink2Query.isSuccess || exportPdfMutation.isPending}
+                >
+                  Export PDF
+                </ButtonV1>
               </div>
             </div>
-          ) : null}
-          {ink2Query.isSuccess ? (
-            ink2Query.data.form.fields.length === 0 ? (
-              <EmptyStateV1
-                title="INK2 draft is empty"
-                description="Run tax summary and populate the form to show values here."
-              />
-            ) : (
-              <div className="ink2-canvas">
-                <div className="ink2-grid">
-                  <div className="micro-label ink2-grid-header">Code</div>
-                  <div className="micro-label ink2-grid-header">Field</div>
-                  <div className="micro-label numeric ink2-grid-header">
-                    Amount
-                  </div>
-                  {ink2Query.data.form.fields.map((field) => (
-                    <div key={field.fieldId} style={{ display: "contents" }}>
-                      <div className="ink2-code">
-                        {field.fieldId.split(".")[1]?.toUpperCase() ??
-                          field.fieldId}
-                      </div>
-                      <div
-                        className={
-                          field.provenance === "manual"
-                            ? "ink2-field"
-                            : "ink2-field ink2-field--ai"
-                        }
-                      >
-                        {field.fieldId}
-                      </div>
-                      <div className="numeric ink2-amount">{field.amount}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )
-          ) : null}
-          {ink2Query.isError ? (
-            ink2Query.error instanceof ApiClientError &&
-            ink2Query.error.code === "FORM_NOT_FOUND" ? (
-              <EmptyStateV1
-                title="No INK2 draft yet"
-                description="Run tax summary and INK2 form generation first."
-              />
-            ) : (
-              <EmptyStateV1
-                title="INK2 draft unavailable"
-                description={toUserFacingErrorMessage(ink2Query.error)}
-                tone="error"
-                role="alert"
-                action={
-                  <ButtonV1 onClick={() => ink2Query.refetch()}>Retry</ButtonV1>
-                }
-              />
-            )
-          ) : null}
+          </div>
         </CardV1>
+
+        <CardV1 className="module-data-card">
+          <div className="module-data-card__header">
+            <div>
+              <div className="workspace-panel-header__eyebrow">Review</div>
+              <h2>INK2 draft preview</h2>
+            </div>
+            <div className="module-data-card__status">
+              {ink2Query.isSuccess ? "Draft available" : "No draft generated"}
+            </div>
+          </div>
+
+          {ink2Query.isPending ? (
+            <SkeletonV1 height={220} />
+          ) : ink2Fields.length > 0 ? (
+            <>
+              <ModuleSummaryGridV1>
+                <ModuleSummaryItemV1
+                  label="Draft fields"
+                  value={String(ink2Fields.length)}
+                />
+                <ModuleSummaryItemV1
+                  label="Export"
+                  value={exportPdfMutation.isSuccess ? "Created" : "Pending"}
+                />
+                <ModuleSummaryItemV1
+                  label="Next action"
+                  value="Review and export"
+                />
+              </ModuleSummaryGridV1>
+
+              <table className="module-data-table">
+                <thead>
+                  <tr>
+                    <th>Field</th>
+                    <th>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ink2Fields.slice(0, 8).map((field) => (
+                    <tr key={field.fieldId}>
+                      <td>{field.fieldId}</td>
+                      <td>{formatCurrencyV1(field.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          ) : (
+            <div className="workspace-empty-state">
+              Generate the INK2 draft to review the final return.
+            </div>
+          )}
+        </CardV1>
+      </>
+    );
+  }
+
+  const sidebar =
+    normalizedCoreModule === "annual-report-analysis" ? (
+      <AnnualReportSidebarV1
+        annualDocumentWarnings={annualDocumentWarnings}
+        annualFields={annualFields}
+        annualReportClearPending={clearAnnualReportMutation.isPending}
+        annualReportMutationPending={
+          annualReportMutation.isPending || annualReportUploadBlockedByRun
+        }
+        hasActiveExtraction={hasActiveAnnualReportExtraction}
+        extraction={displayedAnnualExtraction}
+        onClearRequested={clearActiveData}
+        onRecoveryRequested={runRecoveryAction}
+        processingRun={latestAnnualReportRun}
+        recoveryActionLabel={recoveryActionLabel}
+        runtime={displayedAnnualRuntime}
+      />
+    ) : (
+      <WorkspaceReviewPanelV1
+        tenantId={principal.tenantId}
+        workspaceId={workspace.id}
+        workspaceStatus={workspace.status}
+        recommendedNextAction={moduleWorkflowState.nextActionLabel}
+        warning={moduleWorkflowState.warning}
+      />
+    );
+
+  return (
+    <div className="module-shell">
+      {moduleWorkflowState.warning ? (
+        <div className="workflow-warning-banner" role="alert">
+          {moduleWorkflowState.warning}
+        </div>
       ) : null}
-    </section>
+
+      <div className="module-shell__layout">
+        <div className="module-shell__main">{moduleBody}</div>
+        {sidebar}
+      </div>
+    </div>
   );
 }

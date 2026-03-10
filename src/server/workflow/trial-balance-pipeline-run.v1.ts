@@ -3,13 +3,17 @@ import type { z } from "zod";
 import type { AuditRepositoryV1 } from "../../db/repositories/audit.repository.v1";
 import type { MappingPreferenceRepositoryV1 } from "../../db/repositories/mapping-preference.repository.v1";
 import type { TbPipelineArtifactRepositoryV1 } from "../../db/repositories/tb-pipeline-artifact.repository.v1";
+import type { WorkspaceArtifactRepositoryV1 } from "../../db/repositories/workspace-artifact.repository.v1";
 import { AUDIT_EVENT_TYPES_V1 } from "../../shared/audit/audit-event-catalog.v1";
 import { parseAuditEventV2 } from "../../shared/contracts/audit-event.v2";
+import type { ReconciliationResultPayloadV1 } from "../../shared/contracts/reconciliation.v1";
 import {
   ExecuteTrialBalancePipelineRequestV1Schema,
   type ExecuteTrialBalancePipelineResultV1,
   parseExecuteTrialBalancePipelineResultV1,
 } from "../../shared/contracts/tb-pipeline-run.v1";
+import type { GenerateMappingDecisionsResultV1 } from "../../shared/contracts/mapping.v1";
+import type { TrialBalanceNormalizedV1 } from "../../shared/contracts/trial-balance.v1";
 import { generateDeterministicMappingDecisionsV1 } from "../mapping/deterministic-mapping.v1";
 import { parseTrialBalanceFileV1 } from "../parsing/trial-balance-parser.v1";
 import { validateTrialBalanceFileTypeCoherenceV1 } from "../security/file-type-coherence.v1";
@@ -23,7 +27,15 @@ import { applyMappingPreferencesToDecisionSetV1 } from "./mapping-override.v1";
 export interface TrialBalancePipelineRunDepsV1 {
   artifactRepository: TbPipelineArtifactRepositoryV1;
   auditRepository: AuditRepositoryV1;
+  generateMappingDecisions?: (input: {
+    tenantId: string;
+    workspaceId: string;
+    policyVersion: string;
+    trialBalance: TrialBalanceNormalizedV1;
+    reconciliation: ReconciliationResultPayloadV1;
+  }) => Promise<GenerateMappingDecisionsResultV1>;
   mappingPreferenceRepository: MappingPreferenceRepositoryV1;
+  workspaceArtifactRepository?: WorkspaceArtifactRepositoryV1;
   generateId: () => string;
   nowIsoUtc: () => string;
 }
@@ -397,11 +409,19 @@ export async function executeTrialBalancePipelineRunV1(
     });
   }
 
-  const mappingResult = generateDeterministicMappingDecisionsV1({
-    trialBalance: parseResult.trialBalance,
-    reconciliation: reconciliationResult.reconciliation,
-    policyVersion: request.policyVersion,
-  });
+  const mappingResult = deps.generateMappingDecisions
+    ? await deps.generateMappingDecisions({
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        trialBalance: parseResult.trialBalance,
+        reconciliation: reconciliationResult.reconciliation,
+        policyVersion: request.policyVersion,
+      })
+    : generateDeterministicMappingDecisionsV1({
+        trialBalance: parseResult.trialBalance,
+        reconciliation: reconciliationResult.reconciliation,
+        policyVersion: request.policyVersion,
+      });
   if (!mappingResult.ok) {
     return parseExecuteTrialBalancePipelineResultV1({
       ok: false,

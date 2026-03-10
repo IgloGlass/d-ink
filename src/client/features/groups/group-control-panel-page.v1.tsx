@@ -13,11 +13,17 @@ import {
   getWorkspaceStatusBadgeMetaV1,
 } from "../../components/status-badge-v1";
 import { groupControlPanelAdapterV1 } from "../../lib/adapters/group-control-panel-adapter.v1";
+import { listCompaniesByTenantV1 } from "../../lib/http/company-api";
 import { toUserFacingErrorMessage } from "../../lib/http/api-client";
 import { listWorkspacesByTenantV1 } from "../../lib/http/workspace-api";
 import { useI18nV1 } from "../../lib/i18n/use-i18n.v1";
 
 const workspaceListQueryKeyV1 = (tenantId: string) => ["workspaces", tenantId];
+const companyListQueryKeyV1 = (tenantId: string) => ["companies", tenantId];
+
+function formatOrganizationNumberV1(value: string): string {
+  return value.length === 10 ? `${value.slice(0, 6)}-${value.slice(6)}` : value;
+}
 
 export function GroupControlPanelPageV1() {
   const navigate = useNavigate();
@@ -30,10 +36,16 @@ export function GroupControlPanelPageV1() {
     queryKey: workspaceListQueryKeyV1(principal.tenantId),
     queryFn: () => listWorkspacesByTenantV1({ tenantId: principal.tenantId }),
   });
+  const companiesQuery = useQuery({
+    queryKey: companyListQueryKeyV1(principal.tenantId),
+    queryFn: () => listCompaniesByTenantV1({ tenantId: principal.tenantId }),
+  });
 
   const overview =
     listQuery.data?.workspaces &&
+    companiesQuery.data?.companies &&
     groupControlPanelAdapterV1.getGroupOverview({
+      companies: companiesQuery.data.companies,
       groupId,
       workspaces: listQuery.data.workspaces,
     });
@@ -59,9 +71,21 @@ export function GroupControlPanelPageV1() {
           <h1 className="page-title">{t("group.panel.title")}</h1>
           <p className="hint-text">{t("group.panel.subtitle")}</p>
         </div>
+        {overview ? (
+          <div className="group-panel-hero-aside">
+            <div className="group-panel-hero-stat">
+              <span>Active workspaces</span>
+              <strong>{overview.companies.length}</strong>
+            </div>
+            <div className="group-panel-hero-stat">
+              <span>Portfolio status</span>
+              <strong>{overviewStatusLabel}</strong>
+            </div>
+          </div>
+        ) : null}
       </CardV1>
 
-      {listQuery.isPending ? (
+      {listQuery.isPending || companiesQuery.isPending ? (
         <div className="panel-grid panel-grid--2 group-panel-overview-grid">
           <CardV1 className="group-profile-card">
             <SkeletonV1 width={140} height={12} />
@@ -82,19 +106,28 @@ export function GroupControlPanelPageV1() {
         </div>
       ) : null}
 
-      {listQuery.isError ? (
+      {listQuery.isError || companiesQuery.isError ? (
         <EmptyStateV1
           title="Group overview unavailable"
-          description={toUserFacingErrorMessage(listQuery.error)}
+          description={toUserFacingErrorMessage(
+            listQuery.error ?? companiesQuery.error,
+          )}
           tone="error"
           role="alert"
           action={
-            <ButtonV1 onClick={() => listQuery.refetch()}>Retry</ButtonV1>
+            <ButtonV1
+              onClick={() => {
+                listQuery.refetch();
+                companiesQuery.refetch();
+              }}
+            >
+              Retry
+            </ButtonV1>
           }
         />
       ) : null}
 
-      {listQuery.isSuccess && !overview ? (
+      {listQuery.isSuccess && companiesQuery.isSuccess && !overview ? (
         <EmptyStateV1
           title="No workspace group found"
           description="Add workspaces first, then return to this group overview."
@@ -208,12 +241,19 @@ export function GroupControlPanelPageV1() {
                     return (
                       <tr key={company.workspaceId}>
                         <td>
-                          <p className="group-directory-cell-value">
-                            {company.companyId.slice(0, 8)}
-                          </p>
+                          <div className="group-directory-company">
+                            <p className="group-directory-cell-value">
+                              {company.companyName}
+                            </p>
+                            <p className="group-directory-cell-meta">
+                              {formatOrganizationNumberV1(
+                                company.organizationNumber,
+                              )}
+                            </p>
+                          </div>
                         </td>
                         <td>
-                          <p className="group-directory-cell-value">
+                          <p className="group-directory-cell-value group-directory-cell-value--mono">
                             {company.workspaceId.slice(0, 8)}
                           </p>
                         </td>
@@ -235,14 +275,12 @@ export function GroupControlPanelPageV1() {
                             onClick={() => {
                               setActiveContext({
                                 activeWorkspaceId: company.workspaceId,
-                                activeFiscalYear: `${company.fiscalYearStart} to ${company.fiscalYearEnd}`,
+                                activeFiscalYear: company.fiscalYearEnd.slice(0, 4),
                               });
-                              navigate(
-                                `/app/workspaces/${company.workspaceId}/workbench`,
-                              );
+                              navigate(`/app/workspaces/${company.workspaceId}`);
                             }}
                           >
-                            {t("workspace.selector.continue")}
+                            Open dashboard
                           </ButtonV1>
                         </td>
                       </tr>

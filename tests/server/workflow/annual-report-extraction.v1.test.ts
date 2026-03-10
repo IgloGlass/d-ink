@@ -8,10 +8,14 @@ import { MAX_ANNUAL_REPORT_FILE_BYTES_V1 } from "../../../src/server/security/pa
 import {
   type AnnualReportExtractionDepsV1,
   applyAnnualReportExtractionOverridesV1,
+  clearAnnualReportDataV1,
   confirmAnnualReportExtractionV1,
   getActiveAnnualReportExtractionV1,
+  getActiveAnnualReportTaxAnalysisV1,
   runAnnualReportExtractionV1,
 } from "../../../src/server/workflow/annual-report-extraction.v1";
+import { parseAnnualReportExtractionPayloadV1 } from "../../../src/shared/contracts/annual-report-extraction.v1";
+import { parseAnnualReportTaxAnalysisPayloadV1 } from "../../../src/shared/contracts/annual-report-tax-analysis.v1";
 import { applyWorkspaceAuditSchemaForTests } from "../../db/test-schema";
 
 const TENANT_ID = "9d000000-0000-4000-8000-000000000001";
@@ -57,9 +61,121 @@ function createDeps(): AnnualReportExtractionDepsV1 {
     artifactRepository: createD1WorkspaceArtifactRepositoryV1(env.DB),
     auditRepository: createD1AuditRepositoryV1(env.DB),
     workspaceRepository: createD1WorkspaceRepositoryV1(env.DB),
+    getRuntimeMetadata: () => ({
+      extractionEngineVersion: "annual-report-deep-extraction.v2",
+      runtimeFingerprint:
+        "annual-report-deep-extraction.v2|gemini-2.5-flash|gemini-2.5-pro",
+    }),
     generateId: () => crypto.randomUUID(),
     nowIsoUtc: () => "2026-03-03T12:10:00.000Z",
   };
+}
+
+function createCompleteExtractionPayloadV1(input: {
+  fileName: string;
+  policyVersion: string;
+}) {
+  return parseAnnualReportExtractionPayloadV1({
+    schemaVersion: "annual_report_extraction_v1",
+    sourceFileName: input.fileName,
+    sourceFileType: "pdf",
+    policyVersion: input.policyVersion,
+    fields: {
+      companyName: { status: "extracted", confidence: 0.99, value: "Acme AB" },
+      organizationNumber: {
+        status: "extracted",
+        confidence: 0.99,
+        value: "556677-8899",
+      },
+      fiscalYearStart: {
+        status: "extracted",
+        confidence: 0.99,
+        value: "2025-01-01",
+      },
+      fiscalYearEnd: {
+        status: "extracted",
+        confidence: 0.99,
+        value: "2025-12-31",
+      },
+      accountingStandard: {
+        status: "extracted",
+        confidence: 0.99,
+        value: "K2",
+      },
+      profitBeforeTax: {
+        status: "extracted",
+        confidence: 0.99,
+        value: 1000000,
+      },
+    },
+    summary: {
+      autoDetectedFieldCount: 6,
+      needsReviewFieldCount: 0,
+    },
+    taxSignals: [],
+    documentWarnings: [],
+    taxDeep: {
+      ink2rExtracted: {
+        incomeStatement: [
+          {
+            code: "profit-before-tax",
+            label: "Resultat fore skatt",
+            currentYearValue: 1000000,
+            evidence: [],
+          },
+        ],
+        balanceSheet: [
+          {
+            code: "total-assets",
+            label: "Summa tillgangar",
+            currentYearValue: 5000000,
+            evidence: [],
+          },
+        ],
+      },
+      depreciationContext: {
+        assetAreas: [],
+        evidence: [],
+      },
+      assetMovements: {
+        lines: [],
+        evidence: [],
+      },
+      reserveContext: {
+        movements: [],
+        notes: [],
+        evidence: [],
+      },
+      netInterestContext: {
+        notes: [],
+        evidence: [],
+      },
+      pensionContext: {
+        flags: [],
+        notes: [],
+        evidence: [],
+      },
+      leasingContext: {
+        flags: [],
+        notes: [],
+        evidence: [],
+      },
+      groupContributionContext: {
+        flags: [],
+        notes: [],
+        evidence: [],
+      },
+      shareholdingContext: {
+        flags: [],
+        notes: [],
+        evidence: [],
+      },
+      priorYearComparatives: [],
+    },
+    confirmation: {
+      isConfirmed: false,
+    },
+  });
 }
 
 describe("annual report extraction workflow v1", () => {
@@ -67,9 +183,16 @@ describe("annual report extraction workflow v1", () => {
     await applyWorkspaceAuditSchemaForTests();
   });
 
-  it("runs extraction, applies overrides, and confirms with version increments", async () => {
+  it("auto-confirms full extractions and keeps confirm as a compatibility route", async () => {
     await seedWorkspace();
     const deps = createDeps();
+    deps.extractAnnualReport = async (input) => ({
+      ok: true,
+      extraction: createCompleteExtractionPayloadV1({
+        fileName: input.fileName,
+        policyVersion: input.policyVersion,
+      }),
+    });
     const runResult = await runAnnualReportExtractionV1(
       {
         tenantId: TENANT_ID,
@@ -93,6 +216,12 @@ describe("annual report extraction workflow v1", () => {
       return;
     }
     expect(runResult.active.version).toBe(1);
+    expect(runResult.runtime?.extractionEngineVersion).toBe(
+      "annual-report-deep-extraction.v2",
+    );
+    expect(runResult.extraction.engineMetadata?.runtimeFingerprint).toBe(
+      "annual-report-deep-extraction.v2|gemini-2.5-flash|gemini-2.5-pro",
+    );
 
     const overrideResult = await applyAnnualReportExtractionOverridesV1(
       {
@@ -119,7 +248,7 @@ describe("annual report extraction workflow v1", () => {
       return;
     }
     expect(overrideResult.active.version).toBe(2);
-    expect(overrideResult.extraction.confirmation.isConfirmed).toBe(false);
+    expect(overrideResult.extraction.confirmation.isConfirmed).toBe(true);
 
     const confirmResult = await confirmAnnualReportExtractionV1(
       {
@@ -139,6 +268,31 @@ describe("annual report extraction workflow v1", () => {
     }
     expect(confirmResult.active.version).toBe(3);
     expect(confirmResult.extraction.confirmation.isConfirmed).toBe(true);
+
+    const rerunResult = await runAnnualReportExtractionV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        fileName: "annual-report-refresh.pdf",
+        fileBytesBase64: toBase64(`
+          Company Name: Acme AB
+          Org nr: 556677-8899
+          Fiscal year: 2025-01-01 to 2025-12-31
+          K2
+          Resultat före skatt: 1 100 000
+        `),
+        policyVersion: "annual-report-manual-first.v1",
+        createdByUserId: USER_ID,
+      },
+      deps,
+    );
+
+    expect(rerunResult.ok).toBe(true);
+    if (!rerunResult.ok) {
+      return;
+    }
+    expect(rerunResult.active.version).toBe(4);
+    expect(rerunResult.extraction.confirmation.isConfirmed).toBe(true);
   });
 
   it("fails confirmation if required fields are missing", async () => {
@@ -176,6 +330,240 @@ describe("annual report extraction workflow v1", () => {
     }
   });
 
+  it("fails confirmation when full financial statements are missing", async () => {
+    await seedWorkspace();
+    const deps = createDeps();
+    deps.extractAnnualReport = async (input) => ({
+      ok: true,
+      extraction: parseAnnualReportExtractionPayloadV1({
+        schemaVersion: "annual_report_extraction_v1",
+        sourceFileName: input.fileName,
+        sourceFileType: "pdf",
+        policyVersion: input.policyVersion,
+        fields: {
+          companyName: { status: "extracted", confidence: 0.99, value: "Acme AB" },
+          organizationNumber: {
+            status: "extracted",
+            confidence: 0.99,
+            value: "556677-8899",
+          },
+          fiscalYearStart: {
+            status: "extracted",
+            confidence: 0.99,
+            value: "2025-01-01",
+          },
+          fiscalYearEnd: {
+            status: "extracted",
+            confidence: 0.99,
+            value: "2025-12-31",
+          },
+          accountingStandard: {
+            status: "extracted",
+            confidence: 0.99,
+            value: "K3",
+          },
+          profitBeforeTax: {
+            status: "extracted",
+            confidence: 0.99,
+            value: 1000,
+          },
+        },
+        summary: {
+          autoDetectedFieldCount: 6,
+          needsReviewFieldCount: 0,
+        },
+        taxSignals: [],
+        documentWarnings: [],
+        taxDeep: {
+          ink2rExtracted: {
+            incomeStatement: [],
+            balanceSheet: [],
+          },
+          depreciationContext: {
+            assetAreas: [],
+            evidence: [],
+          },
+          assetMovements: {
+            lines: [],
+            evidence: [],
+          },
+          reserveContext: {
+            movements: [],
+            notes: [],
+            evidence: [],
+          },
+          netInterestContext: {
+            notes: [],
+            evidence: [],
+          },
+          pensionContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+          },
+          leasingContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+          },
+          groupContributionContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+          },
+          shareholdingContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+          },
+          priorYearComparatives: [],
+        },
+        confirmation: {
+          isConfirmed: false,
+        },
+      }),
+    });
+
+    const runResult = await runAnnualReportExtractionV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        fileName: "annual-report.pdf",
+        fileBytesBase64: toBase64("fake pdf text"),
+        policyVersion: "annual-report-manual-first.v1",
+        createdByUserId: USER_ID,
+      },
+      deps,
+    );
+    if (!runResult.ok) {
+      throw new Error("Expected run success");
+    }
+
+    const confirmResult = await confirmAnnualReportExtractionV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        expectedActiveExtraction: {
+          artifactId: runResult.active.artifactId,
+          version: runResult.active.version,
+        },
+        confirmedByUserId: USER_ID,
+      },
+      deps,
+    );
+
+    expect(confirmResult.ok).toBe(false);
+    if (!confirmResult.ok) {
+      expect(confirmResult.error.code).toBe("INPUT_INVALID");
+      expect(confirmResult.error.context.missingFinancialStatements).toBe(true);
+      expect(confirmResult.error.user_message).toContain(
+        "income statement or balance sheet is incomplete",
+      );
+    }
+  });
+
+  it("allows confirmation with empty tax-note contexts when required fields and statements are present", async () => {
+    await seedWorkspace();
+    const deps = createDeps();
+    deps.extractAnnualReport = async (input) => ({
+      ok: true,
+      extraction: createCompleteExtractionPayloadV1({
+        fileName: input.fileName,
+        policyVersion: input.policyVersion,
+      }),
+    });
+
+    const runResult = await runAnnualReportExtractionV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        fileName: "annual-report.pdf",
+        fileBytesBase64: toBase64("fake pdf text"),
+        policyVersion: "annual-report-manual-first.v1",
+        createdByUserId: USER_ID,
+      },
+      deps,
+    );
+    if (!runResult.ok) {
+      throw new Error("Expected run success");
+    }
+
+    const confirmResult = await confirmAnnualReportExtractionV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        expectedActiveExtraction: {
+          artifactId: runResult.active.artifactId,
+          version: runResult.active.version,
+        },
+        confirmedByUserId: USER_ID,
+      },
+      deps,
+    );
+
+    expect(confirmResult.ok).toBe(true);
+    if (!confirmResult.ok) {
+      return;
+    }
+    expect(confirmResult.extraction.confirmation.isConfirmed).toBe(true);
+  });
+
+  it("clears active annual-report data without deleting history", async () => {
+    await seedWorkspace();
+    const deps = createDeps();
+    deps.extractAnnualReport = async (input) => ({
+      ok: true,
+      extraction: createCompleteExtractionPayloadV1({
+        fileName: input.fileName,
+        policyVersion: input.policyVersion,
+      }),
+    });
+
+    const runResult = await runAnnualReportExtractionV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        fileName: "annual-report.pdf",
+        fileBytesBase64: toBase64("Annual report"),
+        policyVersion: "annual-report-manual-first.v1",
+        createdByUserId: USER_ID,
+      },
+      deps,
+    );
+    if (!runResult.ok) {
+      throw new Error("Expected annual-report run success");
+    }
+
+    const clearResult = await clearAnnualReportDataV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        clearedByUserId: USER_ID,
+      },
+      deps,
+    );
+
+    expect(clearResult.ok).toBe(true);
+    if (!clearResult.ok) {
+      return;
+    }
+    expect(clearResult.clearedArtifactTypes).toEqual([
+      "annual_report_extraction",
+    ]);
+
+    const activeExtraction = await getActiveAnnualReportExtractionV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+      },
+      deps,
+    );
+    expect(activeExtraction.ok).toBe(false);
+    if (!activeExtraction.ok) {
+      expect(activeExtraction.error.code).toBe("EXTRACTION_NOT_FOUND");
+    }
+  });
+
   it("loads active extraction payload", async () => {
     await seedWorkspace();
     const deps = createDeps();
@@ -201,6 +589,266 @@ describe("annual report extraction workflow v1", () => {
       deps,
     );
     expect(active.ok).toBe(true);
+  });
+
+  it("persists Gemini-backed annual report extraction metadata when AI extractor is injected", async () => {
+    await seedWorkspace();
+    const deps = createDeps();
+    deps.extractAnnualReport = async (input) => ({
+      ok: true,
+      extraction: parseAnnualReportExtractionPayloadV1({
+        schemaVersion: "annual_report_extraction_v1",
+        sourceFileName: input.fileName,
+        sourceFileType: "pdf",
+        policyVersion: input.policyVersion,
+        fields: {
+          companyName: {
+            status: "extracted",
+            confidence: 0.99,
+            value: "Acme AB",
+          },
+          organizationNumber: {
+            status: "extracted",
+            confidence: 0.99,
+            value: "556677-8899",
+          },
+          fiscalYearStart: {
+            status: "extracted",
+            confidence: 0.99,
+            value: "2025-01-01",
+          },
+          fiscalYearEnd: {
+            status: "extracted",
+            confidence: 0.99,
+            value: "2025-12-31",
+          },
+          accountingStandard: {
+            status: "extracted",
+            confidence: 0.99,
+            value: "K2",
+          },
+          profitBeforeTax: {
+            status: "extracted",
+            confidence: 0.99,
+            value: 1000,
+          },
+        },
+        summary: {
+          autoDetectedFieldCount: 6,
+          needsReviewFieldCount: 0,
+        },
+        taxSignals: [
+          {
+            code: "group_contribution_reference",
+            label: "Possible group contribution disclosure",
+            confidence: 0.84,
+            reviewFlag: true,
+            policyRuleReference: "signal.group_contribution.v1",
+          },
+        ],
+        aiRun: {
+          runId: "ai-run-1",
+          moduleId: "annual-report-analysis",
+          moduleVersion: "v1",
+          promptVersion: "annual-report-analysis.prompts.v1",
+          policyVersion: "annual-report-analysis.v1",
+          activePatchVersions: [],
+          provider: "gemini",
+          model: "gemini-2.5-flash",
+          modelTier: "fast",
+          generatedAt: "2026-03-03T12:10:00.000Z",
+          usedFallback: false,
+        },
+        confirmation: {
+          isConfirmed: false,
+        },
+      }),
+    });
+
+    const runResult = await runAnnualReportExtractionV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        fileName: "annual-report.pdf",
+        fileBytesBase64: toBase64("fake pdf text"),
+        policyVersion: "annual-report-ai.v1",
+      },
+      deps,
+    );
+
+    expect(runResult.ok).toBe(true);
+    if (!runResult.ok) {
+      return;
+    }
+
+    expect(runResult.extraction.aiRun?.provider).toBe("gemini");
+    expect(runResult.extraction.taxSignals).toHaveLength(1);
+  });
+
+  it("persists linked annual-report tax analysis after extraction when analyzer is injected", async () => {
+    await seedWorkspace();
+    const deps = createDeps();
+    deps.extractAnnualReport = async (input) => ({
+      ok: true,
+      extraction: parseAnnualReportExtractionPayloadV1({
+        schemaVersion: "annual_report_extraction_v1",
+        sourceFileName: input.fileName,
+        sourceFileType: "pdf",
+        policyVersion: input.policyVersion,
+        fields: {
+          companyName: {
+            status: "extracted",
+            confidence: 0.99,
+            value: "Acme AB",
+          },
+          organizationNumber: {
+            status: "extracted",
+            confidence: 0.99,
+            value: "556677-8899",
+          },
+          fiscalYearStart: {
+            status: "extracted",
+            confidence: 0.99,
+            value: "2025-01-01",
+          },
+          fiscalYearEnd: {
+            status: "extracted",
+            confidence: 0.99,
+            value: "2025-12-31",
+          },
+          accountingStandard: {
+            status: "extracted",
+            confidence: 0.99,
+            value: "K3",
+          },
+          profitBeforeTax: {
+            status: "extracted",
+            confidence: 0.99,
+            value: 1000,
+          },
+        },
+        summary: {
+          autoDetectedFieldCount: 6,
+          needsReviewFieldCount: 0,
+        },
+        taxSignals: [],
+        documentWarnings: [],
+        taxDeep: {
+          ink2rExtracted: {
+            incomeStatement: [],
+            balanceSheet: [],
+          },
+          depreciationContext: {
+            assetAreas: [
+              {
+                assetArea: "Machinery",
+                acquisitions: 250000,
+                depreciationForYear: 50000,
+                closingCarryingAmount: 750000,
+                evidence: [{ snippet: "Note 8", page: 12 }],
+              },
+            ],
+            evidence: [],
+          },
+          assetMovements: {
+            lines: [],
+            evidence: [],
+          },
+          reserveContext: {
+            movements: [],
+            notes: [],
+            evidence: [],
+          },
+          netInterestContext: {
+            notes: ["Finance note disclosure."],
+            evidence: [],
+          },
+          pensionContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+          },
+          leasingContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+          },
+          groupContributionContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+          },
+          shareholdingContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+          },
+          priorYearComparatives: [],
+        },
+        confirmation: {
+          isConfirmed: false,
+        },
+      }),
+    });
+    deps.analyzeAnnualReportTax = async (input) => ({
+      ok: true,
+      taxAnalysis: parseAnnualReportTaxAnalysisPayloadV1({
+        schemaVersion: "annual_report_tax_analysis_v1",
+        sourceExtractionArtifactId: input.extractionArtifactId,
+        policyVersion: input.policyVersion,
+        basedOn: input.extraction.taxDeep!,
+        executiveSummary: "Depreciation note needs follow-up.",
+        accountingStandardAssessment: {
+          status: "aligned",
+          rationale: "K3 disclosed in report.",
+        },
+        findings: [
+          {
+            id: "finding-1",
+            area: "depreciation_differences",
+            title: "Movement schedule should be compared to tax register",
+            severity: "high",
+            rationale: "Large acquisitions and depreciation were disclosed.",
+            missingInformation: ["Tax depreciation base"],
+            policyRuleReference: "annual-report-tax-analysis.depreciation.v1",
+            evidence: [{ snippet: "Note 8", page: 12 }],
+          },
+        ],
+        missingInformation: ["Tax depreciation base"],
+        recommendedNextActions: ["Compare with fixed-asset register."],
+      }),
+    });
+
+    const runResult = await runAnnualReportExtractionV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        fileName: "annual-report.pdf",
+        fileBytesBase64: toBase64("fake pdf text"),
+        policyVersion: "annual-report-ai.v1",
+      },
+      deps,
+    );
+
+    expect(runResult.ok).toBe(true);
+    if (!runResult.ok) {
+      return;
+    }
+
+    const taxAnalysis = await getActiveAnnualReportTaxAnalysisV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+      },
+      deps,
+    );
+    expect(taxAnalysis.ok).toBe(true);
+    if (!taxAnalysis.ok) {
+      return;
+    }
+    expect(taxAnalysis.taxAnalysis.findings[0]?.area).toBe(
+      "depreciation_differences",
+    );
   });
 
   it("rejects oversized annual report payloads deterministically", async () => {

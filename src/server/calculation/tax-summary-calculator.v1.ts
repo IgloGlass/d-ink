@@ -104,9 +104,9 @@ export function calculateTaxSummaryV1(
       error: {
         code: "INPUT_INVALID",
         message:
-          "Annual report extraction must be confirmed before tax summary.",
+          "A usable annual report extraction is required before tax summary.",
         user_message:
-          "Confirm annual report extraction before running tax summary.",
+          "Upload a complete annual report before running tax summary.",
         context: {},
       },
     };

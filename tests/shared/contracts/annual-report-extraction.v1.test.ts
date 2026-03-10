@@ -47,6 +47,11 @@ describe("annual report extraction contracts v1", () => {
         autoDetectedFieldCount: 1,
         needsReviewFieldCount: 1,
       },
+      engineMetadata: {
+        extractionEngineVersion: "annual-report-deep-extraction.v2",
+        runtimeFingerprint:
+          "annual-report-deep-extraction.v2|gemini-2.5-flash|gemini-2.5-pro",
+      },
       confirmation: {
         isConfirmed: true,
         confirmedAt: "2026-03-03T07:00:00.000Z",
@@ -127,11 +132,21 @@ describe("annual report extraction contracts v1", () => {
           autoDetectedFieldCount: 0,
           needsReviewFieldCount: 0,
         },
+        engineMetadata: {
+          extractionEngineVersion: "annual-report-deep-extraction.v2",
+          runtimeFingerprint:
+            "annual-report-deep-extraction.v2|gemini-2.5-flash|gemini-2.5-pro",
+        },
         confirmation: {
           isConfirmed: true,
           confirmedAt: "2026-03-03T07:00:00.000Z",
           confirmedByUserId: "97000000-0000-4000-8000-000000000001",
         },
+      },
+      runtime: {
+        extractionEngineVersion: "annual-report-deep-extraction.v2",
+        runtimeFingerprint:
+          "annual-report-deep-extraction.v2|gemini-2.5-flash|gemini-2.5-pro",
       },
     };
 

@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS workspace_artifact_versions_v1 (
   artifact_type TEXT NOT NULL CHECK (
     artifact_type IN (
       'annual_report_extraction',
+      'annual_report_tax_analysis',
       'tax_adjustments',
       'tax_summary',
       'ink2_form',
@@ -34,6 +35,7 @@ CREATE TABLE IF NOT EXISTS workspace_active_artifacts_v1 (
   artifact_type TEXT NOT NULL CHECK (
     artifact_type IN (
       'annual_report_extraction',
+      'annual_report_tax_analysis',
       'tax_adjustments',
       'tax_summary',
       'ink2_form',

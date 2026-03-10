@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { createD1WorkspaceArtifactRepositoryV1 } from "../../../src/db/repositories/workspace-artifact.repository.v1";
 import { parseAnnualReportExtractionPayloadV1 } from "../../../src/shared/contracts/annual-report-extraction.v1";
+import { parseAnnualReportTaxAnalysisPayloadV1 } from "../../../src/shared/contracts/annual-report-tax-analysis.v1";
 import { parseExportPackagePayloadV1 } from "../../../src/shared/contracts/export-package.v1";
 import { parseInk2FormDraftPayloadV1 } from "../../../src/shared/contracts/ink2-form.v1";
 import { parseTaxAdjustmentDecisionSetPayloadV1 } from "../../../src/shared/contracts/tax-adjustments.v1";
@@ -108,6 +109,66 @@ function taxAdjustmentsPayload() {
         evidence: [{ type: "category", reference: "607200" }],
       },
     ],
+  });
+}
+
+function annualReportTaxAnalysisPayload() {
+  return parseAnnualReportTaxAnalysisPayloadV1({
+    schemaVersion: "annual_report_tax_analysis_v1",
+    sourceExtractionArtifactId: "9a000000-0000-4000-8000-000000000013",
+    policyVersion: "annual-report-tax-analysis.v1",
+    basedOn: {
+      ink2rExtracted: {
+        incomeStatement: [],
+        balanceSheet: [],
+      },
+      depreciationContext: {
+        assetAreas: [],
+        evidence: [],
+      },
+      assetMovements: {
+        lines: [],
+        evidence: [],
+      },
+      reserveContext: {
+        movements: [],
+        notes: [],
+        evidence: [],
+      },
+      netInterestContext: {
+        notes: [],
+        evidence: [],
+      },
+      pensionContext: {
+        flags: [],
+        notes: [],
+        evidence: [],
+      },
+      leasingContext: {
+        flags: [],
+        notes: [],
+        evidence: [],
+      },
+      groupContributionContext: {
+        flags: [],
+        notes: [],
+        evidence: [],
+      },
+      shareholdingContext: {
+        flags: [],
+        notes: [],
+        evidence: [],
+      },
+      priorYearComparatives: [],
+    },
+    executiveSummary: "Advisory tax analysis.",
+    accountingStandardAssessment: {
+      status: "aligned",
+      rationale: "Annual report explicitly states K2.",
+    },
+    findings: [],
+    missingInformation: [],
+    recommendedNextActions: [],
   });
 }
 
@@ -285,6 +346,29 @@ describe("D1 workspace artifact repository v1", () => {
       return;
     }
     expect(adj.artifact.version).toBe(1);
+
+    const taxAnalysis =
+      await repository.appendAnnualReportTaxAnalysisAndSetActive({
+        artifactId: "9a000000-0000-4000-8000-000000000130",
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        createdAt: "2026-03-03T10:03:30.000Z",
+        taxAnalysis: annualReportTaxAnalysisPayload(),
+      });
+    expect(taxAnalysis.ok).toBe(true);
+    if (!taxAnalysis.ok) {
+      return;
+    }
+    expect(taxAnalysis.artifact.version).toBe(1);
+
+    const activeTaxAnalysis =
+      await repository.getActiveAnnualReportTaxAnalysis({
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+      });
+    expect(activeTaxAnalysis?.schemaVersion).toBe(
+      "annual_report_tax_analysis_v1",
+    );
   });
 
   it("returns WORKSPACE_NOT_FOUND for missing workspace", async () => {
@@ -358,5 +442,56 @@ describe("D1 workspace artifact repository v1", () => {
     expect(secondary).toHaveLength(1);
     expect(primary[0]?.workspaceId).toBe(WORKSPACE_ID);
     expect(secondary[0]?.workspaceId).toBe(OTHER_WORKSPACE_ID);
+  });
+
+  it("clears active artifact pointers without deleting persisted versions", async () => {
+    await seedWorkspace({
+      tenantId: TENANT_ID,
+      workspaceId: WORKSPACE_ID,
+      companyId: COMPANY_ID,
+    });
+    const repository = createD1WorkspaceArtifactRepositoryV1(env.DB);
+
+    await repository.appendAnnualReportExtractionAndSetActive({
+      artifactId: "9a000000-0000-4000-8000-000000000140",
+      tenantId: TENANT_ID,
+      workspaceId: WORKSPACE_ID,
+      createdAt: "2026-03-03T10:08:00.000Z",
+      extraction: annualExtractionPayload(),
+    });
+    await repository.appendTaxSummaryAndSetActive({
+      artifactId: "9a000000-0000-4000-8000-000000000141",
+      tenantId: TENANT_ID,
+      workspaceId: WORKSPACE_ID,
+      createdAt: "2026-03-03T10:08:30.000Z",
+      summary: taxSummaryPayload(),
+    });
+
+    const clearResult = await repository.clearActiveArtifacts({
+      tenantId: TENANT_ID,
+      workspaceId: WORKSPACE_ID,
+      artifactTypes: ["annual_report_extraction", "tax_summary"],
+    });
+
+    expect(clearResult.ok).toBe(true);
+    if (!clearResult.ok) {
+      return;
+    }
+    expect(clearResult.clearedArtifactTypes).toEqual([
+      "annual_report_extraction",
+      "tax_summary",
+    ]);
+
+    const activeExtraction = await repository.getActiveAnnualReportExtraction({
+      tenantId: TENANT_ID,
+      workspaceId: WORKSPACE_ID,
+    });
+    const activeSummary = await repository.getActiveTaxSummary({
+      tenantId: TENANT_ID,
+      workspaceId: WORKSPACE_ID,
+    });
+
+    expect(activeExtraction).toBeNull();
+    expect(activeSummary).toBeNull();
   });
 });

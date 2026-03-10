@@ -3,12 +3,19 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import {
+  type AnnualReportProcessingRunV1,
+} from "../../../shared/contracts/annual-report-processing-run.v1";
+import {
   type SilverfinTaxCategoryCodeV1,
   listSilverfinTaxCategoriesV1,
 } from "../../../shared/contracts/mapping.v1";
 import type { TrialBalanceFileTypeV1 } from "../../../shared/contracts/trial-balance.v1";
 import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
 import { StatusPill } from "../../components/status-pill";
+import {
+  isAnnualReportProcessingOpenStatusV1,
+  useAnnualReportUploadControllerV1,
+} from "../annual-report/use-annual-report-upload-controller.v1";
 import {
   ApiClientError,
   toUserFacingErrorMessage,
@@ -17,19 +24,18 @@ import {
   type ApplyAnnualReportOverridesResponseV1,
   type ApplyInk2OverridesResponseV1,
   type ApplyTaxAdjustmentsOverridesResponseV1,
-  type ConfirmAnnualReportExtractionResponseV1,
   type CreateCommentResponseV1,
   type CreatePdfExportResponseV1,
   type CreateTaskResponseV1,
   type GenerateMappingReviewSuggestionsResponseV1,
   type GetActiveAnnualReportExtractionResponseV1,
   type GetActiveInk2FormResponseV1,
+  type GetLatestAnnualReportProcessingRunResponseV1,
   type GetActiveTaxAdjustmentsResponseV1,
   type GetActiveTaxSummaryResponseV1,
   type ListCommentsResponseV1,
   type ListTasksResponseV1,
   type ListWorkspaceExportsResponseV1,
-  type RunAnnualReportExtractionResponseV1,
   type RunInk2FormResponseV1,
   type RunTaxAdjustmentsResponseV1,
   type RunTaxSummaryResponseV1,
@@ -40,13 +46,13 @@ import {
   applyTaxAdjustmentsOverridesV1,
   applyWorkspaceTransitionV1,
   completeTaskV1,
-  confirmAnnualReportExtractionV1,
   createCommentV1,
   createPdfExportV1,
   createTaskV1,
   generateMappingReviewSuggestionsV1,
   getActiveAnnualReportExtractionV1,
   getActiveInk2FormV1,
+  getLatestAnnualReportProcessingRunV1,
   getActiveMappingDecisionsV1,
   getActiveTaxAdjustmentsV1,
   getActiveTaxSummaryV1,
@@ -54,7 +60,6 @@ import {
   listCommentsV1,
   listTasksV1,
   listWorkspaceExportsV1,
-  runAnnualReportExtractionV1,
   runInk2FormV1,
   runTaxAdjustmentsV1,
   runTaxSummaryV1,
@@ -120,6 +125,10 @@ const tasksKeyV1 = (tenantId: string, workspaceId: string) => [
   tenantId,
   workspaceId,
 ];
+const latestAnnualReportProcessingRunKeyV1 = (
+  tenantId: string,
+  workspaceId: string,
+) => ["latest-annual-report-processing-run", tenantId, workspaceId];
 
 type OverrideDraftV1 = {
   selectedCategoryCode: SilverfinTaxCategoryCodeV1;
@@ -182,7 +191,6 @@ export function WorkspaceDetailPage() {
   const [statusReason, setStatusReason] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [policyVersion, setPolicyVersion] = useState("deterministic-bas.v1");
-  const [annualReportFile, setAnnualReportFile] = useState<File | null>(null);
   const [annualPolicyVersion, setAnnualPolicyVersion] = useState(
     "annual-report-manual-first.v1",
   );
@@ -246,6 +254,36 @@ export function WorkspaceDetailPage() {
         return false;
       }
       return failureCount < 2;
+    },
+  });
+  const annualReportProcessingRunQuery = useQuery({
+    queryKey: latestAnnualReportProcessingRunKeyV1(
+      principal.tenantId,
+      workspaceId,
+    ),
+    queryFn: async (): Promise<GetLatestAnnualReportProcessingRunResponseV1 | null> => {
+      try {
+        return await getLatestAnnualReportProcessingRunV1({
+          tenantId: principal.tenantId,
+          workspaceId,
+        });
+      } catch (error) {
+        if (
+          error instanceof ApiClientError &&
+          error.code === "PROCESSING_RUN_NOT_FOUND"
+        ) {
+          return null;
+        }
+
+        throw error;
+      }
+    },
+    retry: false,
+    refetchInterval: ({ state }) => {
+      const data = state.data as GetLatestAnnualReportProcessingRunResponseV1 | null | undefined;
+      return isAnnualReportProcessingOpenStatusV1(data?.run?.status)
+        ? 2_000
+        : false;
     },
   });
   const taxAdjustmentsQuery = useQuery({
@@ -405,33 +443,6 @@ export function WorkspaceDetailPage() {
     },
   });
 
-  const runAnnualReportMutation = useMutation({
-    mutationFn: async (): Promise<RunAnnualReportExtractionResponseV1> => {
-      if (!annualReportFile) {
-        throw new Error("Select an annual report file first.");
-      }
-
-      const lowerName = annualReportFile.name.toLowerCase();
-      const fileType = lowerName.endsWith(".docx")
-        ? ("docx" as const)
-        : ("pdf" as const);
-
-      return runAnnualReportExtractionV1({
-        tenantId: principal.tenantId,
-        workspaceId,
-        fileName: annualReportFile.name,
-        fileType,
-        fileBytesBase64: await fileToBase64V1(annualReportFile),
-        policyVersion: annualPolicyVersion,
-      });
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: activeAnnualReportKeyV1(principal.tenantId, workspaceId),
-      });
-    },
-  });
-
   const applyAnnualOverrideMutation = useMutation({
     mutationFn: async (
       fieldKey: AnnualReportFieldKeyV1,
@@ -474,32 +485,39 @@ export function WorkspaceDetailPage() {
       });
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
+      setAnnualReportFile(null);
+      queryClient.removeQueries({
+        queryKey: latestAnnualReportProcessingRunKeyV1(
+          principal.tenantId,
+          workspaceId,
+        ),
+      });
+      queryClient.removeQueries({
         queryKey: activeAnnualReportKeyV1(principal.tenantId, workspaceId),
       });
-    },
-  });
-
-  const confirmAnnualReportMutation = useMutation({
-    mutationFn: async (): Promise<ConfirmAnnualReportExtractionResponseV1> => {
-      const active = annualReportQuery.data?.active;
-      if (!active) {
-        throw new Error("Active annual report extraction not loaded.");
-      }
-
-      return confirmAnnualReportExtractionV1({
-        tenantId: principal.tenantId,
-        workspaceId,
-        expectedActiveExtraction: {
-          artifactId: active.artifactId,
-          version: active.version,
-        },
-      });
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: activeAnnualReportKeyV1(principal.tenantId, workspaceId),
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: activeAnnualReportKeyV1(principal.tenantId, workspaceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: activeTaxAdjustmentsKeyV1(principal.tenantId, workspaceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: activeTaxSummaryKeyV1(principal.tenantId, workspaceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: activeInk2FormKeyV1(principal.tenantId, workspaceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: exportsKeyV1(principal.tenantId, workspaceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: latestAnnualReportProcessingRunKeyV1(
+            principal.tenantId,
+            workspaceId,
+          ),
+        }),
+      ]);
     },
   });
 
@@ -766,6 +784,7 @@ export function WorkspaceDetailPage() {
     },
   });
 
+  const latestAnnualReportRun = annualReportProcessingRunQuery.data?.run;
   const mappingNotFound =
     mappingQuery.isError &&
     mappingQuery.error instanceof ApiClientError &&
@@ -774,6 +793,9 @@ export function WorkspaceDetailPage() {
     annualReportQuery.isError &&
     annualReportQuery.error instanceof ApiClientError &&
     annualReportQuery.error.code === "EXTRACTION_NOT_FOUND";
+  const activeAnnualReportData = annualReportQuery.isSuccess
+    ? annualReportQuery.data
+    : undefined;
   const taxAdjustmentsNotFound =
     taxAdjustmentsQuery.isError &&
     taxAdjustmentsQuery.error instanceof ApiClientError &&
@@ -787,7 +809,60 @@ export function WorkspaceDetailPage() {
     ink2FormQuery.error instanceof ApiClientError &&
     ink2FormQuery.error.code === "FORM_NOT_FOUND";
   const annualExtractionConfirmed =
-    annualReportQuery.data?.extraction.confirmation.isConfirmed ?? false;
+    activeAnnualReportData?.extraction.confirmation.isConfirmed ?? false;
+  const {
+    annualReportFile,
+    annualReportFileTooLarge,
+    annualReportMutation,
+    annualReportMutationErrorCode,
+    annualReportRunIsOpen,
+    annualReportRunIsStale,
+    annualReportUploadBlockedByRun,
+    annualUploadProgressPercent: annualReportUploadProgressPercent,
+    clearAnnualReportMutation,
+    clearActiveData,
+    recoveryActionLabel,
+    runRecoveryAction,
+    setAnnualReportFile,
+    startUpload,
+  } = useAnnualReportUploadControllerV1({
+    tenantId: principal.tenantId,
+    workspaceId,
+    policyVersion: annualPolicyVersion,
+    latestRun: latestAnnualReportRun,
+    hasActiveExtraction: Boolean(activeAnnualReportData?.active),
+    uploadPanelId: "annual-report-upload-panel",
+    latestRunQueryKey: latestAnnualReportProcessingRunKeyV1(
+      principal.tenantId,
+      workspaceId,
+    ),
+    uploadSuccessInvalidateQueryKeys: [
+      latestAnnualReportProcessingRunKeyV1(principal.tenantId, workspaceId),
+      activeAnnualReportKeyV1(principal.tenantId, workspaceId),
+      activeTaxAdjustmentsKeyV1(principal.tenantId, workspaceId),
+      activeTaxSummaryKeyV1(principal.tenantId, workspaceId),
+      activeInk2FormKeyV1(principal.tenantId, workspaceId),
+      exportsKeyV1(principal.tenantId, workspaceId),
+    ],
+    clearSuccessRemoveQueryKeys: [
+      latestAnnualReportProcessingRunKeyV1(principal.tenantId, workspaceId),
+      activeAnnualReportKeyV1(principal.tenantId, workspaceId),
+    ],
+    clearSuccessInvalidateQueryKeys: [
+      activeAnnualReportKeyV1(principal.tenantId, workspaceId),
+      activeTaxAdjustmentsKeyV1(principal.tenantId, workspaceId),
+      activeTaxSummaryKeyV1(principal.tenantId, workspaceId),
+      activeInk2FormKeyV1(principal.tenantId, workspaceId),
+      exportsKeyV1(principal.tenantId, workspaceId),
+    ],
+    settledRunInvalidateQueryKeys: [
+      activeAnnualReportKeyV1(principal.tenantId, workspaceId),
+      activeTaxAdjustmentsKeyV1(principal.tenantId, workspaceId),
+      activeTaxSummaryKeyV1(principal.tenantId, workspaceId),
+      activeInk2FormKeyV1(principal.tenantId, workspaceId),
+      exportsKeyV1(principal.tenantId, workspaceId),
+    ],
+  });
 
   const decisionById = useMemo(() => {
     const decisions = mappingQuery.data?.mapping.decisions ?? [];
@@ -849,10 +924,11 @@ export function WorkspaceDetailPage() {
         <article className="card card--section">
           <h2>Annual report extraction</h2>
           <form
+            id="annual-report-upload-panel"
             className="form-grid"
             onSubmit={(event) => {
               event.preventDefault();
-              runAnnualReportMutation.mutate();
+              startUpload();
             }}
           >
             <label>
@@ -877,17 +953,115 @@ export function WorkspaceDetailPage() {
               type="submit"
               className="primary"
               disabled={
-                runAnnualReportMutation.isPending || annualReportFile === null
+                annualReportMutation.isPending ||
+                annualReportUploadBlockedByRun ||
+                annualReportFile === null ||
+                annualReportFileTooLarge
               }
             >
-              {runAnnualReportMutation.isPending
-                ? "Extracting..."
-                : "Run annual extraction"}
+              {annualReportRunIsOpen && !annualReportRunIsStale
+                ? "Processing..."
+                : annualReportRunIsStale
+                  ? "Upload replacement report"
+                : annualReportMutation.isPending
+                  ? "Uploading..."
+                : annualReportQuery.isSuccess
+                  ? "Upload a new annual report"
+                  : "Upload annual report"}
             </button>
+            {(latestAnnualReportRun?.status === "failed" ||
+              (latestAnnualReportRun?.status === "partial" &&
+                !activeAnnualReportData?.extraction)) && (
+              <button
+                type="button"
+                className="secondary"
+                disabled={
+                  annualReportMutation.isPending || annualReportUploadBlockedByRun
+                }
+                onClick={runRecoveryAction}
+              >
+                {recoveryActionLabel}
+              </button>
+            )}
+            {activeAnnualReportData ? (
+              <button
+                type="button"
+                className="secondary"
+                disabled={
+                  clearAnnualReportMutation.isPending || annualReportRunIsOpen
+                }
+                onClick={clearActiveData}
+              >
+                {clearAnnualReportMutation.isPending
+                  ? "Clearing..."
+                  : "Clear annual report data"}
+              </button>
+            ) : null}
           </form>
-          {runAnnualReportMutation.isError ? (
+          {annualReportMutation.isError ? (
             <p className="error-text">
-              {toUserFacingErrorMessage(runAnnualReportMutation.error)}
+              {toUserFacingErrorMessage(annualReportMutation.error)}
+            </p>
+          ) : null}
+          {annualReportMutationErrorCode === "PROCESSING_RUN_UNAVAILABLE" ? (
+            <p className="hint-text">
+              Annual-report processing runtime is unavailable. Verify local queue
+              and file bindings, then retry.
+            </p>
+          ) : null}
+          {annualReportMutationErrorCode === "RUNTIME_MISMATCH" ? (
+            <p className="hint-text">
+              Runtime mismatch detected. Restart the local app and retry upload.
+            </p>
+          ) : null}
+          {annualReportFileTooLarge ? (
+            <p className="error-text">
+              The annual report file is too large. Upload a file smaller than 25
+              MB.
+            </p>
+          ) : null}
+          {annualReportProcessingRunQuery.isError ? (
+            <p className="error-text">
+              {toUserFacingErrorMessage(annualReportProcessingRunQuery.error)}
+            </p>
+          ) : null}
+          {annualReportMutation.isPending &&
+          annualReportUploadProgressPercent !== null ? (
+            <p className="hint-text">
+              Uploading file ({annualReportUploadProgressPercent}%).
+            </p>
+          ) : null}
+          {annualReportRunIsOpen && !annualReportRunIsStale ? (
+            <p className="hint-text">
+              {latestAnnualReportRun?.hasPreviousActiveResult
+                ? "A new annual report is processing. The current extracted result stays visible until the replacement succeeds."
+                : latestAnnualReportRun?.statusMessage}
+            </p>
+          ) : null}
+          {annualReportRunIsStale ? (
+            <p className="error-text">
+              Annual-report processing appears stuck (no update for at least 5
+              minutes). Upload a replacement report to continue.
+            </p>
+          ) : null}
+          {!annualReportRunIsOpen &&
+          latestAnnualReportRun?.status === "completed" ? (
+            <p className="success-text">
+              Annual report analysis completed. The latest extraction is active.
+            </p>
+          ) : null}
+          {!annualReportRunIsOpen &&
+          (latestAnnualReportRun?.status === "failed" ||
+            latestAnnualReportRun?.status === "partial") ? (
+            <p
+              className={
+                latestAnnualReportRun.status === "failed"
+                  ? "error-text"
+                  : "hint-text"
+              }
+            >
+              {latestAnnualReportRun.error?.userMessage ??
+                latestAnnualReportRun.statusMessage}
             </p>
           ) : null}
           {annualReportQuery.isPending ? (
@@ -903,13 +1077,13 @@ export function WorkspaceDetailPage() {
               {toUserFacingErrorMessage(annualReportQuery.error)}
             </p>
           ) : null}
-          {annualReportQuery.isSuccess ? (
+          {activeAnnualReportData ? (
             <>
               <p className="hint-text">
-                Active extraction v{annualReportQuery.data.active.version} ·{" "}
-                {annualReportQuery.data.extraction.confirmation.isConfirmed
-                  ? "Confirmed"
-                  : "Not confirmed"}
+                Active extraction v{activeAnnualReportData.active.version} ·{" "}
+                {activeAnnualReportData.extraction.confirmation.isConfirmed
+                  ? "Extracted and usable"
+                  : "Incomplete extraction"}
               </p>
               <div className="table-wrap">
                 <table>
@@ -926,7 +1100,7 @@ export function WorkspaceDetailPage() {
                   <tbody>
                     {annualReportFieldConfigsV1.map((config) => {
                       const field =
-                        annualReportQuery.data.extraction.fields[config.key];
+                        activeAnnualReportData.extraction.fields[config.key];
                       const draft = annualOverrideDrafts[config.key];
                       return (
                         <tr key={config.key}>
@@ -1018,19 +1192,6 @@ export function WorkspaceDetailPage() {
                   </tbody>
                 </table>
               </div>
-              <button
-                type="button"
-                className="primary"
-                disabled={
-                  confirmAnnualReportMutation.isPending ||
-                  annualReportQuery.data.extraction.confirmation.isConfirmed
-                }
-                onClick={() => confirmAnnualReportMutation.mutate()}
-              >
-                {confirmAnnualReportMutation.isPending
-                  ? "Confirming..."
-                  : "Confirm extraction"}
-              </button>
             </>
           ) : null}
           {applyAnnualOverrideMutation.isError ? (
@@ -1038,13 +1199,13 @@ export function WorkspaceDetailPage() {
               {toUserFacingErrorMessage(applyAnnualOverrideMutation.error)}
             </p>
           ) : null}
-          {confirmAnnualReportMutation.isError ? (
+          {clearAnnualReportMutation.isError ? (
             <p className="error-text">
-              {toUserFacingErrorMessage(confirmAnnualReportMutation.error)}
+              {toUserFacingErrorMessage(clearAnnualReportMutation.error)}
             </p>
           ) : null}
-          {confirmAnnualReportMutation.isSuccess ? (
-            <p className="success-text">Annual extraction confirmed.</p>
+          {clearAnnualReportMutation.isSuccess ? (
+            <p className="success-text">Active annual-report data cleared.</p>
           ) : null}
         </article>
 
@@ -1102,7 +1263,7 @@ export function WorkspaceDetailPage() {
         <article className="card card--section">
           <h2>Tax-core gate</h2>
           <p className="hint-text">
-            Confirm annual report extraction before running tax-core steps
+            Upload a complete annual report before running tax-core steps
             (adjustments, tax summary, INK2 draft, and PDF export).
           </p>
         </article>
@@ -1443,8 +1604,8 @@ export function WorkspaceDetailPage() {
         ) : null}
         {taxAdjustmentsNotFound ? (
           <p className="hint-text">
-            No active adjustments yet. Confirm annual extraction and run trial
-            balance mapping first.
+            No active adjustments yet. Upload a complete annual report and run
+            trial balance mapping first.
           </p>
         ) : null}
         {taxAdjustmentsQuery.isError && !taxAdjustmentsNotFound ? (

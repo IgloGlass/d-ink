@@ -610,6 +610,110 @@ describe("trial-balance pipeline run workflow v1", () => {
     ).toBe(true);
   });
 
+  it("persists AI-backed mapping decisions when an AI mapper is injected", async () => {
+    const repository = new InMemoryTbPipelineArtifactRepositoryV1(
+      new Set([`${tenantId}:${workspaceId}`]),
+      tenantId,
+    );
+    const preferenceRepository = new InMemoryMappingPreferenceRepositoryV1();
+    const auditRepository = new InMemoryAuditRepositoryV1();
+    const workbookBase64 = createWorkbookBase64V1({
+      rows: [
+        [
+          "Account Name",
+          "Account Number",
+          "Opening Balance",
+          "Closing Balance",
+        ],
+        ["Representation external ej avdragsgill", "6072", "0", "1000"],
+      ],
+    });
+
+    const result = await executeTrialBalancePipelineRunV1(
+      {
+        tenantId,
+        workspaceId,
+        createdByUserId: userId,
+        fileName: "tb.xlsx",
+        fileBytesBase64: workbookBase64,
+        policyVersion: "mapping-ai.v1",
+      },
+      {
+        ...createDeps({
+          artifactRepository: repository,
+          mappingPreferenceRepository: preferenceRepository,
+          auditRepository,
+        }),
+        generateMappingDecisions: async () => ({
+          ok: true,
+          mapping: {
+            schemaVersion: "mapping_decisions_v1",
+            policyVersion: "mapping-ai.v1",
+            aiRun: {
+              runId: "ai-map-1",
+              moduleId: "mapping-decisions",
+              moduleVersion: "v1",
+              promptVersion: "mapping-decisions.prompts.v1",
+              policyVersion: "mapping-decisions.v1",
+              activePatchVersions: [],
+              provider: "gemini",
+              model: "gemini-2.5-flash",
+              modelTier: "fast",
+              generatedAt: "2026-03-02T12:00:00.000Z",
+              usedFallback: false,
+            },
+            summary: {
+              totalRows: 1,
+              deterministicDecisions: 0,
+              manualReviewRequired: 0,
+              fallbackDecisions: 0,
+              matchedByAccountNumber: 0,
+              matchedByAccountName: 1,
+              unmatchedRows: 0,
+            },
+            decisions: [
+              {
+                id: "tb-row-1",
+                accountNumber: "6072",
+                sourceAccountNumber: "6072",
+                accountName: "Representation external ej avdragsgill",
+                proposedCategory: {
+                  code: "607200",
+                  name: "Entertainment - internal and external - presumed non-deductible",
+                  statementType: "income_statement",
+                },
+                selectedCategory: {
+                  code: "607200",
+                  name: "Entertainment - internal and external - presumed non-deductible",
+                  statementType: "income_statement",
+                },
+                confidence: 0.92,
+                evidence: [
+                  {
+                    type: "tb_row",
+                    reference: "tb-row-1",
+                  },
+                ],
+                policyRuleReference: "mapping.ai.representation.v1",
+                reviewFlag: false,
+                status: "proposed",
+                source: "ai",
+              },
+            ],
+          },
+        }),
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.pipeline.mapping.aiRun?.provider).toBe("gemini");
+    expect(result.pipeline.mapping.decisions[0]?.source).toBe("ai");
+  });
+
   it("returns success when auto-apply audit append fails after artifacts are committed", async () => {
     const repository = new InMemoryTbPipelineArtifactRepositoryV1(
       new Set([`${tenantId}:${workspaceId}`]),

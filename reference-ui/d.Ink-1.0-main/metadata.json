@@ -1,0 +1,5 @@
+{
+  "name": "d.Ink 1.0",
+  "description": "An intelligent assistant for mapping Swedish Trial Balance accounts to tax categories for Silverfin and INK2 tax returns.",
+  "requestFramePermissions": []
+}

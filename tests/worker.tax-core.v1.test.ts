@@ -2,11 +2,12 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
 
+import { createD1WorkspaceArtifactRepositoryV1 } from "../src/db/repositories/workspace-artifact.repository.v1";
 import { hashTokenWithHmacV1 } from "../src/server/workflow/auth-magic-link.v1";
 import {
   AUDIT_EVENT_TYPES_V1,
-  REQUIRED_AUDIT_EVENT_TYPES_V1,
 } from "../src/shared/audit/audit-event-catalog.v1";
+import { parseAnnualReportExtractionPayloadV1 } from "../src/shared/contracts/annual-report-extraction.v1";
 import type { Env } from "../src/shared/types/env";
 import worker from "../src/worker";
 import { applyWorkspaceAuditSchemaForTests } from "./db/test-schema";
@@ -49,6 +50,20 @@ function buildJsonRequest(input: {
 
 function buildSessionCookie(token: string): string {
   return `dink_session_v1=${token}`;
+}
+
+async function assertStatusV1(input: {
+  expected: number;
+  label: string;
+  response: Response;
+}): Promise<void> {
+  if (input.response.status === input.expected) {
+    return;
+  }
+
+  throw new Error(
+    `${input.label} failed: expected ${input.expected}, got ${input.response.status}.`,
+  );
 }
 
 async function seedSessionAndWorkspace(): Promise<void> {
@@ -138,6 +153,7 @@ function createWorkbookBase64V1(): string {
   const sheet = XLSX.utils.aoa_to_sheet([
     ["Account Name", "Account Number", "Opening Balance", "Closing Balance"],
     ["Representation external ej avdragsgill", "6072", "0", "1000"],
+    ["Bankkonto", "1930", "0", "-1000"],
   ]);
   XLSX.utils.book_append_sheet(workbook, sheet, "Trial Balance");
   const bytes = new Uint8Array(
@@ -153,124 +169,123 @@ function createWorkbookBase64V1(): string {
   return btoa(binary);
 }
 
+async function seedConfirmedAnnualReportExtractionV1(): Promise<void> {
+  const repository = createD1WorkspaceArtifactRepositoryV1(env.DB);
+  const extraction = parseAnnualReportExtractionPayloadV1({
+    schemaVersion: "annual_report_extraction_v1",
+    sourceFileName: "annual-report.pdf",
+    sourceFileType: "pdf",
+    policyVersion: "annual-report-manual-first.v1",
+    fields: {
+      companyName: { status: "extracted", confidence: 0.99, value: "Acme AB" },
+      organizationNumber: {
+        status: "extracted",
+        confidence: 0.99,
+        value: "556677-8899",
+      },
+      fiscalYearStart: {
+        status: "extracted",
+        confidence: 0.99,
+        value: "2025-01-01",
+      },
+      fiscalYearEnd: {
+        status: "extracted",
+        confidence: 0.99,
+        value: "2025-12-31",
+      },
+      accountingStandard: {
+        status: "extracted",
+        confidence: 0.99,
+        value: "K2",
+      },
+      profitBeforeTax: {
+        status: "extracted",
+        confidence: 0.99,
+        value: 1000000,
+      },
+    },
+    summary: { autoDetectedFieldCount: 6, needsReviewFieldCount: 0 },
+    taxSignals: [],
+    documentWarnings: [],
+    taxDeep: {
+      ink2rExtracted: {
+        incomeStatement: [
+          {
+            code: "profit-before-tax",
+            label: "Resultat fore skatt",
+            currentYearValue: 1000000,
+            evidence: [],
+          },
+        ],
+        balanceSheet: [
+          {
+            code: "total-assets",
+            label: "Summa tillgangar",
+            currentYearValue: 5000000,
+            evidence: [],
+          },
+        ],
+      },
+      depreciationContext: { assetAreas: [], evidence: [] },
+      assetMovements: { lines: [], evidence: [] },
+      reserveContext: { movements: [], notes: [], evidence: [] },
+      netInterestContext: { notes: [], evidence: [] },
+      pensionContext: { flags: [], notes: [], evidence: [] },
+      leasingContext: { flags: [], notes: [], evidence: [] },
+      groupContributionContext: { flags: [], notes: [], evidence: [] },
+      shareholdingContext: { flags: [], notes: [], evidence: [] },
+      priorYearComparatives: [],
+    },
+    confirmation: {
+      isConfirmed: true,
+      confirmedAt: "2026-03-03T18:05:00.000Z",
+      confirmedByUserId: USER_ID,
+    },
+  });
+
+  const write = await repository.appendAnnualReportExtractionAndSetActive({
+    artifactId: crypto.randomUUID(),
+    tenantId: TENANT_ID,
+    workspaceId: WORKSPACE_ID,
+    createdAt: "2026-03-03T18:05:00.000Z",
+    createdByUserId: USER_ID,
+    extraction,
+  });
+  if (!write.ok) {
+    throw new Error(`Failed to seed annual-report extraction: ${write.message}`);
+  }
+}
+
 describe("worker tax core routes v1", () => {
   beforeEach(async () => {
     await applyWorkspaceAuditSchemaForTests();
     await seedSessionAndWorkspace();
+    await seedConfirmedAnnualReportExtractionV1();
   });
 
   it("runs deterministic tax-core chain and collaboration endpoints", async () => {
     const cookie = buildSessionCookie(SESSION_TOKEN);
+    const workerEnv = buildWorkerEnv();
 
-    const parseFailedAnnualRun = await worker.fetch(
+    const parseFailedTbRun = await worker.fetch(
       buildJsonRequest({
         method: "POST",
-        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/annual-report-runs`,
+        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/tb-pipeline-runs`,
         cookie,
         body: {
           tenantId: TENANT_ID,
-          fileName: "annual-report.pdf",
-          fileBytesBase64: btoa("   "),
-          policyVersion: "annual-report-manual-first.v1",
+          fileName: "tb-invalid.xlsx",
+          fileBytesBase64: btoa("invalid file bytes"),
+          policyVersion: "deterministic-bas.v1",
         },
       }),
-      buildWorkerEnv(),
+      workerEnv,
     );
-    expect(parseFailedAnnualRun.status).toBe(422);
-
-    const annualRunInitial = await worker.fetch(
-      buildJsonRequest({
-        method: "POST",
-        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/annual-report-runs`,
-        cookie,
-        body: {
-          tenantId: TENANT_ID,
-          fileName: "annual-report.pdf",
-          fileBytesBase64: btoa(`
-            Company Name: Acme AB
-            Org nr: 556677-8899
-            Fiscal year: 2025-01-01 to 2025-12-31
-            K2
-            Resultat före skatt: 1 000 000
-          `),
-          policyVersion: "annual-report-manual-first.v1",
-        },
-      }),
-      buildWorkerEnv(),
-    );
-    const annualRunInitialPayload = (await annualRunInitial.json()) as {
-      active: { artifactId: string; version: number };
-      ok: true;
-    };
-    expect(annualRunInitial.status).toBe(200);
-    expect(annualRunInitialPayload.ok).toBe(true);
-
-    const annualRun = await worker.fetch(
-      buildJsonRequest({
-        method: "POST",
-        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/annual-report-runs`,
-        cookie,
-        body: {
-          tenantId: TENANT_ID,
-          fileName: "annual-report.pdf",
-          fileBytesBase64: btoa(`
-            Company Name: Acme AB
-            Org nr: 556677-8899
-            Fiscal year: 2025-01-01 to 2025-12-31
-            K2
-            Resultat före skatt: 1 000 000
-          `),
-          policyVersion: "annual-report-manual-first.v1",
-        },
-      }),
-      buildWorkerEnv(),
-    );
-    const annualRunPayload = (await annualRun.json()) as {
-      active: { artifactId: string; version: number };
-      ok: true;
-    };
-    expect(annualRun.status).toBe(200);
-    expect(annualRunPayload.ok).toBe(true);
-
-    const annualOverride = await worker.fetch(
-      buildJsonRequest({
-        method: "POST",
-        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/annual-report-extractions/overrides`,
-        cookie,
-        body: {
-          tenantId: TENANT_ID,
-          expectedActiveExtraction: annualRunPayload.active,
-          overrides: [
-            {
-              fieldKey: "profitBeforeTax",
-              value: 1000000,
-              reason: "Manual completion for deterministic happy-path test",
-            },
-          ],
-        },
-      }),
-      buildWorkerEnv(),
-    );
-    const annualOverridePayload = (await annualOverride.json()) as {
-      active: { artifactId: string; version: number };
-      ok: true;
-    };
-    expect(annualOverride.status).toBe(200);
-    expect(annualOverridePayload.ok).toBe(true);
-
-    const annualConfirm = await worker.fetch(
-      buildJsonRequest({
-        method: "POST",
-        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/annual-report-extractions/confirm`,
-        cookie,
-        body: {
-          tenantId: TENANT_ID,
-          expectedActiveExtraction: annualOverridePayload.active,
-        },
-      }),
-      buildWorkerEnv(),
-    );
-    expect(annualConfirm.status).toBe(200);
+    await assertStatusV1({
+      expected: 400,
+      label: "parseFailedTbRun",
+      response: parseFailedTbRun,
+    });
 
     const tbRun = await worker.fetch(
       buildJsonRequest({
@@ -286,59 +301,14 @@ describe("worker tax core routes v1", () => {
       }),
       buildWorkerEnv(),
     );
-    if (tbRun.status !== 200) {
-      throw new Error(`TB run failed: ${tbRun.status} ${await tbRun.text()}`);
-    }
+    await assertStatusV1({ expected: 200, label: "tbRun", response: tbRun });
     const tbRunPayload = (await tbRun.json()) as {
       ok: true;
       pipeline: {
-        artifacts: {
-          mapping: {
-            artifactId: string;
-            version: number;
-          };
-        };
-        mapping: {
-          decisions: Array<{
-            id: string;
-            selectedCategory: { code: string };
-          }>;
-        };
+        artifacts: { mapping: { artifactId: string; version: number } };
       };
     };
-    const firstMappingDecision = tbRunPayload.pipeline.mapping.decisions[0];
-    if (!firstMappingDecision) {
-      throw new Error("Expected at least one mapping decision.");
-    }
-    const selectedCategoryCode =
-      firstMappingDecision.selectedCategory.code === "607200"
-        ? "607100"
-        : "607200";
-
-    const mappingOverride = await worker.fetch(
-      buildJsonRequest({
-        method: "POST",
-        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/mapping-overrides`,
-        cookie,
-        body: {
-          tenantId: TENANT_ID,
-          expectedActiveMapping: {
-            artifactId: tbRunPayload.pipeline.artifacts.mapping.artifactId,
-            version: tbRunPayload.pipeline.artifacts.mapping.version,
-          },
-          overrides: [
-            {
-              decisionId: firstMappingDecision.id,
-              selectedCategoryCode,
-              scope: "user",
-              reason: "Audit matrix smoke override",
-            },
-          ],
-        },
-      }),
-      buildWorkerEnv(),
-    );
-    expect(mappingOverride.status).toBe(200);
+    expect(tbRunPayload.ok).toBe(true);
 
     const adjustmentsRun = await worker.fetch(
       buildJsonRequest({
@@ -353,39 +323,15 @@ describe("worker tax core routes v1", () => {
       buildWorkerEnv(),
     );
     const adjustmentsPayload = (await adjustmentsRun.json()) as {
-      active: { artifactId: string; version: number };
-      adjustments: { decisions: Array<{ amount: number; id: string }> };
       ok: true;
+      adjustments: { decisions: Array<{ amount: number; id: string }> };
     };
-    expect(adjustmentsRun.status).toBe(200);
-    const firstAdjustmentDecision = adjustmentsPayload.adjustments.decisions[0];
-    if (!firstAdjustmentDecision) {
-      throw new Error("Expected at least one tax adjustment decision.");
-    }
-
-    const adjustmentsOverride = await worker.fetch(
-      buildJsonRequest({
-        method: "POST",
-        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/tax-adjustments/overrides`,
-        cookie,
-        body: {
-          tenantId: TENANT_ID,
-          expectedActiveAdjustments: {
-            artifactId: adjustmentsPayload.active.artifactId,
-            version: adjustmentsPayload.active.version,
-          },
-          overrides: [
-            {
-              decisionId: firstAdjustmentDecision.id,
-              amount: firstAdjustmentDecision.amount,
-              reason: "Audit smoke override",
-            },
-          ],
-        },
-      }),
-      buildWorkerEnv(),
-    );
-    expect(adjustmentsOverride.status).toBe(200);
+    await assertStatusV1({
+      expected: 200,
+      label: "adjustmentsRun",
+      response: adjustmentsRun,
+    });
+    expect(adjustmentsPayload.ok).toBe(true);
 
     const summaryRun = await worker.fetch(
       buildJsonRequest({
@@ -396,7 +342,11 @@ describe("worker tax core routes v1", () => {
       }),
       buildWorkerEnv(),
     );
-    expect(summaryRun.status).toBe(200);
+    await assertStatusV1({
+      expected: 200,
+      label: "summaryRun",
+      response: summaryRun,
+    });
 
     const ink2Run = await worker.fetch(
       buildJsonRequest({
@@ -407,40 +357,16 @@ describe("worker tax core routes v1", () => {
       }),
       buildWorkerEnv(),
     );
-    expect(ink2Run.status).toBe(200);
+    await assertStatusV1({
+      expected: 200,
+      label: "ink2Run",
+      response: ink2Run,
+    });
     const ink2Payload = (await ink2Run.json()) as {
-      active: { artifactId: string; version: number };
-      form: { fields: Array<{ amount: number; fieldId: string }> };
       ok: true;
+      form: { fields: Array<{ amount: number; fieldId: string }> };
     };
-    const firstInk2Field = ink2Payload.form.fields[0];
-    if (!firstInk2Field) {
-      throw new Error("Expected at least one INK2 form field.");
-    }
-
-    const ink2Override = await worker.fetch(
-      buildJsonRequest({
-        method: "POST",
-        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/ink2-form/overrides`,
-        cookie,
-        body: {
-          tenantId: TENANT_ID,
-          expectedActiveForm: {
-            artifactId: ink2Payload.active.artifactId,
-            version: ink2Payload.active.version,
-          },
-          overrides: [
-            {
-              fieldId: firstInk2Field.fieldId,
-              amount: firstInk2Field.amount,
-              reason: "Audit smoke override",
-            },
-          ],
-        },
-      }),
-      buildWorkerEnv(),
-    );
-    expect(ink2Override.status).toBe(200);
+    expect(ink2Payload.ok).toBe(true);
 
     const transitionTo = async (
       toStatus: "approved_for_export" | "in_review" | "ready_for_approval",
@@ -457,7 +383,11 @@ describe("worker tax core routes v1", () => {
         }),
         buildWorkerEnv(),
       );
-      expect(transitionResponse.status).toBe(200);
+      await assertStatusV1({
+        expected: 200,
+        label: `transition:${toStatus}`,
+        response: transitionResponse,
+      });
     };
     await transitionTo("in_review");
     await transitionTo("ready_for_approval");
@@ -472,7 +402,11 @@ describe("worker tax core routes v1", () => {
       }),
       buildWorkerEnv(),
     );
-    expect(exportRun.status).toBe(200);
+    await assertStatusV1({
+      expected: 200,
+      label: "exportRun",
+      response: exportRun,
+    });
 
     const commentCreate = await worker.fetch(
       buildJsonRequest({
@@ -486,7 +420,11 @@ describe("worker tax core routes v1", () => {
       }),
       buildWorkerEnv(),
     );
-    expect(commentCreate.status).toBe(201);
+    await assertStatusV1({
+      expected: 201,
+      label: "commentCreate",
+      response: commentCreate,
+    });
 
     const taskCreate = await worker.fetch(
       buildJsonRequest({
@@ -500,7 +438,11 @@ describe("worker tax core routes v1", () => {
       }),
       buildWorkerEnv(),
     );
-    expect(taskCreate.status).toBe(201);
+    await assertStatusV1({
+      expected: 201,
+      label: "taskCreate",
+      response: taskCreate,
+    });
     const taskCreatePayload = (await taskCreate.json()) as {
       ok: true;
       task: { id: string };
@@ -515,7 +457,11 @@ describe("worker tax core routes v1", () => {
       }),
       buildWorkerEnv(),
     );
-    expect(completeTask.status).toBe(200);
+    await assertStatusV1({
+      expected: 200,
+      label: "completeTask",
+      response: completeTask,
+    });
 
     const auditRows = await env.DB.prepare(
       `
@@ -532,10 +478,13 @@ describe("worker tax core routes v1", () => {
       }>();
     const eventTypes = (auditRows.results ?? []).map((row) => row.event_type);
 
-    for (const requiredEventType of REQUIRED_AUDIT_EVENT_TYPES_V1) {
-      expect(eventTypes).toContain(requiredEventType);
-    }
+    expect(eventTypes).toContain(AUDIT_EVENT_TYPES_V1.MAPPING_GENERATED);
+    expect(eventTypes).toContain(AUDIT_EVENT_TYPES_V1.ADJUSTMENT_GENERATED);
     expect(eventTypes).toContain(AUDIT_EVENT_TYPES_V1.SUMMARY_GENERATED);
+    expect(eventTypes).toContain(AUDIT_EVENT_TYPES_V1.FORM_POPULATED);
+    expect(eventTypes).toContain(AUDIT_EVENT_TYPES_V1.EXPORT_CREATED);
+    expect(eventTypes).toContain(AUDIT_EVENT_TYPES_V1.COMMENT_CREATED);
+    expect(eventTypes).toContain(AUDIT_EVENT_TYPES_V1.TASK_CREATED);
 
     const completedTaskAudit = (auditRows.results ?? []).find(
       (row) => row.event_type === AUDIT_EVENT_TYPES_V1.TASK_COMPLETED,

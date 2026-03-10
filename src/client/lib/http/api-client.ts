@@ -8,6 +8,9 @@ export type ApiErrorPayload = {
   ok: false;
 };
 
+const DEFAULT_API_TIMEOUT_MS_V1 = 30_000;
+const LONG_RUNNING_API_TIMEOUT_MS_V1 = 180_000;
+
 export class ApiClientError extends Error {
   readonly code: string;
   readonly context: Record<string, unknown>;
@@ -56,34 +59,110 @@ function isApiErrorPayload(value: unknown): value is ApiErrorPayload {
   );
 }
 
-async function safeParseJson(response: Response): Promise<unknown> {
+async function safeReadResponsePayloadV1(response: Response): Promise<{
+  parsedJson: unknown;
+  responseText: string | null;
+}> {
   try {
-    return await response.json();
+    const responseText = await response.text();
+    if (responseText.trim().length === 0) {
+      return {
+        parsedJson: null,
+        responseText: null,
+      };
+    }
+
+    try {
+      return {
+        parsedJson: JSON.parse(responseText),
+        responseText,
+      };
+    } catch {
+      return {
+        parsedJson: null,
+        responseText,
+      };
+    }
   } catch {
-    return null;
+    return {
+      parsedJson: null,
+      responseText: null,
+    };
   }
 }
 
 export async function apiRequest<TResponse>(input: {
   body?: unknown;
+  formData?: FormData;
   method?: "GET" | "POST";
   parseResponse: (payload: unknown) => TResponse;
   path: string;
+  timeoutMs?: number;
 }): Promise<TResponse> {
-  const response = await fetch(input.path, {
-    method: input.method ?? "GET",
-    credentials: "include",
-    cache: "no-store",
-    headers:
-      input.body === undefined
-        ? undefined
-        : {
-            "Content-Type": "application/json",
-          },
-    body: input.body === undefined ? undefined : JSON.stringify(input.body),
-  });
+  const timeoutMs =
+    input.timeoutMs ??
+    (input.method === "POST" ? LONG_RUNNING_API_TIMEOUT_MS_V1 : DEFAULT_API_TIMEOUT_MS_V1);
+  const abortController = new AbortController();
+  const timeoutHandle = globalThis.setTimeout(() => {
+    abortController.abort(
+      new DOMException("The request timed out.", "AbortError"),
+    );
+  }, timeoutMs);
 
-  const parsedPayload = await safeParseJson(response);
+  let response: Response;
+  try {
+    response = await fetch(input.path, {
+      method: input.method ?? "GET",
+      credentials: "include",
+      cache: "no-store",
+      headers:
+        input.formData
+          ? undefined
+          : input.body === undefined
+          ? undefined
+          : {
+              "Content-Type": "application/json",
+            },
+      body: input.formData
+        ? input.formData
+        : input.body === undefined
+          ? undefined
+          : JSON.stringify(input.body),
+      signal: abortController.signal,
+    });
+  } catch (error) {
+    globalThis.clearTimeout(timeoutHandle);
+
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiClientError({
+        status: 408,
+        code: "REQUEST_TIMEOUT",
+        message: "API request timed out.",
+        userMessage:
+          "The request took too long and was stopped. Please try again.",
+        context: {
+          path: input.path,
+          timeoutMs,
+        },
+      });
+    }
+
+    throw new ApiClientError({
+      status: 0,
+      code: "NETWORK_ERROR",
+      message: error instanceof Error ? error.message : "Network request failed.",
+      userMessage:
+        "Could not reach the app service. Check that the local app is running and try again.",
+      context: {
+        path: input.path,
+      },
+    });
+  }
+
+  globalThis.clearTimeout(timeoutHandle);
+
+  const { parsedJson: parsedPayload, responseText } =
+    await safeReadResponsePayloadV1(response);
 
   if (!response.ok) {
     if (isApiErrorPayload(parsedPayload)) {
@@ -101,6 +180,13 @@ export async function apiRequest<TResponse>(input: {
       code: "HTTP_ERROR",
       message: "Unexpected API response.",
       userMessage: "Unexpected API response.",
+      context: {
+        path: input.path,
+        responseText:
+          typeof responseText === "string"
+            ? responseText.slice(0, 500)
+            : null,
+      },
     });
   }
 
@@ -115,6 +201,10 @@ export async function apiRequest<TResponse>(input: {
       context: {
         path: input.path,
         reason: error instanceof Error ? error.message : "Unknown parse error.",
+        responseText:
+          typeof responseText === "string"
+            ? responseText.slice(0, 500)
+            : null,
       },
     });
   }

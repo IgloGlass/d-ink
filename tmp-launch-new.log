@@ -1,0 +1,59 @@
+
+D.ink local tester mode
+-----------------------
+1. This script starts the web app and local API.
+2. Your browser opens automatically when the web app is ready.
+3. Keep this window open while testing.
+4. Code changes should appear automatically in the open browser tab.
+5. Gemini AI is enabled for local testing.
+
+
+[1/8] Preflight
+Checking Node/pnpm/tools and dependency state.
+Installing dependencies...
+Dependencies already up to date; skipping install.
+
+Starting local app...
+Web: http://localhost:5173
+API: http://127.0.0.1:8787
+Hot reload: enabled
+
+[2/8] Cleanup
+Reclaiming required local ports.
+No stale listeners found on required ports.
+
+[3/8] DB migrate
+Applying local database migrations.
+Preparing local database...
+
+ ⛅️ wrangler 4.68.0 (update available 4.71.0)
+─────────────────────────────────────────────
+Resource location: local 
+
+Use --remote if you want to access the remote instance.
+
+✅ No migrations to apply!
+
+[4/8] Start services
+Launching API and web development servers.
+Resolved API proxy target: http://127.0.0.1:8787
+Resolved Vite bind host: localhost
+
+[5/8] Health gate
+Waiting until API and web endpoints are healthy and stable.
+Waiting for readiness: api=True web=True apiListeners=1 stable=1/3
+
+[6/8] Optional demo bootstrap
+Preparing Test Company AB workspace (best effort).
+Demo workspace ready: Test Company AB
+
+[7/8] Open browser
+Launching the local app in your default browser.
+
+Local app is ready.
+Browser: http://localhost:5173
+API: http://127.0.0.1:8787
+Annual-report mode: queued
+
+[8/8] Supervise
+Keeping services alive while this window stays open.

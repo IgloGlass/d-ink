@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "tax-adjustments-representation-entertainment",
+  "moduleVersion": "v1",
+  "promptVersion": "tax-adjustments-representation-entertainment.prompts.v1",
+  "runtime": {
+    "provider": "gemini",
+    "modelTier": "thinking"
+  },
+  "policy": {
+    "basePolicyVersion": "tax-adjustments-representation-entertainment.v1",
+    "activePatchVersions": []
+  }
+}

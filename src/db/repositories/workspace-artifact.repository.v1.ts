@@ -3,6 +3,10 @@ import {
   parseAnnualReportExtractionPayloadV1,
 } from "../../shared/contracts/annual-report-extraction.v1";
 import {
+  type AnnualReportTaxAnalysisPayloadV1,
+  parseAnnualReportTaxAnalysisPayloadV1,
+} from "../../shared/contracts/annual-report-tax-analysis.v1";
+import {
   type ExportPackagePayloadV1,
   parseExportPackagePayloadV1,
 } from "../../shared/contracts/export-package.v1";
@@ -22,6 +26,7 @@ import type { D1Database } from "../../shared/types/d1";
 
 export type WorkspaceArtifactTypeV1 =
   | "annual_report_extraction"
+  | "annual_report_tax_analysis"
   | "tax_adjustments"
   | "tax_summary"
   | "ink2_form"
@@ -29,6 +34,7 @@ export type WorkspaceArtifactTypeV1 =
 
 type WorkspaceArtifactPayloadByTypeV1 = {
   annual_report_extraction: AnnualReportExtractionPayloadV1;
+  annual_report_tax_analysis: AnnualReportTaxAnalysisPayloadV1;
   tax_adjustments: TaxAdjustmentDecisionSetPayloadV1;
   tax_summary: TaxSummaryPayloadV1;
   ink2_form: Ink2FormDraftPayloadV1;
@@ -78,12 +84,32 @@ export type WorkspaceArtifactWriteResultV1<
   TType extends WorkspaceArtifactTypeV1,
 > = WorkspaceArtifactWriteSuccessV1<TType> | WorkspaceArtifactWriteFailureV1;
 
+export type WorkspaceArtifactClearFailureCodeV1 =
+  | "WORKSPACE_NOT_FOUND"
+  | "PERSISTENCE_ERROR";
+
+export type WorkspaceArtifactClearResultV1 =
+  | {
+      ok: true;
+      clearedArtifactTypes: WorkspaceArtifactTypeV1[];
+    }
+  | {
+      ok: false;
+      code: WorkspaceArtifactClearFailureCodeV1;
+      message: string;
+    };
+
 export interface WorkspaceArtifactRepositoryV1 {
   appendAnnualReportExtractionAndSetActive(
     input: AppendArtifactInputBaseV1 & {
       extraction: AnnualReportExtractionPayloadV1;
     },
   ): Promise<WorkspaceArtifactWriteResultV1<"annual_report_extraction">>;
+  appendAnnualReportTaxAnalysisAndSetActive(
+    input: AppendArtifactInputBaseV1 & {
+      taxAnalysis: AnnualReportTaxAnalysisPayloadV1;
+    },
+  ): Promise<WorkspaceArtifactWriteResultV1<"annual_report_tax_analysis">>;
   appendTaxAdjustmentsAndSetActive(
     input: AppendArtifactInputBaseV1 & {
       adjustments: TaxAdjustmentDecisionSetPayloadV1;
@@ -108,6 +134,10 @@ export interface WorkspaceArtifactRepositoryV1 {
     tenantId: string;
     workspaceId: string;
   }): Promise<WorkspaceArtifactVersionRecordV1<"annual_report_extraction"> | null>;
+  getActiveAnnualReportTaxAnalysis(input: {
+    tenantId: string;
+    workspaceId: string;
+  }): Promise<WorkspaceArtifactVersionRecordV1<"annual_report_tax_analysis"> | null>;
   getActiveTaxAdjustments(input: {
     tenantId: string;
     workspaceId: string;
@@ -128,6 +158,11 @@ export interface WorkspaceArtifactRepositoryV1 {
     tenantId: string;
     workspaceId: string;
   }): Promise<WorkspaceArtifactVersionRecordV1<"export_package">[]>;
+  clearActiveArtifacts(input: {
+    tenantId: string;
+    workspaceId: string;
+    artifactTypes: WorkspaceArtifactTypeV1[];
+  }): Promise<WorkspaceArtifactClearResultV1>;
 }
 
 type WorkspaceExistsRowV1 = {
@@ -235,6 +270,13 @@ WHERE tenant_id = ?1
 ORDER BY version DESC, id ASC
 `;
 
+const DELETE_ACTIVE_ARTIFACT_SQL_V1 = `
+DELETE FROM workspace_active_artifacts_v1
+WHERE tenant_id = ?1
+  AND workspace_id = ?2
+  AND artifact_type = ?3
+`;
+
 const MAX_VERSION_INSERT_RETRIES_V1 = 3;
 
 function toErrorMessage(error: unknown): string {
@@ -272,6 +314,10 @@ function parseArtifactPayloadByTypeV1<TType extends WorkspaceArtifactTypeV1>(
   switch (artifactType) {
     case "annual_report_extraction":
       return parseAnnualReportExtractionPayloadV1(
+        input,
+      ) as WorkspaceArtifactPayloadByTypeV1[TType];
+    case "annual_report_tax_analysis":
+      return parseAnnualReportTaxAnalysisPayloadV1(
         input,
       ) as WorkspaceArtifactPayloadByTypeV1[TType];
     case "tax_adjustments":
@@ -516,6 +562,65 @@ export function createD1WorkspaceArtifactRepositoryV1(
     );
   }
 
+  async function clearActiveArtifactsInternalV1(input: {
+    tenantId: string;
+    workspaceId: string;
+    artifactTypes: WorkspaceArtifactTypeV1[];
+  }): Promise<WorkspaceArtifactClearResultV1> {
+    const uniqueArtifactTypes = [...new Set(input.artifactTypes)];
+    const workspaceRow = await db
+      .prepare(SELECT_WORKSPACE_EXISTS_SQL_V1)
+      .bind(input.tenantId, input.workspaceId)
+      .first<WorkspaceExistsRowV1>();
+    if (!workspaceRow) {
+      return {
+        ok: false,
+        code: "WORKSPACE_NOT_FOUND",
+        message: "Workspace does not exist for tenant and workspace ID.",
+      };
+    }
+
+    try {
+      if (uniqueArtifactTypes.length === 0) {
+        return {
+          ok: true,
+          clearedArtifactTypes: [],
+        };
+      }
+
+      const operations = uniqueArtifactTypes.map((artifactType) =>
+        db
+          .prepare(DELETE_ACTIVE_ARTIFACT_SQL_V1)
+          .bind(input.tenantId, input.workspaceId, artifactType),
+      );
+      const results = await db.batch(operations);
+      const clearedArtifactTypes = uniqueArtifactTypes.filter(
+        (_, index) =>
+          results[index]?.success &&
+          Number(results[index]?.meta.changes ?? 0) > 0,
+      );
+
+      if (results.some((result) => !result.success)) {
+        return {
+          ok: false,
+          code: "PERSISTENCE_ERROR",
+          message: "Failed to clear one or more active artifact pointers.",
+        };
+      }
+
+      return {
+        ok: true,
+        clearedArtifactTypes,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        code: "PERSISTENCE_ERROR",
+        message: toErrorMessage(error),
+      };
+    }
+  }
+
   return {
     appendAnnualReportExtractionAndSetActive(input) {
       return appendArtifactAndSetActiveInternalV1({
@@ -524,6 +629,17 @@ export function createD1WorkspaceArtifactRepositoryV1(
         createdAt: input.createdAt,
         createdByUserId: input.createdByUserId,
         payload: input.extraction,
+        tenantId: input.tenantId,
+        workspaceId: input.workspaceId,
+      });
+    },
+    appendAnnualReportTaxAnalysisAndSetActive(input) {
+      return appendArtifactAndSetActiveInternalV1({
+        artifactId: input.artifactId,
+        artifactType: "annual_report_tax_analysis",
+        createdAt: input.createdAt,
+        createdByUserId: input.createdByUserId,
+        payload: input.taxAnalysis,
         tenantId: input.tenantId,
         workspaceId: input.workspaceId,
       });
@@ -579,6 +695,13 @@ export function createD1WorkspaceArtifactRepositoryV1(
         workspaceId: input.workspaceId,
       });
     },
+    getActiveAnnualReportTaxAnalysis(input) {
+      return getActiveArtifactInternalV1({
+        artifactType: "annual_report_tax_analysis",
+        tenantId: input.tenantId,
+        workspaceId: input.workspaceId,
+      });
+    },
     getActiveTaxAdjustments(input) {
       return getActiveArtifactInternalV1({
         artifactType: "tax_adjustments",
@@ -613,6 +736,9 @@ export function createD1WorkspaceArtifactRepositoryV1(
         tenantId: input.tenantId,
         workspaceId: input.workspaceId,
       });
+    },
+    clearActiveArtifacts(input) {
+      return clearActiveArtifactsInternalV1(input);
     },
   };
 }

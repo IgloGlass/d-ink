@@ -1,0 +1,1 @@
+Classify each trial-balance row into the best matching category code from the provided catalog.

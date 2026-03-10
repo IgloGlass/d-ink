@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "mapping-decisions",
+  "moduleVersion": "v1",
+  "promptVersion": "mapping-decisions.prompts.v1",
+  "runtime": {
+    "provider": "gemini",
+    "modelTier": "fast"
+  },
+  "policy": {
+    "basePolicyVersion": "mapping-decisions.v1",
+    "activePatchVersions": []
+  }
+}

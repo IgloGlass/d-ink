@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "ai_policy_pack_v1",
+  "moduleId": "annual-report-tax-analysis",
+  "policyVersion": "annual-report-tax-analysis.v1",
+  "reviewThresholds": {
+    "highRiskFindingCountAbove": 0,
+    "missingInformationCountAbove": 0
+  },
+  "focusAreas": [
+    "depreciation_differences",
+    "asset_acquisitions_and_disposals",
+    "net_interest_context",
+    "untaxed_reserves",
+    "pensions_and_special_payroll_tax",
+    "leasing",
+    "group_contributions",
+    "shareholdings_and_dividends"
+  ]
+}

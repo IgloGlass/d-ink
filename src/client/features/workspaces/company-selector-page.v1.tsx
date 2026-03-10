@@ -1,172 +1,153 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useGlobalAppContextV1 } from "../../app/app-context.v1";
-import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
 import { ButtonV1 } from "../../components/button-v1";
 import { CardV1 } from "../../components/card-v1";
-import { EmptyStateV1 } from "../../components/empty-state-v1";
-import { InputV1 } from "../../components/input-v1";
-import { SkeletonV1 } from "../../components/skeleton-v1";
 import { StatusPill } from "../../components/status-pill";
+import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
+import { SkeletonV1 } from "../../components/skeleton-v1";
 import {
-  ApiClientError,
-  toUserFacingErrorMessage,
-} from "../../lib/http/api-client";
+  buildFiscalYearOptionsV1,
+  deriveFiscalYearRangeForSelectionV1,
+  formatFiscalYearLabelV1,
+  getFiscalYearKeyV1,
+  resolveWorkspaceForCompanyAndFiscalYearV1,
+} from "../../lib/fiscal-year.v1";
 import {
   createCompanyV1,
   listCompaniesByTenantV1,
 } from "../../lib/http/company-api";
+import { toUserFacingErrorMessage } from "../../lib/http/api-client";
 import {
-  type WorkspaceV1,
   createWorkspaceV1,
   listWorkspacesByTenantV1,
 } from "../../lib/http/workspace-api";
 
 const companyListQueryKeyV1 = (tenantId: string) => ["companies", tenantId];
 const workspaceListQueryKeyV1 = (tenantId: string) => ["workspaces", tenantId];
+const LOCAL_DEMO_COMPANY_NAME_V1 = "Test Company AB";
+const LOCAL_DEMO_ORGANIZATION_NUMBER_V1 = "5561231234";
 
-const demoCompaniesV1 = [
-  ["Nordic Fika Goods AB", "5561231234"],
-  ["Skylight Digital Studio AB", "5562342345"],
-  ["Baltic Precision Parts AB", "5563453456"],
-] as const;
-
-function normalizeOrgNoV1(value: string): string {
-  return value.replace(/\D/g, "");
-}
-
-function formatOrgNoV1(value: string): string {
-  const digits = normalizeOrgNoV1(value);
-  return digits.length === 10
-    ? `${digits.slice(0, 6)}-${digits.slice(6)}`
+function formatOrganizationNumberV1(value: string): string {
+  return value.length === 10
+    ? `${value.slice(0, 6)}-${value.slice(6)}`
     : value;
 }
 
-function toFiscalYearLabelV1(workspace: {
-  fiscalYearStart: string;
-  fiscalYearEnd: string;
-}): string {
-  return `${workspace.fiscalYearStart} to ${workspace.fiscalYearEnd}`;
+function isLocalDevHostV1(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const hostname = window.location.hostname.toLowerCase();
+  return (
+    hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]"
+  );
 }
 
-function compareWorkspaceRecencyV1(
-  left: WorkspaceV1,
-  right: WorkspaceV1,
-): number {
-  const byUpdate = right.updatedAt.localeCompare(left.updatedAt);
-  return byUpdate !== 0 ? byUpdate : left.id.localeCompare(right.id);
+function buildWorkspaceDashboardPathV1(workspaceId: string): string {
+  return `/app/workspaces/${workspaceId}`;
 }
 
-type DirectoryRowV1 = {
-  company: {
-    id: string;
-    tenantId: string;
-    legalName: string;
-    organizationNumber: string;
-    defaultFiscalYearStart: string;
-    defaultFiscalYearEnd: string;
-    createdAt: string;
-    updatedAt: string;
+function resolveFiscalYearKeyV1(input: string | null | undefined): {
+  fiscalYearKey: string;
+  usedFallback: boolean;
+} {
+  const normalized = input?.trim() ?? "";
+  if (/^\d{4}$/.test(normalized)) {
+    return {
+      fiscalYearKey: normalized,
+      usedFallback: false,
+    };
+  }
+
+  return {
+    fiscalYearKey: String(new Date().getFullYear()),
+    usedFallback: normalized.length > 0,
   };
-  latest: WorkspaceV1 | null;
-  count: number;
-  isLegacyWorkspaceOnly: boolean;
-};
-
-type SearchIndexedRowV1 = {
-  row: DirectoryRowV1;
-  searchBlob: string;
-};
-
-function rankDirectoryMatchV1(input: {
-  row: DirectoryRowV1;
-  search: string;
-}): number {
-  const search = input.search;
-  const legalName = input.row.company.legalName.toLowerCase();
-  const formattedOrgNo = formatOrgNoV1(input.row.company.organizationNumber)
-    .toLowerCase();
-  const workspaceId = input.row.latest?.id.toLowerCase() ?? "";
-  const status = input.row.latest?.status.toLowerCase() ?? "";
-  if (legalName.startsWith(search)) return 0;
-  if (formattedOrgNo.startsWith(search)) return 1;
-  if (workspaceId.startsWith(search)) return 2;
-  if (status.startsWith(search)) return 3;
-  if (legalName.includes(search)) return 4;
-  if (formattedOrgNo.includes(search)) return 5;
-  if (workspaceId.includes(search)) return 6;
-  if (status.includes(search)) return 7;
-  return 8;
 }
 
 export function CompanySelectorPageV1() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const principal = useRequiredSessionPrincipalV1() as
-    | ReturnType<typeof useRequiredSessionPrincipalV1>
-    | undefined;
-  const tenantId = principal?.tenantId ?? "missing-tenant";
-  const { setActiveContext } = useGlobalAppContextV1();
+  const principal = useRequiredSessionPrincipalV1();
+  const tenantId = principal.tenantId;
+  const { activeFiscalYear, setActiveContext } = useGlobalAppContextV1();
+  const fiscalYearResolution = resolveFiscalYearKeyV1(activeFiscalYear);
+  const createCompanyFiscalYearKey = fiscalYearResolution.fiscalYearKey;
 
   const [search, setSearch] = useState("");
+  const [showCreateForm, setShowCreateForm] = useState(false);
   const [legalName, setLegalName] = useState("");
   const [organizationNumber, setOrganizationNumber] = useState("");
-  const [fiscalYearStart, setFiscalYearStart] = useState("2025-01-01");
-  const [fiscalYearEnd, setFiscalYearEnd] = useState("2025-12-31");
-  const [seedMessage, setSeedMessage] = useState<string | null>(null);
-  const [seedError, setSeedError] = useState<string | null>(null);
-  const [launchTargetKey, setLaunchTargetKey] = useState<string | null>(null);
-  const [isSuggestionOpen, setIsSuggestionOpen] = useState(false);
-  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
-  const searchComboboxId = useId();
-  const searchListboxId = `${searchComboboxId}-listbox`;
-  const searchWrapRef = useRef<HTMLDivElement | null>(null);
-  const legalNameInputId = "company-legal-name-input-v1";
-  const organizationNumberInputId = "company-organization-number-input-v1";
-  const fiscalYearStartInputId = "company-fiscal-year-start-input-v1";
-  const fiscalYearEndInputId = "company-fiscal-year-end-input-v1";
+  const [hasAttemptedLocalDemoSeed, setHasAttemptedLocalDemoSeed] =
+    useState(false);
+
+  const openWorkspaceV1 = ({
+    fiscalYear,
+    workspaceId,
+  }: {
+    fiscalYear: string;
+    workspaceId: string;
+  }) => {
+    setActiveContext({
+      activeFiscalYear: fiscalYear,
+      activeWorkspaceId: workspaceId,
+    });
+    navigate(buildWorkspaceDashboardPathV1(workspaceId));
+  };
 
   const companyQuery = useQuery({
     queryKey: companyListQueryKeyV1(tenantId),
     queryFn: () => listCompaniesByTenantV1({ tenantId }),
-    enabled: Boolean(principal?.tenantId),
   });
+
   const workspaceQuery = useQuery({
     queryKey: workspaceListQueryKeyV1(tenantId),
     queryFn: () => listWorkspacesByTenantV1({ tenantId }),
-    enabled: Boolean(principal?.tenantId),
   });
 
-  const createWorkspaceMutation = useMutation({
-    mutationFn: createWorkspaceV1,
-  });
+  const fiscalYearOptions = useMemo(
+    () =>
+      buildFiscalYearOptionsV1({
+        companies: companyQuery.data?.companies ?? [],
+        workspaces: workspaceQuery.data?.workspaces ?? [],
+      }),
+    [companyQuery.data, workspaceQuery.data],
+  );
 
-  const createCompanyAndWorkspaceMutation = useMutation({
+  useEffect(() => {
+    if (activeFiscalYear || fiscalYearOptions.length === 0) {
+      return;
+    }
+
+    setActiveContext({
+      activeFiscalYear: fiscalYearOptions[0],
+    });
+  }, [activeFiscalYear, fiscalYearOptions, setActiveContext]);
+
+  const createCompanyMutation = useMutation({
     mutationFn: async () => {
-      if (!principal?.tenantId) {
-        throw new Error("Session context is missing for company creation.");
-      }
       const company = await createCompanyV1({
-        tenantId: principal.tenantId,
+        tenantId,
         legalName: legalName.trim(),
-        organizationNumber: organizationNumber.trim(),
-        defaultFiscalYearStart: fiscalYearStart,
-        defaultFiscalYearEnd: fiscalYearEnd,
+        organizationNumber: organizationNumber.replace(/\D/g, ""),
+        defaultFiscalYearStart: `${createCompanyFiscalYearKey}-01-01`,
+        defaultFiscalYearEnd: `${createCompanyFiscalYearKey}-12-31`,
       });
+
       const workspace = await createWorkspaceV1({
-        tenantId: principal.tenantId,
+        tenantId,
         companyId: company.company.id,
-        fiscalYearStart,
-        fiscalYearEnd,
+        fiscalYearStart: `${createCompanyFiscalYearKey}-01-01`,
+        fiscalYearEnd: `${createCompanyFiscalYearKey}-12-31`,
       });
-      return workspace.workspace;
+
+      return workspace.workspace.id;
     },
-    onSuccess: async (workspace) => {
-      if (!principal?.tenantId) {
-        return;
-      }
+    onSuccess: async (workspaceId) => {
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: companyListQueryKeyV1(tenantId),
@@ -175,628 +156,344 @@ export function CompanySelectorPageV1() {
           queryKey: workspaceListQueryKeyV1(tenantId),
         }),
       ]);
+
+      setShowCreateForm(false);
       setLegalName("");
       setOrganizationNumber("");
-      setActiveContext({
-        activeWorkspaceId: workspace.id,
-        activeFiscalYear: toFiscalYearLabelV1(workspace),
+      openWorkspaceV1({
+        fiscalYear: createCompanyFiscalYearKey,
+        workspaceId,
       });
-      navigate(`/app/workspaces/${workspace.id}/workbench`);
     },
   });
 
-  const directory = useMemo<DirectoryRowV1[]>(() => {
-    const companies = companyQuery.data?.companies ?? [];
-    const workspaces = workspaceQuery.data?.workspaces ?? [];
-    const companiesById = new Map(
-      companies.map((company) => [company.id, company]),
-    );
-    const byCompany = new Map<string, WorkspaceV1[]>();
-    for (const workspace of workspaces) {
-      const rows = byCompany.get(workspace.companyId) ?? [];
-      rows.push(workspace);
-      byCompany.set(workspace.companyId, rows);
-    }
-    for (const rows of byCompany.values()) {
-      rows.sort(compareWorkspaceRecencyV1);
-    }
-    const directoryRows = companies.map((company) => {
-      const rows = byCompany.get(company.id) ?? [];
-      const latest = rows[0] ?? null;
-      return {
+  const createWorkspaceMutation = useMutation({
+    mutationFn: async (companyId: string) => {
+      const companies = companyQuery.data?.companies ?? [];
+      const company = companies.find((candidate) => candidate.id === companyId);
+      if (!company) {
+        throw new Error("Company could not be found.");
+      }
+
+      const selectedFiscalYearKey =
+        activeFiscalYear ??
+        getFiscalYearKeyV1({ fiscalYearEnd: company.defaultFiscalYearEnd });
+      const fiscalYearRange = deriveFiscalYearRangeForSelectionV1({
         company,
-        latest,
-        count: rows.length,
-        isLegacyWorkspaceOnly: false,
-      };
-    });
-
-    for (const [companyId, rows] of byCompany.entries()) {
-      if (companiesById.has(companyId)) {
-        continue;
-      }
-      const latest = rows[0] ?? null;
-      directoryRows.push({
-        company: {
-          id: companyId,
-          tenantId,
-          legalName: `Legacy workspace company (${companyId.slice(0, 8)})`,
-          organizationNumber: "0000000000",
-          defaultFiscalYearStart: latest?.fiscalYearStart ?? "2025-01-01",
-          defaultFiscalYearEnd: latest?.fiscalYearEnd ?? "2025-12-31",
-          createdAt:
-            latest?.createdAt ?? latest?.updatedAt ?? new Date(0).toISOString(),
-          updatedAt: latest?.updatedAt ?? new Date(0).toISOString(),
-        },
-        latest,
-        count: rows.length,
-        isLegacyWorkspaceOnly: true,
+        fiscalYearKey: selectedFiscalYearKey,
       });
-    }
 
-    return directoryRows;
-  }, [
-    companyQuery.data?.companies,
-    tenantId,
-    workspaceQuery.data?.workspaces,
-  ]);
-
-  const normalizedSearch = search.trim().toLowerCase();
-  const searchableDirectory = useMemo<SearchIndexedRowV1[]>(() => {
-    return directory.map((row) => {
-      const searchBlob = [
-        row.company.legalName.toLowerCase(),
-        formatOrgNoV1(row.company.organizationNumber).toLowerCase(),
-        row.latest?.id.toLowerCase() ?? "",
-        row.latest?.status.toLowerCase() ?? "",
-      ].join("|");
-      return { row, searchBlob };
-    });
-  }, [directory]);
-
-  const filteredDirectory = useMemo(() => {
-    if (normalizedSearch.length === 0) {
-      return directory;
-    }
-    return searchableDirectory
-      .filter((entry) => entry.searchBlob.includes(normalizedSearch))
-      .map((entry) => entry.row);
-  }, [directory, normalizedSearch, searchableDirectory]);
-
-  const suggestionRows = useMemo(() => {
-    if (normalizedSearch.length === 0) {
-      return filteredDirectory.slice(0, 6);
-    }
-    return [...filteredDirectory]
-      .sort((left, right) => {
-        const leftRank = rankDirectoryMatchV1({
-          row: left,
-          search: normalizedSearch,
-        });
-        const rightRank = rankDirectoryMatchV1({
-          row: right,
-          search: normalizedSearch,
-        });
-        if (leftRank !== rightRank) {
-          return leftRank - rightRank;
-        }
-        return left.company.legalName.localeCompare(right.company.legalName);
-      })
-      .slice(0, 6);
-  }, [filteredDirectory, normalizedSearch]);
-
-  useEffect(() => {
-    setActiveSuggestionIndex(
-      suggestionRows.length > 0 ? 0 : -1,
-    );
-  }, [suggestionRows.length, normalizedSearch]);
-
-  useEffect(() => {
-    if (!isSuggestionOpen) {
-      return;
-    }
-    const onMouseDown = (event: MouseEvent) => {
-      if (
-        searchWrapRef.current &&
-        !searchWrapRef.current.contains(event.target as Node)
-      ) {
-        setIsSuggestionOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onMouseDown);
-    return () => document.removeEventListener("mousedown", onMouseDown);
-  }, [isSuggestionOpen]);
-
-  const openWorkspaceV1 = (workspace: WorkspaceV1) => {
-    setActiveContext({
-      activeWorkspaceId: workspace.id,
-      activeFiscalYear: toFiscalYearLabelV1(workspace),
-    });
-    navigate(`/app/workspaces/${workspace.id}/workbench`);
-  };
-
-  const openCompanyV1 = async (input: {
-    companyId: string;
-    latestWorkspace: WorkspaceV1 | null;
-    start: string;
-    end: string;
-  }) => {
-    if (!principal?.tenantId) {
-      throw new Error("Session context is missing for workspace launch.");
-    }
-
-    if (input.latestWorkspace) return openWorkspaceV1(input.latestWorkspace);
-    try {
-      const created = await createWorkspaceMutation.mutateAsync({
-        tenantId: principal.tenantId,
-        companyId: input.companyId,
-        fiscalYearStart: input.start,
-        fiscalYearEnd: input.end,
+      const workspace = await createWorkspaceV1({
+        tenantId,
+        companyId,
+        fiscalYearStart: fiscalYearRange.fiscalYearStart,
+        fiscalYearEnd: fiscalYearRange.fiscalYearEnd,
       });
-      openWorkspaceV1(created.workspace);
-    } catch (error) {
-      if (
-        !(error instanceof ApiClientError) ||
-        error.code !== "DUPLICATE_WORKSPACE"
-      ) {
-        throw error;
-      }
-      const refreshed = await workspaceQuery.refetch();
-      const existing = refreshed.data?.workspaces.find(
-        (row) =>
-          row.companyId === input.companyId &&
-          row.fiscalYearStart === input.start &&
-          row.fiscalYearEnd === input.end,
-      );
-      if (existing) openWorkspaceV1(existing);
-    }
-  };
 
-  const handleContinueV1 = (row: DirectoryRowV1) => {
-    const targetKey = [
-      row.company.id,
-      row.company.defaultFiscalYearStart,
-      row.company.defaultFiscalYearEnd,
-    ].join(":");
-    if (launchTargetKey) {
-      return;
-    }
-    setLaunchTargetKey(targetKey);
-    void openCompanyV1({
-      companyId: row.company.id,
-      latestWorkspace: row.latest,
-      start: row.company.defaultFiscalYearStart,
-      end: row.company.defaultFiscalYearEnd,
-    }).finally(() => {
-      setLaunchTargetKey((activeKey) =>
-        activeKey === targetKey ? null : activeKey,
-      );
-    });
-  };
+      return workspace.workspace.id;
+    },
+    onSuccess: async (workspaceId) => {
+      const selectedFiscalYearKey =
+        activeFiscalYear ?? String(new Date().getFullYear());
+      await queryClient.invalidateQueries({
+        queryKey: workspaceListQueryKeyV1(tenantId),
+      });
+      openWorkspaceV1({
+        fiscalYear: selectedFiscalYearKey,
+        workspaceId,
+      });
+    },
+  });
 
-  const activeSuggestion =
-    activeSuggestionIndex >= 0
-      ? suggestionRows[activeSuggestionIndex] ?? null
-      : null;
-  const activeSuggestionId =
-    activeSuggestion ? `${searchComboboxId}-option-${activeSuggestion.company.id}` : undefined;
-  const isSuggestionVisible =
-    isSuggestionOpen && normalizedSearch.length > 0;
+  const seedLocalDemoMutation = useMutation({
+    mutationFn: async () => {
+      const company = await createCompanyV1({
+        tenantId,
+        legalName: LOCAL_DEMO_COMPANY_NAME_V1,
+        organizationNumber: LOCAL_DEMO_ORGANIZATION_NUMBER_V1,
+        defaultFiscalYearStart: `${createCompanyFiscalYearKey}-01-01`,
+        defaultFiscalYearEnd: `${createCompanyFiscalYearKey}-12-31`,
+      });
 
-  const seedDemoV1 = async () => {
-    if (!principal?.tenantId) {
-      setSeedError(
-        "Session context is missing. Reload the page and try again.",
-      );
-      return;
-    }
+      const workspace = await createWorkspaceV1({
+        tenantId,
+        companyId: company.company.id,
+        fiscalYearStart: `${createCompanyFiscalYearKey}-01-01`,
+        fiscalYearEnd: `${createCompanyFiscalYearKey}-12-31`,
+      });
 
-    setSeedError(null);
-    setSeedMessage(null);
-    let createdCompanies = 0;
-    let createdWorkspaces = 0;
-    try {
-      for (const [name, orgNo] of demoCompaniesV1) {
-        let companyId = companyQuery.data?.companies.find(
-          (row) => row.organizationNumber === normalizeOrgNoV1(orgNo),
-        )?.id;
-        if (!companyId) {
-          const company = await createCompanyV1({
-            tenantId: principal.tenantId,
-            legalName: name,
-            organizationNumber: orgNo,
-            defaultFiscalYearStart: "2025-01-01",
-            defaultFiscalYearEnd: "2025-12-31",
-          });
-          companyId = company.company.id;
-          createdCompanies += 1;
-        }
-        const hasWorkspace = workspaceQuery.data?.workspaces.some(
-          (row) =>
-            row.companyId === companyId &&
-            row.fiscalYearStart === "2025-01-01" &&
-            row.fiscalYearEnd === "2025-12-31",
-        );
-        if (!hasWorkspace) {
-          await createWorkspaceV1({
-            tenantId: principal.tenantId,
-            companyId,
-            fiscalYearStart: "2025-01-01",
-            fiscalYearEnd: "2025-12-31",
-          });
-          createdWorkspaces += 1;
-        }
-      }
+      return workspace.workspace.id;
+    },
+    onSuccess: async (workspaceId) => {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: companyListQueryKeyV1(principal.tenantId),
+          queryKey: companyListQueryKeyV1(tenantId),
         }),
         queryClient.invalidateQueries({
-          queryKey: workspaceListQueryKeyV1(principal.tenantId),
+          queryKey: workspaceListQueryKeyV1(tenantId),
         }),
       ]);
-      setSeedMessage(
-        `Demo seeded: ${createdCompanies} companies and ${createdWorkspaces} workspaces created.`,
-      );
-    } catch (error) {
-      setSeedError(toUserFacingErrorMessage(error));
-    }
-  };
+      openWorkspaceV1({
+        fiscalYear: createCompanyFiscalYearKey,
+        workspaceId,
+      });
+    },
+  });
 
-  if (!principal) {
-    return (
-      <section className="page-wrap">
-        <EmptyStateV1
-          title="Session context unavailable"
-          description="Reload the app. If the issue persists, restart `npm run dev`."
-          tone="error"
-          role="alert"
-        />
-      </section>
-    );
-  }
+  const filteredCompanies = useMemo(() => {
+    const companies = companyQuery.data?.companies ?? [];
+    const normalizedSearch = search.trim().toLowerCase();
+    if (!normalizedSearch) {
+      return companies;
+    }
+
+    return companies.filter((company) => {
+      return (
+        company.legalName.toLowerCase().includes(normalizedSearch) ||
+        company.organizationNumber.includes(normalizedSearch.replace(/\D/g, ""))
+      );
+    });
+  }, [companyQuery.data, search]);
+
+  useEffect(() => {
+    if (!isLocalDevHostV1()) {
+      return;
+    }
+    if (hasAttemptedLocalDemoSeed || seedLocalDemoMutation.isPending) {
+      return;
+    }
+    if (companyQuery.isLoading || workspaceQuery.isLoading) {
+      return;
+    }
+    if (companyQuery.isError || workspaceQuery.isError) {
+      return;
+    }
+
+    const companies = companyQuery.data?.companies ?? [];
+    const workspaces = workspaceQuery.data?.workspaces ?? [];
+    if (companies.length > 0 || workspaces.length > 0) {
+      return;
+    }
+
+    setHasAttemptedLocalDemoSeed(true);
+    seedLocalDemoMutation.mutate();
+  }, [
+    companyQuery.data,
+    companyQuery.isError,
+    companyQuery.isLoading,
+    hasAttemptedLocalDemoSeed,
+    seedLocalDemoMutation,
+    workspaceQuery.data,
+    workspaceQuery.isError,
+    workspaceQuery.isLoading,
+  ]);
 
   return (
-    <section className="page-wrap">
-      <CardV1 className="company-hub-hero-card">
-        <p className="micro-label">Company Hub</p>
-        <h1 className="page-title">Create and Open Companies</h1>
-        <p className="hint-text">
-          Create company first, then import and run modules.
-        </p>
-        <div className="form-grid company-hub-create-form">
-          <label htmlFor={legalNameInputId}>Legal name</label>
-          <InputV1
-            id={legalNameInputId}
-            value={legalName}
-            onChange={(event) => setLegalName(event.target.value)}
-            placeholder="Examplebolaget AB"
-          />
-          <label htmlFor={organizationNumberInputId}>Organization number</label>
-          <InputV1
-            id={organizationNumberInputId}
-            value={organizationNumber}
-            onChange={(event) => setOrganizationNumber(event.target.value)}
-            placeholder="556123-1234"
-          />
-          <div className="form-grid form-grid--2">
-            <div className="form-grid">
-              <label htmlFor={fiscalYearStartInputId}>Fiscal year start</label>
-              <InputV1
-                id={fiscalYearStartInputId}
-                type="date"
-                value={fiscalYearStart}
-                onChange={(event) => setFiscalYearStart(event.target.value)}
+    <div className="workspace-landing">
+      <section className="workspace-landing__hero">
+        <div>
+          <div className="workspace-landing__eyebrow">Company landing</div>
+          <h1 className="workspace-landing__title">
+            Search companies and open the workspace for the selected fiscal year.
+          </h1>
+          <p className="workspace-landing__copy">
+            Start with the client list. After you open a company, you will see
+            the four core modules and begin with Annual Report Analysis.
+          </p>
+        </div>
+        <ButtonV1
+          variant="black"
+          onClick={() => setShowCreateForm((current) => !current)}
+        >
+          {showCreateForm ? "Close new company form" : "Create new company"}
+        </ButtonV1>
+      </section>
+
+      <section className="workspace-search-panel">
+        <label
+          className="workspace-search-panel__label"
+          htmlFor="workspace-search"
+        >
+          Search company
+        </label>
+        <input
+          id="workspace-search"
+          type="text"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search by legal name or organization number"
+          className="workspace-search-input"
+        />
+      </section>
+
+      {showCreateForm ? (
+        <CardV1 className="workspace-create-panel">
+          <div className="workspace-create-grid">
+            <label className="workspace-field">
+              <span>Legal name</span>
+              <input
+                type="text"
+                value={legalName}
+                onChange={(event) => setLegalName(event.target.value)}
+                placeholder="e.g. Examplebolaget AB"
+                className="input-v1"
               />
-            </div>
-            <div className="form-grid">
-              <label htmlFor={fiscalYearEndInputId}>Fiscal year end</label>
-              <InputV1
-                id={fiscalYearEndInputId}
-                type="date"
-                value={fiscalYearEnd}
-                onChange={(event) => setFiscalYearEnd(event.target.value)}
+            </label>
+            <label className="workspace-field">
+              <span>Organization number</span>
+              <input
+                type="text"
+                value={organizationNumber}
+                onChange={(event) => setOrganizationNumber(event.target.value)}
+                placeholder="e.g. 556123-1234"
+                className="input-v1"
               />
-            </div>
+            </label>
           </div>
-          <div className="company-hub-create-actions">
+          <div className="workspace-create-actions">
             <ButtonV1
-              variant="primary"
-              onClick={() => createCompanyAndWorkspaceMutation.mutate()}
+              variant="black"
+              onClick={() => createCompanyMutation.mutate()}
               disabled={
-                createCompanyAndWorkspaceMutation.isPending ||
-                legalName.trim().length === 0 ||
-                normalizeOrgNoV1(organizationNumber).length !== 10
+                !legalName.trim() ||
+                !organizationNumber.trim() ||
+                createCompanyMutation.isPending
               }
             >
-              {createCompanyAndWorkspaceMutation.isPending
-                ? "Creating..."
-                : "Create company and continue"}
+              Create company and workspace
             </ButtonV1>
-            <ButtonV1 onClick={() => void seedDemoV1()}>
-              Seed demo companies
-            </ButtonV1>
-            <a href="/templates/trial-balance-template-v1.xlsx" download>
-              Download trial balance template (.xlsx)
-            </a>
           </div>
-          {createCompanyAndWorkspaceMutation.isError ? (
-            <p className="error-text">
-              {toUserFacingErrorMessage(
-                createCompanyAndWorkspaceMutation.error,
-              )}
-            </p>
-          ) : null}
-          {seedError ? <p className="error-text">{seedError}</p> : null}
-          {seedMessage ? <p className="success-text">{seedMessage}</p> : null}
-        </div>
-      </CardV1>
-
-      <CardV1>
-        <div className="company-selector-list-header">
-          <div className="company-selector-list-header-copy">
-            <h2 className="section-title">Companies</h2>
-            <p className="company-selector-list-summary">
-              Search first, then continue with a deterministic workspace launch.
-            </p>
-          </div>
-          <div
-            ref={searchWrapRef}
-            className="company-selector-search"
-            data-suggestion-open={isSuggestionVisible ? "true" : "false"}
-          >
-            <InputV1
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value);
-                setIsSuggestionOpen(true);
-              }}
-              onFocus={() => setIsSuggestionOpen(true)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  setIsSuggestionOpen(false);
-                  return;
-                }
-                if (event.key === "Home") {
-                  event.preventDefault();
-                  setIsSuggestionOpen(true);
-                  setActiveSuggestionIndex(0);
-                  return;
-                }
-                if (event.key === "End") {
-                  event.preventDefault();
-                  setIsSuggestionOpen(true);
-                  setActiveSuggestionIndex(
-                    suggestionRows.length > 0 ? suggestionRows.length - 1 : -1,
-                  );
-                  return;
-                }
-                if (event.key === "Tab") {
-                  setIsSuggestionOpen(false);
-                  return;
-                }
-                if (suggestionRows.length === 0) {
-                  return;
-                }
-                if (event.key === "ArrowDown") {
-                  event.preventDefault();
-                  setIsSuggestionOpen(true);
-                  setActiveSuggestionIndex((index) =>
-                    index >= suggestionRows.length - 1 ? 0 : index + 1,
-                  );
-                  return;
-                }
-                if (event.key === "ArrowUp") {
-                  event.preventDefault();
-                  setIsSuggestionOpen(true);
-                  setActiveSuggestionIndex((index) =>
-                    index <= 0 ? suggestionRows.length - 1 : index - 1,
-                  );
-                  return;
-                }
-                if (event.key === "Enter" && activeSuggestion) {
-                  event.preventDefault();
-                  setIsSuggestionOpen(false);
-                  handleContinueV1(activeSuggestion);
-                }
-              }}
-              placeholder="Search company, org number, workspace, or status"
-              aria-label="Search companies"
-              aria-haspopup="listbox"
-              aria-controls={isSuggestionVisible ? searchListboxId : undefined}
-              aria-expanded={isSuggestionVisible}
-              aria-activedescendant={
-                isSuggestionVisible ? activeSuggestionId : undefined
-              }
-              aria-autocomplete="list"
-              role="combobox"
-              className="company-selector-search-input"
-            />
-            <div className="company-selector-search-meta">
-              <p className="company-selector-search-summary">
-                {filteredDirectory.length} match
-                {filteredDirectory.length === 1 ? "" : "es"}
-              </p>
-              <p className="company-selector-search-summary-secondary">
-                {normalizedSearch.length > 0
-                  ? "Arrow keys to navigate, Enter to continue"
-                  : "Start typing for ranked suggestions"}
-              </p>
+          {fiscalYearResolution.usedFallback ? (
+            <div className="workspace-inline-error" role="alert">
+              Fiscal year filter is invalid. New company setup will use{" "}
+              {createCompanyFiscalYearKey}.
             </div>
-            {isSuggestionVisible ? (
-              <div
-                id={searchListboxId}
-                role="listbox"
-                className="search-combobox-menu"
-                aria-label="Company suggestions"
-              >
-                {suggestionRows.length > 0 ? (
-                  suggestionRows.map((row, index) => {
-                    const optionId = `${searchComboboxId}-option-${row.company.id}`;
-                    return (
-                      <button
-                        key={row.company.id}
-                        id={optionId}
-                        type="button"
-                        role="option"
-                        className="search-combobox-option"
-                        aria-selected={index === activeSuggestionIndex}
-                        data-active={index === activeSuggestionIndex}
-                        onMouseEnter={() => setActiveSuggestionIndex(index)}
-                        onMouseDown={(event) => {
-                          event.preventDefault();
-                        }}
-                        onClick={() => {
-                          setIsSuggestionOpen(false);
-                          handleContinueV1(row);
-                        }}
-                      >
-                        <span className="search-combobox-option-row">
-                          <span className="search-combobox-option-primary">
-                            {row.company.legalName}
-                          </span>
-                          {row.latest ? (
-                            <StatusPill status={row.latest.status} />
-                          ) : (
-                            <span className="status-pill">No workspace</span>
-                          )}
-                        </span>
-                        <span className="search-combobox-option-meta">
-                          {formatOrgNoV1(row.company.organizationNumber)} |{" "}
-                          {row.count} workspace{row.count === 1 ? "" : "s"}
-                        </span>
-                      </button>
-                    );
-                  })
-                ) : (
-                  <p className="search-combobox-empty">
-                    No suggestions. Adjust the query or create a new company.
-                  </p>
-                )}
-              </div>
-            ) : null}
+          ) : null}
+          {createCompanyMutation.isError ? (
+            <div className="workspace-inline-error" role="alert">
+              {toUserFacingErrorMessage(createCompanyMutation.error)}
+            </div>
+          ) : null}
+        </CardV1>
+      ) : null}
+
+      <CardV1 className="workspace-list-panel card-v1--hero">
+        <div className="workspace-panel-header">
+          <div>
+            <div className="workspace-panel-header__eyebrow">Companies</div>
+            <h2>Available clients</h2>
+          </div>
+          <div className="workspace-selected-meta">
+            Fiscal year filter: {activeFiscalYear ?? "Loading"}
           </div>
         </div>
-        {companyQuery.isPending || workspaceQuery.isPending ? (
-          <div className="panel-stack">
-            <SkeletonV1 height={40} />
-            <SkeletonV1 height={40} />
-            <SkeletonV1 height={40} />
-          </div>
-        ) : null}
-        {companyQuery.isError || workspaceQuery.isError ? (
-          <EmptyStateV1
-            title="Company directory unavailable"
-            description={toUserFacingErrorMessage(
-              companyQuery.error ?? workspaceQuery.error,
-            )}
-            tone="error"
-            action={
-              <ButtonV1
-                onClick={() => {
-                  void companyQuery.refetch();
-                  void workspaceQuery.refetch();
-                }}
-              >
-                Retry
-              </ButtonV1>
-            }
-          />
-        ) : null}
-        {companyQuery.isSuccess &&
-        workspaceQuery.isSuccess &&
-        filteredDirectory.length === 0 ? (
-          <EmptyStateV1
-            title="No matching companies"
-            description="Adjust the query, or create/seed a company to continue."
-          />
-        ) : null}
-        {companyQuery.isSuccess &&
-        workspaceQuery.isSuccess &&
-        filteredDirectory.length > 0 ? (
-          <div className="table-wrap">
-            <table className="company-selector-table">
-              <caption className="company-selector-table-caption">
-                Company selector results
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Company</th>
-                  <th scope="col">Workspace</th>
-                  <th scope="col">Fiscal year</th>
-                  <th scope="col">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredDirectory.map((row, index) => (
-                  <tr
-                    key={row.company.id}
-                    className="company-selector-table-row"
-                    data-top-match={
-                      normalizedSearch.length > 0 && index === 0
-                        ? "true"
-                        : "false"
-                    }
-                  >
-                    <th scope="row">
-                      <div className="company-selector-cell-stack">
-                        <p className="company-selector-cell-primary">
-                          {row.company.legalName}
-                        </p>
-                        <p className="company-selector-cell-directory-rank">
-                          {index + 1}.
-                        </p>
-                        <p className="company-selector-cell-meta">
-                          {row.isLegacyWorkspaceOnly
-                            ? "Legacy workspace without a company profile."
-                            : `Org no ${formatOrgNoV1(row.company.organizationNumber)}`}
-                        </p>
+
+        <div className="workspace-list">
+          {companyQuery.isLoading || workspaceQuery.isLoading ? (
+            <div className="workspace-list__loading">
+              <SkeletonV1 height={88} />
+              <SkeletonV1 height={88} />
+              <SkeletonV1 height={88} />
+            </div>
+          ) : filteredCompanies.length === 0 ? (
+            <div className="workspace-empty-state">
+              {seedLocalDemoMutation.isPending && isLocalDevHostV1()
+                ? "Preparing local test company..."
+                : "No companies matched the current search."}
+            </div>
+          ) : (
+            filteredCompanies.map((company) => {
+              const workspace = resolveWorkspaceForCompanyAndFiscalYearV1({
+                companyId: company.id,
+                fiscalYearKey: activeFiscalYear,
+                workspaces: workspaceQuery.data?.workspaces ?? [],
+              });
+              const openExistingWorkspace = () => {
+                if (!workspace) {
+                  return;
+                }
+                openWorkspaceV1({
+                  fiscalYear: workspace.fiscalYearEnd.slice(0, 4),
+                  workspaceId: workspace.id,
+                });
+              };
+
+              return (
+                <div key={company.id} className="workspace-company-card">
+                  {workspace ? (
+                    <button
+                      type="button"
+                      className="workspace-company-card__body-button"
+                      onClick={openExistingWorkspace}
+                    >
+                      <div className="workspace-company-card__title">
+                        {company.legalName}
                       </div>
-                    </th>
-                    <td>
-                      <div className="company-selector-cell-stack">
-                        {row.latest ? (
-                          <StatusPill status={row.latest.status} />
-                        ) : (
-                          <span className="status-pill">No workspace</span>
-                        )}
-                        <p className="company-selector-cell-meta">
-                          {row.latest
-                            ? `Workspace ${row.latest.id.slice(0, 8)}`
-                            : "No workspace yet"}
-                        </p>
+                      <div className="workspace-company-card__meta">
+                        {formatOrganizationNumberV1(company.organizationNumber)}
                       </div>
-                    </td>
-                    <td>
-                      <div className="company-selector-cell-stack">
-                        <p className="company-selector-cell-fiscal">
-                          {row.company.defaultFiscalYearStart} to{" "}
-                          {row.company.defaultFiscalYearEnd}
-                        </p>
-                        <p className="company-selector-cell-meta">
-                          {row.count} workspace{row.count === 1 ? "" : "s"}
-                        </p>
+                      <div className="workspace-company-card__meta">
+                        Default fiscal year:{" "}
+                        {formatFiscalYearLabelV1({
+                          fiscalYearStart: company.defaultFiscalYearStart,
+                          fiscalYearEnd: company.defaultFiscalYearEnd,
+                        })}
                       </div>
-                    </td>
-                    <td className="company-selector-cell-action">
+                    </button>
+                  ) : (
+                    <div className="workspace-company-card__body">
+                      <div className="workspace-company-card__title">
+                        {company.legalName}
+                      </div>
+                      <div className="workspace-company-card__meta">
+                        {formatOrganizationNumberV1(company.organizationNumber)}
+                      </div>
+                      <div className="workspace-company-card__meta">
+                        Default fiscal year:{" "}
+                        {formatFiscalYearLabelV1({
+                          fiscalYearStart: company.defaultFiscalYearStart,
+                          fiscalYearEnd: company.defaultFiscalYearEnd,
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  <div className="workspace-company-card__actions">
+                    {workspace ? (
+                      <>
+                        <StatusPill status={workspace.status} />
+                        <ButtonV1
+                          variant="black"
+                          onClick={openExistingWorkspace}
+                        >
+                          Open company
+                        </ButtonV1>
+                      </>
+                    ) : (
                       <ButtonV1
                         variant="primary"
-                        className="company-selector-continue-button"
-                        onClick={() => handleContinueV1(row)}
-                        disabled={Boolean(launchTargetKey)}
+                        onClick={() => createWorkspaceMutation.mutate(company.id)}
+                        disabled={createWorkspaceMutation.isPending}
                       >
-                        {row.latest
-                          ? "Open company landing"
-                          : "Create initial workspace"}
+                        Create {activeFiscalYear ?? "selected"} workspace
                       </ButtonV1>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+        {createWorkspaceMutation.isError ? (
+          <div className="workspace-inline-error" role="alert">
+            {toUserFacingErrorMessage(createWorkspaceMutation.error)}
+          </div>
+        ) : null}
+        {seedLocalDemoMutation.isError ? (
+          <div className="workspace-inline-error" role="alert">
+            {toUserFacingErrorMessage(seedLocalDemoMutation.error)}
           </div>
         ) : null}
       </CardV1>
-    </section>
+    </div>
   );
 }

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "ai_policy_pack_v1",
+  "moduleId": "tax-adjustments-depreciation-differences-basic",
+  "policyVersion": "tax-adjustments-depreciation-differences-basic.v1",
+  "candidateCategoryCodes": ["885000", "397000", "777000", "782400", "784000"],
+  "batching": {
+    "maxRowsPerBatch": 60,
+    "minRowsPerChunk": 8
+  },
+  "retries": {
+    "backoffMs": 500,
+    "maxAttempts": 2
+  },
+  "timeouts": {
+    "requestTimeoutMs": 45000
+  },
+  "targetField": "INK2S.depreciation_adjustment",
+  "direction": "informational"
+}

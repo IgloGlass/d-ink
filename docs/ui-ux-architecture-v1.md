@@ -28,14 +28,12 @@ Conclusion:
 
 ### 3.1 Entry experience: Company workspace selection
 
-Primary page after auth:
-- Search-first company/workspace selector.
-- Fast filters (status, fiscal year, assigned user later).
-- Clear row cards/table with:
-  - company name and org number,
-  - fiscal year,
-  - current stage/status,
-  - "Continue" action.
+Primary page after auth (`CompanySelectorPageV1`):
+- **Search-First Hero:** High-impact "Find your client company" search bar is the primary focus.
+- **Directory List:** Below the hero, a table of existing companies/workspaces.
+- **Create Flow:** "Create New Company" is a secondary action that reveals a form, keeping the primary interface clean.
+- **Metadata:** Rows show company name, org number, fiscal year, and status.
+- **Action:** "Continue" or "Initialize" buttons to enter the workspace.
 
 Purpose:
 - Users should immediately choose "what company I am working on" with minimal friction.
@@ -72,21 +70,19 @@ Add a dedicated group-level control surface above company-level execution:
 Purpose:
 - Give operators and reviewers an executive view before diving into a single company return.
 
-### 3.3 Core module shell: Tabs + optional left sidebar
+### 3.3 Core module shell: Specialized Workbench Implementation
 
-Inside a core module, use a shared shell:
-- Top: module tabs for fast switching across the 4 core modules.
-- Left sidebar (when needed): submodule navigation within current core module.
-- Main panel: active submodule content.
-- Right utility rail (optional later): audit/version/activity context.
+Inside a core module, the `CoreModuleShellPageV1` orchestrates specialized components:
 
-Tax Adjustments requirement:
-- Left sidebar must support submodules, including:
-  - non-deductible expenses,
-  - representation/entertainment,
-  - depreciation differences,
-  - manual review bucket,
-  - Final Tax Calculation pinned at bottom.
+- **Top:** Module tabs for fast switching across the 4 core modules.
+- **Components:**
+  - `AccountMappingGridV1`: Virtualized grid with inline AI command bar.
+  - `TaxAdjustmentsWorkbenchV1`: Sidebar-driven layout for submodules + pinned tax summary.
+  - `Ink2FormReplicaV1`: Visual form replica for final review.
+- **Left sidebar (Tax Adjustments only):**
+  - Common adjustments (highly visible).
+  - Advanced adjustments (collapsible).
+  - Final Tax Calculation (pinned).
 
 ## 4. Information Architecture (V1)
 

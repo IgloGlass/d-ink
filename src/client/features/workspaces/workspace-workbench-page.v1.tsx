@@ -6,125 +6,23 @@ import { useGlobalAppContextV1 } from "../../app/app-context.v1";
 import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
 import { ButtonV1 } from "../../components/button-v1";
 import { CardV1 } from "../../components/card-v1";
-import { EmptyStateV1 } from "../../components/empty-state-v1";
 import { GuidanceBannerV1 } from "../../components/guidance-banner-v1";
 import { SkeletonV1 } from "../../components/skeleton-v1";
 import {
-  StatusBadgeV1,
-  type StatusToneV1,
-} from "../../components/status-badge-v1";
-import {
-  ApiClientError,
-  toUserFacingErrorMessage,
-} from "../../lib/http/api-client";
-import {
-  getActiveAnnualReportExtractionV1,
-  getActiveInk2FormV1,
   getActiveMappingDecisionsV1,
   getActiveTaxAdjustmentsV1,
+  getActiveTaxSummaryV1,
   getWorkspaceByIdV1,
 } from "../../lib/http/workspace-api";
 import { useI18nV1 } from "../../lib/i18n/use-i18n.v1";
 
-type CoreModuleSlugV1 =
-  | "annual-report-analysis"
-  | "account-mapping"
-  | "tax-adjustments"
-  | "tax-return-ink2";
-
-type ModuleSignalV1 = {
-  artifact: string;
-  status: "in_progress" | "not_started" | "ready";
-  version?: number;
-};
-
-function getModuleStatusBadgeV1(signal: ModuleSignalV1): {
-  label: string;
-  tone: StatusToneV1;
-} {
-  if (signal.status === "ready") {
-    return { label: "Ready", tone: "success" };
-  }
-  if (signal.status === "not_started") {
-    return { label: "Not started", tone: "neutral" };
-  }
-  return { label: "In progress", tone: "warning" };
-}
-
-function getModuleSequenceHintV1(input: {
-  isOutOfOrder: boolean;
-  isRecommended: boolean;
-  signal: ModuleSignalV1;
-}): string {
-  if (input.signal.status === "ready") {
-    return "Completed";
-  }
-  if (input.isRecommended) {
-    return "Next in sequence";
-  }
-  if (input.isOutOfOrder) {
-    return "Available out of sequence";
-  }
-  return "Available";
-}
-
-function getModuleActionHintV1(input: {
-  isOutOfOrder: boolean;
-  isRecommended: boolean;
-  signal: ModuleSignalV1;
-}): string {
-  if (input.signal.status === "ready") {
-    return "Review current output and apply updates if needed.";
-  }
-  if (input.isRecommended) {
-    return "Recommended next module for sequence flow.";
-  }
-  if (input.isOutOfOrder) {
-    return "Opens now. Earlier modules can be completed later.";
-  }
-  return "Open and continue with manual sequencing.";
-}
-
-function getSignalFromQueryV1(
-  query: {
-    data?: { active?: { version: number } };
-    error: unknown;
-    isError: boolean;
-    isSuccess: boolean;
-  },
-  notFoundCodes: string[],
-): ModuleSignalV1 {
-  if (query.isSuccess && query.data?.active?.version) {
-    return {
-      status: "ready",
-      version: query.data.active.version,
-      artifact: `v${query.data.active.version}`,
-    };
-  }
-
-  if (
-    query.isError &&
-    query.error instanceof ApiClientError &&
-    notFoundCodes.includes(query.error.code)
-  ) {
-    return {
-      status: "not_started",
-      artifact: "No active artifact",
-    };
-  }
-
-  return {
-    status: "in_progress",
-    artifact: "Awaiting module run",
-  };
-}
-
 export function WorkspaceWorkbenchPageV1() {
   const navigate = useNavigate();
-  const { workspaceId } = useParams();
   const principal = useRequiredSessionPrincipalV1();
   const { t } = useI18nV1();
+  const { workspaceId } = useParams();
   const { setActiveContext } = useGlobalAppContextV1();
+
   const resolvedWorkspaceId = workspaceId ?? "";
 
   const workspaceQuery = useQuery({
@@ -136,16 +34,7 @@ export function WorkspaceWorkbenchPageV1() {
       }),
     enabled: resolvedWorkspaceId.length > 0,
   });
-  const annualQuery = useQuery({
-    queryKey: ["active-annual-report", principal.tenantId, resolvedWorkspaceId],
-    queryFn: () =>
-      getActiveAnnualReportExtractionV1({
-        tenantId: principal.tenantId,
-        workspaceId: resolvedWorkspaceId,
-      }),
-    enabled: resolvedWorkspaceId.length > 0,
-    retry: false,
-  });
+
   const mappingQuery = useQuery({
     queryKey: ["active-mapping", principal.tenantId, resolvedWorkspaceId],
     queryFn: () =>
@@ -156,7 +45,8 @@ export function WorkspaceWorkbenchPageV1() {
     enabled: resolvedWorkspaceId.length > 0,
     retry: false,
   });
-  const adjustmentsQuery = useQuery({
+
+  const taxAdjustmentsQuery = useQuery({
     queryKey: [
       "active-tax-adjustments",
       principal.tenantId,
@@ -170,10 +60,11 @@ export function WorkspaceWorkbenchPageV1() {
     enabled: resolvedWorkspaceId.length > 0,
     retry: false,
   });
-  const formQuery = useQuery({
-    queryKey: ["active-ink2-form", principal.tenantId, resolvedWorkspaceId],
+
+  const taxSummaryQuery = useQuery({
+    queryKey: ["active-tax-summary", principal.tenantId, resolvedWorkspaceId],
     queryFn: () =>
-      getActiveInk2FormV1({
+      getActiveTaxSummaryV1({
         tenantId: principal.tenantId,
         workspaceId: resolvedWorkspaceId,
       }),
@@ -181,244 +72,150 @@ export function WorkspaceWorkbenchPageV1() {
     retry: false,
   });
 
-  const moduleCards = useMemo<
-    Array<{
-      description: string;
-      key: CoreModuleSlugV1;
-      label: string;
-      order: number;
-      signal: ModuleSignalV1;
-    }>
-  >(
-    () => [
-      {
-        key: "annual-report-analysis",
-        order: 1,
-        label: t("module.annualReport"),
-        description: "Extract and confirm annual-report fields.",
-        signal: getSignalFromQueryV1(annualQuery, ["EXTRACTION_NOT_FOUND"]),
-      },
-      {
-        key: "account-mapping",
-        order: 2,
-        label: t("module.accountMapping"),
-        description: "Review and override account mapping decisions.",
-        signal: getSignalFromQueryV1(mappingQuery, ["MAPPING_NOT_FOUND"]),
-      },
-      {
-        key: "tax-adjustments",
-        order: 3,
-        label: t("module.taxAdjustments"),
-        description: "Apply tax adjustments and see final impact.",
-        signal: getSignalFromQueryV1(adjustmentsQuery, [
-          "ADJUSTMENTS_NOT_FOUND",
-        ]),
-      },
-      {
-        key: "tax-return-ink2",
-        order: 4,
-        label: t("module.taxReturnInk2"),
-        description: "Draft and review the INK2 form output.",
-        signal: getSignalFromQueryV1(formQuery, ["FORM_NOT_FOUND"]),
-      },
-    ],
-    [adjustmentsQuery, annualQuery, formQuery, mappingQuery, t],
-  );
-  const nextRecommendedOrder = useMemo(() => {
-    const firstIncomplete = moduleCards.find(
-      (module) => module.signal.status !== "ready",
-    );
-    return firstIncomplete?.order;
-  }, [moduleCards]);
-  const nextRecommendedModule = useMemo(
-    () =>
-      nextRecommendedOrder
-        ? moduleCards.find((module) => module.order === nextRecommendedOrder)
-        : undefined,
-    [moduleCards, nextRecommendedOrder],
-  );
-  const remainingModuleCount = useMemo(
-    () =>
-      moduleCards.filter((module) => module.signal.status !== "ready").length,
-    [moduleCards],
-  );
-  const completedModuleCount = moduleCards.length - remainingModuleCount;
-
   useEffect(() => {
-    if (!workspaceQuery.data?.workspace) {
-      return;
+    if (workspaceQuery.data) {
+      const { workspace } = workspaceQuery.data;
+      setActiveContext({
+        activeWorkspaceId: workspace.id,
+        activeFiscalYear: `${workspace.fiscalYearStart} to ${workspace.fiscalYearEnd}`,
+      });
     }
-    const workspace = workspaceQuery.data.workspace;
-    setActiveContext({
-      activeWorkspaceId: workspace.id,
-      activeFiscalYear: `${workspace.fiscalYearStart} to ${workspace.fiscalYearEnd}`,
-    });
-  }, [setActiveContext, workspaceQuery.data?.workspace]);
+  }, [workspaceQuery.data, setActiveContext]);
 
-  if (!workspaceId) {
-    return (
-      <EmptyStateV1
-        title={t("module.notFound")}
-        description="Select a workspace from the directory to continue."
-      />
-    );
-  }
+  const stats = useMemo(() => {
+    const mapping = mappingQuery.data?.mapping;
+    const summary = taxSummaryQuery.data?.summary;
+    const mappingDecisions = mapping?.decisions ?? [];
+    return {
+      accountsMapped: mappingDecisions.length,
+      avgConfidence:
+        mappingDecisions.reduce((acc, d) => acc + d.confidence, 0) /
+        (mappingDecisions.length || 1),
+      taxableIncome: summary?.taxableIncome ?? 0,
+      corporateTax: summary?.corporateTax ?? 0,
+    };
+  }, [mappingQuery.data, taxSummaryQuery.data]);
 
-  if (workspaceQuery.isPending) {
-    return (
-      <section className="page-wrap">
-        <CardV1 className="workbench-hero-card">
-          <SkeletonV1 width={180} height={12} />
-          <SkeletonV1 width={340} height={32} />
-          <SkeletonV1 width="72%" height={16} />
-          <div className="workbench-hero-meta">
-            <SkeletonV1 height={60} />
-            <SkeletonV1 height={60} />
-          </div>
-        </CardV1>
-        <CardV1 className="module-card-grid-skeleton">
-          <SkeletonV1 height={188} />
-          <SkeletonV1 height={188} />
-          <SkeletonV1 height={188} />
-          <SkeletonV1 height={188} />
-        </CardV1>
-      </section>
-    );
-  }
+  const workspace = workspaceQuery.data?.workspace;
+
+  const moduleCards = [
+    {
+      id: "annual-report-analysis",
+      step: "01",
+      title: "Annual Report Analysis",
+      description: "Extract financial data and perform forensic tax risk analysis from PDF reports.",
+      status: workspaceQuery.data?.workspace.status === "draft" ? "Pending" : "Complete",
+      path: `/app/workspaces/${resolvedWorkspaceId}/annual-report-analysis`,
+      recommended: true
+    },
+    {
+      id: "account-mapping",
+      step: "02",
+      title: "Account Mapping",
+      description: "Map trial balance accounts to Swedish tax categories with AI assistance.",
+      status: mappingQuery.data ? "Complete" : "Pending",
+      path: `/app/workspaces/${resolvedWorkspaceId}/account-mapping`,
+      recommended: mappingQuery.isError
+    },
+    {
+      id: "tax-adjustments",
+      step: "03",
+      title: "Tax Adjustments",
+      description: "Review and apply specific tax adjustments for representation, depreciation, etc.",
+      status: taxAdjustmentsQuery.data ? "Complete" : "Pending",
+      path: `/app/workspaces/${resolvedWorkspaceId}/tax-adjustments`,
+      recommended: false
+    },
+    {
+      id: "tax-return-ink2",
+      step: "04",
+      title: "Tax Return INK2",
+      description: "Final review of the populated INK2 form and export for submission.",
+      status: "Review",
+      path: `/app/workspaces/${resolvedWorkspaceId}/tax-return-ink2`,
+      recommended: false
+    }
+  ];
 
   return (
-    <section className="page-wrap">
-      <CardV1 className="workbench-hero-card">
-        <p className="micro-label">{t("workbench.title")}</p>
-        <h1 className="page-title">{t("workbench.title")}</h1>
-        <p className="hint-text">{t("workbench.subtitle")}</p>
-        {workspaceQuery.data?.workspace ? (
-          <div className="workbench-hero-meta">
-            <div>
-              <p className="micro-label">Workspace</p>
-              <p className="workbench-hero-value">
-                {workspaceQuery.data.workspace.id.slice(0, 8)}
-              </p>
-            </div>
-            <div>
-              <p className="micro-label">Fiscal year</p>
-              <p className="workbench-hero-value">
-                {workspaceQuery.data.workspace.fiscalYearStart} to{" "}
-                {workspaceQuery.data.workspace.fiscalYearEnd}
-              </p>
-            </div>
+    <div className="space-y-10 py-6 animate-fade-in">
+      {/* Workspace Header */}
+      <section className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b border-zinc-200 pb-8">
+        <div className="space-y-1">
+          <span className="micro-label text-[#86BC25]">Workbench Overview</span>
+          <h1 className="text-3xl font-extrabold text-black">
+            {workspace?.id ? workspace.id.slice(0, 12).toUpperCase() : "Loading..."}
+          </h1>
+          <p className="text-zinc-500 text-sm font-medium">
+            Fiscal Period: {workspace?.fiscalYearStart ?? "Loading"} – {workspace?.fiscalYearEnd ?? "Loading"}
+          </p>
+        </div>
+        <div className="flex gap-3">
+           <ButtonV1 variant="black" className="px-8 h-10 uppercase text-xs tracking-widest">
+              Export to Silverfin
+           </ButtonV1>
+        </div>
+      </section>
+
+      {/* Stats Dashboard */}
+      <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-white p-6 border-t-4 border-black shadow-sm">
+            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block mb-1">Accounts Mapped</span>
+            <div className="text-3xl font-extrabold text-black">{stats.accountsMapped}</div>
           </div>
-        ) : null}
-      </CardV1>
+          <div className="bg-white p-6 border-t-4 border-[#86BC25] shadow-sm">
+            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block mb-1">AI Confidence</span>
+            <div className="text-3xl font-extrabold text-black">{(stats.avgConfidence * 100).toFixed(0)}%</div>
+          </div>
+          <div className="bg-white p-6 border-t-4 border-zinc-300 shadow-sm">
+            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block mb-1">Taxable Income</span>
+            <div className="text-2xl font-mono font-bold text-black">{new Intl.NumberFormat('sv-SE').format(stats.taxableIncome)}</div>
+          </div>
+          <div className="bg-white p-6 border-t-4 border-zinc-300 shadow-sm">
+            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block mb-1">Corporate Tax</span>
+            <div className="text-2xl font-mono font-bold text-black">{new Intl.NumberFormat('sv-SE').format(stats.corporateTax)}</div>
+          </div>
+      </section>
 
-      <GuidanceBannerV1
-        tone={nextRecommendedModule ? "active" : "neutral"}
-        title={
-          nextRecommendedModule ? "Suggested next step" : "Sequence guidance"
-        }
-      >
-        {nextRecommendedModule ? (
-          <>
-            <span className="guidance-inline-strong">
-              {nextRecommendedModule.order}. {nextRecommendedModule.label}
-            </span>{" "}
-            is recommended next. Manual access remains available for every
-            module at all times.
-          </>
-        ) : (
-          t("workbench.sequenceGuidance")
-        )}
-      </GuidanceBannerV1>
-
-      {workspaceQuery.isError ? (
-        <EmptyStateV1
-          title="Workspace data unavailable"
-          description={toUserFacingErrorMessage(workspaceQuery.error)}
-          tone="error"
-          role="alert"
-          action={
-            <ButtonV1 onClick={() => workspaceQuery.refetch()}>Retry</ButtonV1>
-          }
-        />
-      ) : null}
-
-      <div className="module-card-grid">
-        {moduleCards.map((module) => {
-          const moduleStatus = getModuleStatusBadgeV1(module.signal);
-          const isRecommended = module.order === nextRecommendedOrder;
-          const isOutOfOrder =
-            nextRecommendedOrder !== undefined &&
-            module.order > nextRecommendedOrder;
-          const moduleSequenceHint = getModuleSequenceHintV1({
-            isOutOfOrder,
-            isRecommended,
-            signal: module.signal,
-          });
-          const moduleActionHint = getModuleActionHintV1({
-            isOutOfOrder,
-            isRecommended,
-            signal: module.signal,
-          });
-          return (
-            <article
-              key={module.key}
-              className="module-card"
-              data-recommended={isRecommended ? "true" : "false"}
-              data-out-of-order={isOutOfOrder ? "true" : "false"}
-            >
-              <p className="module-card-step-label">
-                Step {module.order} of {moduleCards.length}
+      {/* Module Grid */}
+      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {moduleCards.map((module) => (
+          <CardV1 
+            key={module.id} 
+            className={`flex flex-col h-full group hover:shadow-xl transition-all ${module.recommended ? 'card-v1--brand' : ''}`}
+          >
+            <div className="p-6 flex-grow space-y-4">
+              <div className="flex justify-between items-start">
+                <span className={`text-[10px] font-extrabold uppercase tracking-widest ${module.recommended ? 'text-[#86BC25]' : 'text-zinc-400'}`}>
+                  Step {module.step}
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-500 text-[9px] font-bold uppercase tracking-tighter">
+                  {module.status}
+                </span>
+              </div>
+              <h3 className="text-lg font-bold text-black group-hover:text-[#86BC25] transition-colors">
+                {module.title}
+              </h3>
+              <p className="text-xs text-zinc-500 leading-relaxed">
+                {module.description}
               </p>
-              <div className="module-card-head">
-                <div className="module-sequence">
-                  <span className="module-order">{module.order}</span>
-                  <p className="module-sequence-label">
-                    {moduleSequenceHint}
-                  </p>
-                </div>
-                <StatusBadgeV1
-                  label={moduleStatus.label}
-                  tone={moduleStatus.tone}
-                />
-              </div>
-              <div className="module-card-body">
-                <h2 className="section-title">{module.label}</h2>
-                <p className="hint-text">{module.description}</p>
-              </div>
-              <div className="module-card-meta">
-                <p className="micro-label">Active artifact</p>
-                <p className="module-card-meta-value">
-                  {module.signal.artifact}
-                </p>
-              </div>
-              {isOutOfOrder ? (
-                <GuidanceBannerV1 tone="advisory">
-                  Sequence suggests completing earlier modules first, but this
-                  module stays available now.
-                </GuidanceBannerV1>
-              ) : null}
-              <div className="module-card-actions">
-                <ButtonV1
-                  variant={isRecommended ? "primary" : "secondary"}
-                  onClick={() =>
-                    navigate(
-                      `/app/workspaces/${resolvedWorkspaceId}/${module.key}`,
-                    )
-                  }
-                >
-                  {t("module.open")}
-                </ButtonV1>
-                <p className="module-card-action-hint">{moduleActionHint}</p>
-              </div>
-            </article>
-          );
-        })}
-      </div>
+            </div>
+            <div className="p-6 pt-0 mt-auto">
+              <ButtonV1 
+                variant={module.recommended ? "black" : "secondary"}
+                className="w-full h-10 text-[10px] uppercase tracking-widest"
+                onClick={() => navigate(module.path)}
+              >
+                Enter Module
+              </ButtonV1>
+            </div>
+          </CardV1>
+        ))}
+      </section>
 
-      <GuidanceBannerV1 tone="neutral" title="Progress overview">
-        {completedModuleCount} of {moduleCards.length} modules have active
-        artifacts. Remaining modules: {remainingModuleCount}.
+      <GuidanceBannerV1 tone="neutral" title="Proactive Guidance">
+        The system recommends following the numbered sequence (01-04) to ensure AI context is fully populated for final tax calculations.
       </GuidanceBannerV1>
-    </section>
+    </div>
   );
 }

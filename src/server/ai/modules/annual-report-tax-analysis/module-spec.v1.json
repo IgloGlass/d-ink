@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "annual-report-tax-analysis",
+  "moduleVersion": "v1",
+  "promptVersion": "annual-report-tax-analysis.prompts.v1",
+  "runtime": {
+    "provider": "gemini",
+    "modelTier": "thinking"
+  },
+  "policy": {
+    "basePolicyVersion": "annual-report-tax-analysis.v1",
+    "activePatchVersions": []
+  }
+}

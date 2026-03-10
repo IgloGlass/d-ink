@@ -21,9 +21,16 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    optimizeDeps: {
+      // Keep dependency scanning pinned to the real app entry.
+      // Reference/archive folders can contain incomplete prototypes that should
+      // not block local testing of the current product.
+      entries: ["index.html"],
+    },
     server: {
       host: "127.0.0.1",
       port: 5173,
+      open: true,
       proxy: {
         "/v1": {
           target: apiProxyTarget,

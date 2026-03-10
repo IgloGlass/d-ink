@@ -1,0 +1,26 @@
+
+D.ink local tester mode
+-----------------------
+1. This script starts the web app and local API.
+2. Your browser opens automatically when the web app is ready.
+3. Keep this window open while testing.
+4. Code changes should appear automatically in the open browser tab.
+5. Gemini AI is enabled for local testing.
+
+Installing dependencies...
+Dependencies already up to date; skipping install.
+
+Starting local app...
+Web: http://localhost:5173
+API: http://127.0.0.1:8787
+Hot reload: enabled
+
+Preparing local database...
+
+ ⛅️ wrangler 4.68.0 (update available 4.71.0)
+─────────────────────────────────────────────
+Resource location: local 
+
+Use --remote if you want to access the remote instance.
+
+✅ No migrations to apply!

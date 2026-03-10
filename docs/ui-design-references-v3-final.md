@@ -5,6 +5,14 @@ Date: 2026-03-03
 Theme: "Next-Gen Enterprise" - Premium, Authoritative, AI-Powered  
 Purpose: Provide exact design references, atmospheric goals, interactive behaviors, and component constraints for the frontend build.
 
+## Implementation Map (V1 Built)
+This reference pack is implemented in the following components:
+- **Global Search:** `LauncherV1` (Ctrl+J / Cmd+K)
+- **Virtualized Grid:** `AccountMappingGridV1`
+- **Adjustments Workbench:** `TaxAdjustmentsWorkbenchV1`
+- **Form Replica:** `Ink2FormReplicaV1`
+- **Module Cards:** `WorkspaceWorkbenchPageV1`
+
 ## 0. Governance and Relationship to V4
 
 - This V3 pack is an active companion reference for interaction and atmospheric direction.

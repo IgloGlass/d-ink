@@ -12,6 +12,8 @@ export type GlobalAppContextStateV1 = {
   activeWorkspaceId: string | null;
 };
 
+const ACTIVE_FISCAL_YEAR_STORAGE_KEY_V1 = "dink.activeFiscalYear";
+
 const emptyGlobalAppContextStateV1: GlobalAppContextStateV1 = {
   activeWorkspaceId: null,
   activeFiscalYear: null,
@@ -30,6 +32,36 @@ function normalizeWorkspaceIdV1(
 ): string | null {
   const normalizedWorkspaceId = workspaceId?.trim() ?? "";
   return normalizedWorkspaceId.length > 0 ? normalizedWorkspaceId : null;
+}
+
+function normalizeFiscalYearV1(
+  fiscalYear: string | null | undefined,
+): string | null {
+  const normalizedFiscalYear = fiscalYear?.trim() ?? "";
+  return normalizedFiscalYear.length > 0 ? normalizedFiscalYear : null;
+}
+
+function readPersistedFiscalYearV1(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return normalizeFiscalYearV1(
+    window.localStorage.getItem(ACTIVE_FISCAL_YEAR_STORAGE_KEY_V1),
+  );
+}
+
+function persistFiscalYearV1(fiscalYear: string | null): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (fiscalYear === null) {
+    window.localStorage.removeItem(ACTIVE_FISCAL_YEAR_STORAGE_KEY_V1);
+    return;
+  }
+
+  window.localStorage.setItem(ACTIVE_FISCAL_YEAR_STORAGE_KEY_V1, fiscalYear);
 }
 
 /**
@@ -59,6 +91,7 @@ export function GlobalAppContextProviderV1({
 }) {
   const [state, setState] = useState<GlobalAppContextStateV1>({
     ...emptyGlobalAppContextStateV1,
+    activeFiscalYear: readPersistedFiscalYearV1(),
   });
 
   const setActiveContext = useCallback((input: GlobalAppContextUpdateV1) => {
@@ -76,12 +109,9 @@ export function GlobalAppContextProviderV1({
         ? normalizeWorkspaceIdV1(input.activeWorkspaceId)
         : current.activeWorkspaceId;
 
-      // Workspace changes without an explicit fiscal year should clear stale badges.
       const nextFiscalYear = hasFiscalYear
-        ? (input.activeFiscalYear ?? null)
-        : hasWorkspaceId && nextWorkspaceId !== current.activeWorkspaceId
-          ? null
-          : current.activeFiscalYear;
+        ? normalizeFiscalYearV1(input.activeFiscalYear)
+        : current.activeFiscalYear;
 
       const next: GlobalAppContextStateV1 = {
         activeWorkspaceId: nextWorkspaceId,
@@ -93,6 +123,10 @@ export function GlobalAppContextProviderV1({
         next.activeFiscalYear === current.activeFiscalYear
       ) {
         return current;
+      }
+
+      if (next.activeFiscalYear !== current.activeFiscalYear) {
+        persistFiscalYearV1(next.activeFiscalYear);
       }
 
       return next;

@@ -1,15 +1,12 @@
 import { type ButtonHTMLAttributes, type ReactNode, forwardRef } from "react";
 
-type ButtonVariantV1 = "primary" | "secondary" | "icon";
+type ButtonVariantV1 = "primary" | "secondary" | "icon" | "black";
 type ButtonSizeV1 = "md" | "sm";
-type ButtonToneV1 = "default" | "shell";
 
 type ButtonV1Props = ButtonHTMLAttributes<HTMLButtonElement> & {
   children: ReactNode;
   variant?: ButtonVariantV1;
   size?: ButtonSizeV1;
-  tone?: ButtonToneV1;
-  pressed?: boolean;
   busy?: boolean;
 };
 
@@ -19,8 +16,6 @@ export const ButtonV1 = forwardRef<HTMLButtonElement, ButtonV1Props>(
       children,
       variant = "secondary",
       size = "md",
-      tone = "default",
-      pressed,
       busy = false,
       className,
       type = "button",
@@ -29,13 +24,10 @@ export const ButtonV1 = forwardRef<HTMLButtonElement, ButtonV1Props>(
     },
     ref,
   ) {
-    // Shell controls stay on the compact control rhythm used in the fixed header.
-    const resolvedSize = tone === "shell" ? "sm" : size;
     const classes = [
       "btn-v1",
       `btn-v1--${variant}`,
-      `btn-v1--${resolvedSize}`,
-      `btn-v1--tone-${tone}`,
+      size === "sm" ? "btn-v1--sm" : "",
     ];
     if (className) {
       classes.push(className);
@@ -48,14 +40,7 @@ export const ButtonV1 = forwardRef<HTMLButtonElement, ButtonV1Props>(
       <button
         ref={ref}
         type={type}
-        className={classes.join(" ")}
-        data-size={resolvedSize}
-        data-variant={variant}
-        data-tone={tone}
-        data-pressed={pressed ? "true" : "false"}
-        data-busy={busy ? "true" : "false"}
-        aria-pressed={pressed}
-        aria-busy={busy}
+        className={classes.join(" ").trim()}
         disabled={disabled || busy}
         {...rest}
       >

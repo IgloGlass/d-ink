@@ -25,6 +25,7 @@ import {
   parseRunInk2FormResultV1,
 } from "../../shared/contracts/ink2-form.v1";
 import {
+  type TaxAdjustmentDecisionSetPayloadV1,
   ApplyTaxAdjustmentOverridesRequestV1Schema,
   type ApplyTaxAdjustmentOverridesResultV1,
   type GetActiveTaxAdjustmentsResultV1,
@@ -41,13 +42,42 @@ import {
   parseGetActiveTaxSummaryResultV1,
   parseRunTaxSummaryResultV1,
 } from "../../shared/contracts/tax-summary.v1";
-import { generateTaxAdjustmentsV1 } from "../adjustments/tax-adjustments-engine.v1";
+import {
+  type GenerateTaxAdjustmentsInputV1,
+  generateTaxAdjustmentsV1,
+} from "../adjustments/tax-adjustments-engine.v1";
+import { projectAnnualReportTaxContextV1 } from "../ai/context/annual-report-tax-context.v1";
 import { calculateTaxSummaryV1 } from "../calculation/tax-summary-calculator.v1";
 import { generatePdfExportPackageV1 } from "../exports/pdf-export.v1";
 import { populateInk2FormDraftV1 } from "../forms/ink2-form-populator.v1";
 
 export interface TaxCoreWorkflowDepsV1 {
   auditRepository: AuditRepositoryV1;
+  generateTaxAdjustments?: (input: {
+    tenantId: string;
+    workspaceId: string;
+    annualReportExtraction: GenerateTaxAdjustmentsInputV1["annualReportExtraction"];
+    annualReportTaxContext?: import("../../shared/contracts/annual-report-tax-context.v1").AnnualReportDownstreamTaxContextV1;
+    annualReportExtractionArtifactId: string;
+    mapping: GenerateTaxAdjustmentsInputV1["mapping"];
+    mappingArtifactId: string;
+    policyVersion: string;
+    trialBalance: GenerateTaxAdjustmentsInputV1["trialBalance"];
+  }) => Promise<
+    | {
+        ok: true;
+        adjustments: TaxAdjustmentDecisionSetPayloadV1;
+      }
+    | {
+        ok: false;
+        error: {
+          code: "INPUT_INVALID";
+          context: Record<string, unknown>;
+          message: string;
+          user_message: string;
+        };
+      }
+  >;
   tbArtifactRepository: TbPipelineArtifactRepositoryV1;
   workspaceArtifactRepository: WorkspaceArtifactRepositoryV1;
   workspaceRepository: WorkspaceRepositoryV1;
@@ -245,12 +275,12 @@ export async function runTaxAdjustmentsV1(
         buildTaxAdjustmentFailureV1({
           code: "EXTRACTION_NOT_CONFIRMED",
           message:
-            "Confirmed annual report extraction is required before adjustments.",
+            "A usable annual report extraction is required before adjustments.",
           userMessage:
-            "Confirm annual report extraction before running tax adjustments.",
+            "Upload a complete annual report before running tax adjustments.",
           context: {
-            reason: "annual_report_confirmation_required",
-            requiredStage: "annual_report.extraction_confirmed",
+            reason: "annual_report_extraction_required",
+            requiredStage: "annual_report.extraction_ready",
           },
         }),
       );
@@ -281,14 +311,38 @@ export async function runTaxAdjustmentsV1(
       );
     }
 
-    const generated = generateTaxAdjustmentsV1({
-      policyVersion: request.policyVersion,
-      mappingArtifactId: activeMapping.id,
-      annualReportExtractionArtifactId: extraction.id,
-      annualReportExtraction: extraction.payload,
-      mapping: activeMapping.payload,
-      trialBalance: activeTrialBalance.payload,
-    });
+    const generated = deps.generateTaxAdjustments
+      ? await (async (generateTaxAdjustments) => {
+          const taxAnalysis =
+            await deps.workspaceArtifactRepository.getActiveAnnualReportTaxAnalysis(
+              {
+                tenantId: request.tenantId,
+                workspaceId: request.workspaceId,
+              },
+            );
+          return generateTaxAdjustments({
+            tenantId: request.tenantId,
+            workspaceId: request.workspaceId,
+            policyVersion: request.policyVersion,
+            mappingArtifactId: activeMapping.id,
+            annualReportExtractionArtifactId: extraction.id,
+            annualReportExtraction: extraction.payload,
+            annualReportTaxContext: projectAnnualReportTaxContextV1({
+              extraction: extraction.payload,
+              taxAnalysis: taxAnalysis?.payload,
+            }),
+            mapping: activeMapping.payload,
+            trialBalance: activeTrialBalance.payload,
+          });
+        })(deps.generateTaxAdjustments)
+      : generateTaxAdjustmentsV1({
+          policyVersion: request.policyVersion,
+          mappingArtifactId: activeMapping.id,
+          annualReportExtractionArtifactId: extraction.id,
+          annualReportExtraction: extraction.payload,
+          mapping: activeMapping.payload,
+          trialBalance: activeTrialBalance.payload,
+        });
     if (!generated.ok) {
       return parseRunTaxAdjustmentResultV1(
         buildTaxAdjustmentFailureV1({
@@ -665,12 +719,12 @@ export async function runTaxSummaryV1(
         buildTaxSummaryFailureV1({
           code: "EXTRACTION_NOT_CONFIRMED",
           message:
-            "Confirmed annual report extraction is required before tax summary.",
+            "A usable annual report extraction is required before tax summary.",
           userMessage:
-            "Confirm annual report extraction before running tax summary.",
+            "Upload a complete annual report before running tax summary.",
           context: {
-            reason: "annual_report_confirmation_required",
-            requiredStage: "annual_report.extraction_confirmed",
+            reason: "annual_report_extraction_required",
+            requiredStage: "annual_report.extraction_ready",
           },
         }),
       );
@@ -875,12 +929,12 @@ export async function runInk2FormV1(
         buildInk2FailureV1({
           code: "EXTRACTION_NOT_CONFIRMED",
           message:
-            "Confirmed annual report extraction is required before INK2 draft.",
+            "A usable annual report extraction is required before INK2 draft.",
           userMessage:
-            "Confirm annual report extraction before generating INK2 draft.",
+            "Upload a complete annual report before generating the INK2 draft.",
           context: {
-            reason: "annual_report_confirmation_required",
-            requiredStage: "annual_report.extraction_confirmed",
+            reason: "annual_report_extraction_required",
+            requiredStage: "annual_report.extraction_ready",
           },
         }),
       );

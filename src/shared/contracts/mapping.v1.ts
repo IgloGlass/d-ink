@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { AiRunMetadataV1Schema } from "./ai-run.v1";
 import { ReconciliationResultPayloadV1Schema } from "./reconciliation.v1";
 import {
   TrialBalanceNormalizedV1Schema,
@@ -536,6 +537,7 @@ export type MappingDecisionStatusV1 = z.infer<
  */
 export const MappingDecisionSourceV1Schema = z.enum([
   "deterministic",
+  "ai",
   "manual",
 ]);
 
@@ -653,6 +655,7 @@ export const MappingDecisionSetPayloadV1Schema = z
   .object({
     schemaVersion: z.literal("mapping_decisions_v1"),
     policyVersion: z.string().trim().min(1),
+    aiRun: AiRunMetadataV1Schema.optional(),
     summary: MappingDecisionSummaryV1Schema,
     decisions: z.array(MappingDecisionV1Schema),
   })

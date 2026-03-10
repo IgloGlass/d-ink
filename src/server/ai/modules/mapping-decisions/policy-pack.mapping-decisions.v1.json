@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "ai_policy_pack_v1",
+  "moduleId": "mapping-decisions",
+  "policyVersion": "mapping-decisions.v1",
+  "batching": {
+    "maxRowsPerBatch": 75,
+    "minRowsPerChunk": 10
+  },
+  "retries": {
+    "backoffMs": 500,
+    "maxAttempts": 2
+  },
+  "timeouts": {
+    "requestTimeoutMs": 45000
+  },
+  "reviewThresholds": {
+    "fastConfidenceBelow": 0.82
+  },
+  "escalation": {
+    "modelTier": "thinking",
+    "taxSensitiveCategoryCodes": [
+      "607100",
+      "607200",
+      "655000",
+      "690000",
+      "698100",
+      "698200",
+      "699300",
+      "740000",
+      "753000",
+      "762200",
+      "762300",
+      "777000",
+      "782400",
+      "784000",
+      "881000",
+      "881100",
+      "881900",
+      "882000",
+      "883000",
+      "885000"
+    ]
+  }
+}

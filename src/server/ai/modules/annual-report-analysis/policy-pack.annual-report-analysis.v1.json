@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "ai_policy_pack_v1",
+  "moduleId": "annual-report-analysis",
+  "policyVersion": "annual-report-analysis.v1",
+  "reviewThresholds": {
+    "fieldConfidenceBelow": 0.85,
+    "warnOnMissingFields": true
+  },
+  "taxSignalCatalog": [
+    {
+      "code": "group_contribution_reference",
+      "label": "Possible group contribution disclosure"
+    },
+    {
+      "code": "representation_or_gifts_reference",
+      "label": "Possible representation or gifts disclosure"
+    },
+    {
+      "code": "depreciation_difference_reference",
+      "label": "Possible tax vs book depreciation disclosure"
+    }
+  ]
+}

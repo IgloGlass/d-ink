@@ -1,10 +1,13 @@
+import type { CompanySummaryV1 } from "../http/company-api";
 import type { WorkspaceStatusV1, WorkspaceV1 } from "../http/workspace-api";
 
 export type GroupCompanySummaryV1 = {
   companyId: string;
+  companyName: string;
   fiscalYearEnd: string;
   fiscalYearStart: string;
   latestStatus: WorkspaceStatusV1;
+  organizationNumber: string;
   workspaceId: string;
 };
 
@@ -24,20 +27,29 @@ export type GroupControlPanelDataV1 = {
 
 export interface GroupControlPanelAdapterV1 {
   getGroupOverview: (input: {
+    companies: CompanySummaryV1[];
     groupId: string;
     workspaces: WorkspaceV1[];
   }) => GroupControlPanelDataV1;
 }
 
 export const groupControlPanelAdapterV1: GroupControlPanelAdapterV1 = {
-  getGroupOverview: ({ groupId, workspaces }) => {
-    const companies = workspaces.map((workspace) => ({
-      companyId: workspace.companyId,
-      fiscalYearStart: workspace.fiscalYearStart,
-      fiscalYearEnd: workspace.fiscalYearEnd,
-      latestStatus: workspace.status,
-      workspaceId: workspace.id,
-    }));
+  getGroupOverview: ({ companies, groupId, workspaces }) => {
+    const companyRows = workspaces.map((workspace) => {
+      const company =
+        companies.find((candidate) => candidate.id === workspace.companyId) ?? null;
+
+      return {
+        companyId: workspace.companyId,
+        companyName:
+          company?.legalName ?? `Company ${workspace.companyId.slice(0, 8)}`,
+        organizationNumber: company?.organizationNumber ?? "Unknown",
+        fiscalYearStart: workspace.fiscalYearStart,
+        fiscalYearEnd: workspace.fiscalYearEnd,
+        latestStatus: workspace.status,
+        workspaceId: workspace.id,
+      };
+    });
 
     return {
       groupId,
@@ -46,28 +58,28 @@ export const groupControlPanelAdapterV1: GroupControlPanelAdapterV1 = {
         organizationNumber: "556000-0000",
         registeredAddress: "Sveavagen 10, 111 57 Stockholm",
       },
-      companies,
+      companies: companyRows,
       stageSummary: [
         {
           label: "Draft",
-          value: companies.filter((company) => company.latestStatus === "draft")
+          value: companyRows.filter((company) => company.latestStatus === "draft")
             .length,
         },
         {
           label: "In review",
-          value: companies.filter(
+          value: companyRows.filter(
             (company) => company.latestStatus === "in_review",
           ).length,
         },
         {
           label: "Approved",
-          value: companies.filter(
+          value: companyRows.filter(
             (company) => company.latestStatus === "approved_for_export",
           ).length,
         },
         {
           label: "Filed",
-          value: companies.filter((company) => company.latestStatus === "filed")
+          value: companyRows.filter((company) => company.latestStatus === "filed")
             .length,
         },
       ],

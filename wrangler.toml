@@ -7,3 +7,17 @@ binding = "DB"
 database_name = "d-ink-v1"
 database_id = "00000000-0000-4000-8000-000000000001"
 migrations_dir = "src/db/migrations"
+
+[[r2_buckets]]
+binding = "ANNUAL_REPORT_FILES"
+bucket_name = "d-ink-annual-report-files"
+preview_bucket_name = "d-ink-annual-report-files-preview"
+
+[[queues.producers]]
+binding = "ANNUAL_REPORT_QUEUE"
+queue = "d-ink-annual-report-processing"
+
+[[queues.consumers]]
+queue = "d-ink-annual-report-processing"
+max_batch_size = 1
+max_batch_timeout = 1

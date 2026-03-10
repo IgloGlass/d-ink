@@ -1,0 +1,36 @@
+
+D.ink local tester mode
+-----------------------
+1. This script starts the web app and local API.
+2. Your browser opens automatically when the web app is ready.
+3. Keep this window open while testing.
+4. Code changes should appear automatically in the open browser tab.
+5. Gemini AI is enabled for local testing.
+
+Installing dependencies...
+Lockfile is up to date, resolution step is skipped
+Already up to date
+
+╭ Warning ─────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│   Ignored build scripts: protobufjs@7.5.4.                                   │
+│   Run "pnpm approve-builds" to pick which dependencies should be allowed     │
+│   to run scripts.                                                            │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Done in 927ms using pnpm v10.30.3
+
+Starting local app...
+Web: http://localhost:5173
+API: http://127.0.0.1:8787
+Hot reload: enabled
+
+Preparing local database...
+
+ ⛅️ wrangler 4.68.0 (update available 4.71.0)
+─────────────────────────────────────────────
+Resource location: local 
+
+Use --remote if you want to access the remote instance.
+
+✅ No migrations to apply!

@@ -2,14 +2,18 @@ import {
   type AnnualReportExtractionPayloadV1,
   parseAnnualReportExtractionPayloadV1,
 } from "../../shared/contracts/annual-report-extraction.v1";
+import type { AnnualReportDownstreamTaxContextV1 } from "../../shared/contracts/annual-report-tax-context.v1";
 import {
   type MappingDecisionSetPayloadV1,
   MappingDecisionSetPayloadV1Schema,
 } from "../../shared/contracts/mapping.v1";
 import {
   type TaxAdjustmentDecisionSetPayloadV1,
+  type TaxAdjustmentDecisionV1,
   parseTaxAdjustmentDecisionSetPayloadV1,
 } from "../../shared/contracts/tax-adjustments.v1";
+import type { TaxAdjustmentAiProposalDecisionV1 } from "../../shared/contracts/tax-adjustment-ai.v1";
+import type { AiRunMetadataV1 } from "../../shared/contracts/ai-run.v1";
 import {
   type TrialBalanceNormalizedV1,
   parseTrialBalanceNormalizedV1,
@@ -17,6 +21,7 @@ import {
 
 export type GenerateTaxAdjustmentsInputV1 = {
   annualReportExtraction: AnnualReportExtractionPayloadV1;
+  annualReportTaxContext?: AnnualReportDownstreamTaxContextV1;
   annualReportExtractionArtifactId: string;
   mapping: MappingDecisionSetPayloadV1;
   mappingArtifactId: string;
@@ -86,6 +91,77 @@ function buildManualReviewDecisionV1(input: {
         type: "mapping_decision",
         reference: input.decisionId,
         snippet: `${input.sourceAccountNumber} -> ${input.decisionCategoryCode}`,
+      },
+    ],
+  };
+}
+
+function buildDecisionFromAiProposalV1(input: {
+  proposal: TaxAdjustmentAiProposalDecisionV1;
+  sourceAmount: number;
+}): TaxAdjustmentDecisionV1 {
+  if (input.proposal.module === "representation_entertainment") {
+    return {
+      id: input.proposal.decisionId,
+      module: input.proposal.module,
+      amount: roundToMinorUnitV1(
+        toPositiveAdjustmentAmountV1(input.sourceAmount) * 0.1,
+      ),
+      direction: input.proposal.direction,
+      targetField: input.proposal.targetField,
+      status: input.proposal.reviewFlag ? "manual_review_required" : "proposed",
+      confidence: input.proposal.confidence,
+      reviewFlag: input.proposal.reviewFlag,
+      policyRuleReference: input.proposal.policyRuleReference,
+      rationale: input.proposal.rationale,
+      evidence: [
+        {
+          type: "mapping_decision",
+          reference: input.proposal.sourceMappingDecisionId,
+          snippet: "AI proposal converted to deterministic representation adjustment.",
+        },
+      ],
+    };
+  }
+
+  if (input.proposal.module === "depreciation_differences_basic") {
+    return {
+      id: input.proposal.decisionId,
+      module: input.proposal.module,
+      amount: 0,
+      direction: input.proposal.direction,
+      targetField: input.proposal.targetField,
+      status: "manual_review_required",
+      confidence: input.proposal.confidence,
+      reviewFlag: true,
+      policyRuleReference: input.proposal.policyRuleReference,
+      rationale: input.proposal.rationale,
+      evidence: [
+        {
+          type: "mapping_decision",
+          reference: input.proposal.sourceMappingDecisionId,
+          snippet: "AI proposal routed to deterministic depreciation review bucket.",
+        },
+      ],
+    };
+  }
+
+  return {
+    id: input.proposal.decisionId,
+    module: input.proposal.module,
+    amount: toPositiveAdjustmentAmountV1(input.sourceAmount),
+    direction: input.proposal.direction,
+    targetField: input.proposal.targetField,
+    status: input.proposal.reviewFlag ? "manual_review_required" : "proposed",
+    confidence: input.proposal.confidence,
+    reviewFlag: input.proposal.reviewFlag,
+    policyRuleReference: input.proposal.policyRuleReference,
+    rationale: input.proposal.rationale,
+    evidence: [
+      {
+        type: "mapping_decision",
+        reference: input.proposal.sourceMappingDecisionId,
+        snippet: "AI proposal converted to deterministic amount from trial balance.",
       },
     ],
   };
@@ -163,9 +239,9 @@ export function generateTaxAdjustmentsV1(
       error: {
         code: "INPUT_INVALID",
         message:
-          "Annual report extraction must be confirmed before adjustments.",
+          "A usable annual report extraction is required before adjustments.",
         user_message:
-          "Confirm annual report extraction before running adjustments.",
+          "Upload a complete annual report before running adjustments.",
         context: {},
       },
     };
@@ -319,6 +395,104 @@ export function generateTaxAdjustmentsV1(
           message:
             error instanceof Error ? error.message : "Unknown parse failure.",
         },
+      },
+    };
+  }
+}
+
+export function generateTaxAdjustmentsFromAiProposalsV1(input: {
+  aiRuns: AiRunMetadataV1[];
+  annualReportExtraction: AnnualReportExtractionPayloadV1;
+  annualReportExtractionArtifactId: string;
+  mapping: MappingDecisionSetPayloadV1;
+  mappingArtifactId: string;
+  policyVersion: string;
+  proposals: TaxAdjustmentAiProposalDecisionV1[];
+  trialBalance: TrialBalanceNormalizedV1;
+}): GenerateTaxAdjustmentsResultV1 {
+  const base = generateTaxAdjustmentsV1({
+    annualReportExtraction: input.annualReportExtraction,
+    annualReportExtractionArtifactId: input.annualReportExtractionArtifactId,
+    mapping: input.mapping,
+    mappingArtifactId: input.mappingArtifactId,
+    policyVersion: input.policyVersion,
+    trialBalance: input.trialBalance,
+  });
+  if (!base.ok) {
+    return base;
+  }
+
+  const closingBalanceBySourceAccount = new Map<string, number>();
+  for (const row of input.trialBalance.rows) {
+    closingBalanceBySourceAccount.set(
+      row.sourceAccountNumber,
+      (closingBalanceBySourceAccount.get(row.sourceAccountNumber) ?? 0) +
+        row.closingBalance,
+    );
+  }
+
+  const nextDecisions = [
+    ...base.adjustments.decisions.filter(
+      (decision) => decision.module === "manual_review_bucket",
+    ),
+    ...input.proposals.map((proposal) =>
+      buildDecisionFromAiProposalV1({
+        proposal,
+        sourceAmount:
+          closingBalanceBySourceAccount.get(
+            input.mapping.decisions.find(
+              (decision) => decision.id === proposal.sourceMappingDecisionId,
+            )?.sourceAccountNumber ?? "",
+          ) ?? 0,
+      }),
+    ),
+  ];
+
+  const totalPositiveAdjustments = nextDecisions
+    .filter((decision) => decision.direction === "increase_taxable_income")
+    .reduce((sum, decision) => sum + decision.amount, 0);
+  const totalNegativeAdjustments = nextDecisions
+    .filter((decision) => decision.direction === "decrease_taxable_income")
+    .reduce((sum, decision) => sum + Math.abs(decision.amount), 0);
+  const totalNetAdjustments = roundToMinorUnitV1(
+    totalPositiveAdjustments - totalNegativeAdjustments,
+  );
+
+  try {
+    return {
+      ok: true,
+      adjustments: parseTaxAdjustmentDecisionSetPayloadV1({
+        schemaVersion: "tax_adjustments_v1",
+        policyVersion: input.policyVersion,
+        aiRuns: input.aiRuns,
+        generatedFrom: {
+          mappingArtifactId: input.mappingArtifactId,
+          annualReportExtractionArtifactId:
+            input.annualReportExtractionArtifactId,
+        },
+        summary: {
+          totalDecisions: nextDecisions.length,
+          manualReviewRequired: nextDecisions.filter(
+            (decision) => decision.status === "manual_review_required",
+          ).length,
+          totalPositiveAdjustments: roundToMinorUnitV1(totalPositiveAdjustments),
+          totalNegativeAdjustments: roundToMinorUnitV1(totalNegativeAdjustments),
+          totalNetAdjustments,
+        },
+        decisions: nextDecisions,
+      }),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: {
+        code: "INPUT_INVALID",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Generated AI adjustment payload is invalid.",
+        user_message: "Generated AI adjustments are invalid.",
+        context: {},
       },
     };
   }

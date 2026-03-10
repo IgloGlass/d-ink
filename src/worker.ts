@@ -2,12 +2,18 @@ import { handleAuthMagicLinkRoutesV1 } from "./server/http/auth-magic-link-route
 import { handleCompanyRoutesV1 } from "./server/http/company-routes.v1";
 import { handleWorkspaceRoutesV1 } from "./server/http/workspace-routes.v1";
 import { redactSensitiveLogFieldsV1 } from "./server/security/redaction.v1";
+import { processAnnualReportProcessingRunV1 } from "./server/workflow/annual-report-processing.v1";
+import { createAnnualReportProcessingDepsV1 } from "./server/workflow/workflow-deps.v1";
 import type { Env } from "./shared/types/env";
 
 const SCAFFOLD_MARKER = "dink_scaffold_ready";
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Env,
+    _ctx?: unknown,
+  ): Promise<Response> {
     try {
       const requestUrl = new URL(request.url);
       if (requestUrl.pathname.startsWith("/v1/auth/")) {
@@ -69,6 +75,46 @@ export default {
           },
         },
       );
+    }
+  },
+
+  async queue(
+    batch: {
+      messages: Array<{
+        ack?: () => void;
+        body: unknown;
+        retry?: () => void;
+      }>;
+    },
+    env: Env,
+    _ctx?: unknown,
+  ): Promise<void> {
+    for (const message of batch.messages) {
+      try {
+        await processAnnualReportProcessingRunV1(
+          message.body as never,
+          createAnnualReportProcessingDepsV1(env),
+        );
+        message.ack?.();
+      } catch (error) {
+        console.error(
+          "[worker.queue] Annual report processing failed",
+          JSON.stringify(
+            redactSensitiveLogFieldsV1({
+              error:
+                error instanceof Error
+                  ? {
+                      message: error.message,
+                      stack: error.stack,
+                    }
+                  : {
+                      message: String(error),
+                    },
+            }),
+          ),
+        );
+        message.retry?.();
+      }
     }
   },
 };

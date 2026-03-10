@@ -4,7 +4,7 @@ This repository contains the V1 technical scaffold for D.ink.
 
 ## Prerequisites
 
-- Node.js 20.x (LTS, required for `npm run test` / `npm run check`)
+- Node.js 20.x or 22.x (supported for `npm run test` / `npm run check`)
 - pnpm (or Corepack)
 
 If `pnpm` is not installed globally:
@@ -25,10 +25,51 @@ Fallback (no global `pnpm`):
 corepack pnpm install
 ```
 
+## Gemini AI setup
+
+The backend now supports Gemini as the primary AI provider for:
+
+- annual report analysis
+- account mapping
+- tax adjustments
+
+Configure secrets in local `.dev.vars` or Wrangler secrets:
+
+```bash
+GEMINI_API_KEY=your-server-side-gemini-key
+GEMINI_FAST_MODEL=gemini-2.5-flash
+GEMINI_THINKING_MODEL=gemini-2.5-pro
+```
+
+Notes:
+
+- `GEMINI_API_KEY` is preferred.
+- `AI_PROVIDER_API_KEY` remains supported as a backwards-compatible fallback.
+- If no Gemini key is configured, the backend falls back to deterministic/offline behavior for local safety and testability.
+- Do not commit real API keys.
+
+## Windows quick start
+
+For a non-technical local test on Windows, use [`start-local-dev.cmd`](C:\Users\slemi\Documents\D.ink\start-local-dev.cmd).
+
+- Double-click it from Explorer, or run `.\start-local-dev.cmd` in PowerShell.
+- It installs dependencies with `pnpm`, warns if Node is outside the supported 20.x/22.x range, and starts both the web app and the local API.
+- It opens the app in your browser automatically.
+- Leave the terminal window open while testing.
+- Code changes should appear automatically in the open browser tab through Vite hot reload.
+
+Helpful companion shortcuts:
+
+- [`check-local-app.cmd`](C:\Users\slemi\Documents\D.ink\check-local-app.cmd): verifies that the web app and API are actually responding.
+- [`run-local-tests.cmd`](C:\Users\slemi\Documents\D.ink\run-local-tests.cmd): runs the automated test suite without requiring terminal commands.
+
 ## Local commands
 
 ```bash
 pnpm dev
+pnpm start:local
+pnpm doctor:local
+pnpm test:local
 pnpm generate:tb-template
 pnpm lint
 pnpm typecheck
@@ -36,20 +77,17 @@ pnpm test
 pnpm check
 ```
 
-Portable alternative (works even when global `pnpm`/`corepack` is unavailable):
+Portable alternative for Windows:
 
 ```bash
-npm run dev
-npm run generate:tb-template
-npm run lint
-npm run typecheck
-npm run test
-npm run check
+.\start-local-dev.cmd
+.\check-local-app.cmd
+.\run-local-tests.cmd
 ```
 
 ### Runtime policy for tests
 
-- Test commands enforce Node 20.x via `npm run test:runtime-check`.
+- Test commands enforce Node 20.x or 22.x via `npm run test:runtime-check`.
 - On unsupported Node versions, test scripts fail fast with an actionable message.
 - Temporary local bypass (never CI): set `DINK_ALLOW_UNSUPPORTED_NODE_TEST_RUNTIME=1`.
 
@@ -68,7 +106,7 @@ npm run check
 
 ### Troubleshooting sequence (`npm run` reliability)
 
-1. Run `npm run test:runtime-check` and verify Node 20.x.
+1. Run `npm run test:runtime-check` and verify Node 20.x or 22.x.
 2. Run `npm run lint`.
 3. Run `npm run test:server:stress`.
 4. Run `npm run check`.
@@ -76,7 +114,7 @@ npm run check
 
 ### CI parity notes
 
-- Keep local and CI on the same major runtime: Node 20.x.
+- Keep local and CI on the same major runtime: Node 20.x or Node 22.x.
 - Use a clean install path in CI (`npm ci`) before running `npm run check`.
 
 ## Frontend UI/UX V1 shell (2026-03-03 cutover)

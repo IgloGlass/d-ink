@@ -14,6 +14,15 @@ export const AUDIT_EVENT_TYPES_V1 = {
   EXTRACTION_CREATED: "annual_report.extracted",
   EXTRACTION_OVERRIDDEN: "annual_report.extraction_field_overridden",
   EXTRACTION_CONFIRMED: "annual_report.extraction_confirmed",
+  EXTRACTION_ACTIVE_DATA_CLEARED: "annual_report.active_data_cleared",
+  EXTRACTION_ACTIVE_DEPENDENTS_CLEARED:
+    "annual_report.active_dependents_cleared",
+  PROCESSING_RUN_QUEUED: "annual_report.processing_run_queued",
+  PROCESSING_RUN_STARTED: "annual_report.processing_run_started",
+  PROCESSING_RUN_COMPLETED: "annual_report.processing_run_completed",
+  PROCESSING_RUN_FAILED: "annual_report.processing_run_failed",
+  PROCESSING_RUN_SUPERSEDED: "annual_report.processing_run_superseded",
+  PROCESSING_RUN_CANCELLED: "annual_report.processing_run_cancelled",
 
   RECONCILIATION_RESULT_RECORDED: "reconciliation.run_result_recorded",
 
@@ -54,6 +63,9 @@ export const REQUIRED_AUDIT_EVENT_TYPES_V1 = [
   AUDIT_EVENT_TYPES_V1.EXTRACTION_CREATED,
   AUDIT_EVENT_TYPES_V1.EXTRACTION_OVERRIDDEN,
   AUDIT_EVENT_TYPES_V1.EXTRACTION_CONFIRMED,
+  AUDIT_EVENT_TYPES_V1.PROCESSING_RUN_QUEUED,
+  AUDIT_EVENT_TYPES_V1.PROCESSING_RUN_STARTED,
+  AUDIT_EVENT_TYPES_V1.PROCESSING_RUN_COMPLETED,
   AUDIT_EVENT_TYPES_V1.RECONCILIATION_RESULT_RECORDED,
   AUDIT_EVENT_TYPES_V1.MAPPING_GENERATED,
   AUDIT_EVENT_TYPES_V1.MAPPING_OVERRIDES_APPLIED,

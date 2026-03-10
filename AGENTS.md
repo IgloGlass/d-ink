@@ -34,6 +34,24 @@ The product is an **AI tax reviewer + draft engine**, not a full professional ta
 5. **Scoped memory only**: save treatments at return/group/user scope; never globally.
 6. **Structured AI reasoning only**: AI logic must be module-scoped, policy-driven, and versioned outside prompt prose.
 
+## UI/UX Standards (Deloitte Ascend)
+All frontend work must strictly follow the **Deloitte Ascend** design language implemented in `src/client/styles/tokens.css` and `global.css`.
+
+### 1) Visual Constraints
+- **Color**: Only use the High-Contrast Zinc palette. The only allowed accent color is Deloitte Green (`#86BC25`).
+- **Shape**: Use sharp corners (`radius: 0`) for primary cards, tables, and buttons to maintain an enterprise "Precision Instrument" feel.
+- **Typography**: Open Sans 800 for headings; monospace tabular numerals for all financial data.
+
+### 2) Interaction Standards
+- **Drag and Drop**: Support PDF/Excel drops as primary input methods. Use `drop-zone` patterns.
+- **Performance**: Use virtualized grids for any list exceeding 100 items. Support column resizing.
+- **Persistence**: Navigation between module tabs must use CSS hiding (`display: none`) to ensure React state and background processes (AI runs) are not reset.
+
+### 3) Layout Hierarchy
+- **Entry**: Always search-first.
+- **Workbench**: Dashboard with high-level metrics before deep-diving into tasks.
+- **Workbench Persistence**: The right-rail tax summary must be pinned and update in real-time.
+
 ---
 
 ## Modularity requirements (critical)

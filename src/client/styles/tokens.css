@@ -1,90 +1,86 @@
 :root {
-  /* V4 baseline palette (guardrail-enforced values included below). */
+  /* High-Contrast Zinc Palette (Reference UI Alignment) */
+  --color-zinc-50: #fafafa;
+  --color-zinc-100: #f4f4f5;
+  --color-zinc-200: #e4e4e7;
+  --color-zinc-300: #d4d4d8;
+  --color-zinc-400: #a1a1aa;
+  --color-zinc-500: #71717a;
+  --color-zinc-600: #52525b;
+  --color-zinc-700: #3f3f46;
+  --color-zinc-800: #27272a;
+  --color-zinc-900: #18181b;
+  --color-black: #000000;
+  --color-white: #ffffff;
+
+  /* Primary Accent: Deloitte Green */
   --color-brand-primary: #86bc25;
-  --color-brand-hover: #26890d;
-  --color-brand-deep: #046a38;
-  --color-ai-highlight: rgba(134, 188, 37, 0.08);
-  --color-surface-app: #f5f7fa;
-  --color-surface-panel: #ffffff;
-  --color-surface-hover: #f9fafb;
-  --color-surface-muted: #f3f4f6;
-  --color-text-heading: #111827;
-  --color-text-body: #374151;
-  --color-text-muted: #6b7280;
-  --color-text-inverse: #ffffff;
-  --color-border-subtle: #e5e7eb;
-  --color-border-input: #d1d5db;
-  --color-border-strong: #c5cad3;
+  --color-brand-hover: #76a820;
+  --color-brand-muted: rgba(134, 188, 37, 0.1);
+  --color-brand-highlight: rgba(134, 188, 37, 0.25);
 
-  /* Semantic state tones. */
-  --color-danger: #b42318;
-  --color-success: #26890d;
-  --color-warning: #8f6500;
-  --color-warning-strong: #b88200;
-  --color-attention: #8f211b;
-  --color-exception: #d66a1f;
-  --color-success-surface: #f4fbef;
-  --color-success-border: #cce6a5;
-  --color-warning-surface: #fef9eb;
-  --color-warning-border: #f3dd9b;
-  --color-attention-surface: #fef2f2;
-  --color-attention-border: #f1c4c4;
-  --color-ai-surface-strong: #f8fbef;
-  --color-manual-override-surface: #fff9ed;
-  --color-selection-surface: #edf5df;
-  --color-guidance-surface: #f8fafc;
-  --color-guidance-advisory-border: #d6e8b1;
-  --color-guidance-active-surface: #f3f8e8;
-  --color-guidance-active-border: #b7d787;
+  /* Semantic Tones */
+  --color-danger: #ef4444;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-info: #3b82f6;
 
-  /* Header and overlay surfaces. */
-  --color-header-border: rgba(255, 255, 255, 0.15);
-  --color-header-badge-border: rgba(255, 255, 255, 0.22);
-  --color-header-control-border: rgba(255, 255, 255, 0.32);
-  --color-header-control-border-strong: rgba(255, 255, 255, 0.5);
-  --color-header-control-surface: rgba(255, 255, 255, 0.08);
-  --color-header-control-surface-hover: rgba(255, 255, 255, 0.14);
-  --color-header-label: rgba(255, 255, 255, 0.8);
-  --color-header-kbd-border: rgba(255, 255, 255, 0.45);
-  --color-header-kbd-surface: rgba(4, 106, 56, 0.72);
-  --color-overlay-scrim: rgba(17, 24, 39, 0.24);
+  /* Backgrounds & Surfaces */
+  --color-bg-app: var(--color-zinc-50);
+  --color-surface: var(--color-white);
+  --color-surface-muted: var(--color-zinc-50);
+  --color-border: var(--color-zinc-200);
+  --color-border-strong: var(--color-zinc-300);
 
-  /* Skeleton loading colors (gradient allowed only for skeleton shimmer). */
-  --color-skeleton-start: #f3f4f6;
-  --color-skeleton-mid: #e5e7eb;
+  /* Text Colors */
+  --color-text-primary: var(--color-zinc-900);
+  --color-text-secondary: var(--color-zinc-500);
+  --color-text-muted: var(--color-zinc-400);
+  --color-text-inverse: var(--color-white);
 
-  /* Typography. */
-  --font-family-base: "Open Sans", Arial, sans-serif;
-  --font-size-micro: 11px;
-  --font-size-body: 13px;
-  --font-size-section: 16px;
-  --font-size-title: 24px;
-  --font-weight-regular: 400;
-  --font-weight-semibold: 600;
-  --font-weight-bold: 700;
-  --line-height-body: 1.5;
-  --letter-spacing-tight: -0.02em;
-  --letter-spacing-wide: 0.05em;
+  /* Typography */
+  --font-family-base: "Open Sans", system-ui, -apple-system, sans-serif;
+  --font-family-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  
+  --font-size-xs: 12px;
+  --font-size-sm: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 24px;
+  --font-size-3xl: 30px;
 
-  /* Spatial and sizing baseline. */
-  --layout-header-height: 56px;
-  --control-height-sm: 32px;
-  --control-height-md: 36px;
-  --tab-height: 40px;
-  --table-row-height: 40px;
-  --status-height: 24px;
-  --sidebar-width: 280px;
-  --ink2-max-width: 850px;
+  /* Spacing (8pt system) */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
+  --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Controls */
+  --control-height-sm: 32px;
+  --control-height-md: 40px;
+  --control-height-lg: 48px;
+  --radius-none: 0px;
   --radius-sm: 4px;
   --radius-md: 8px;
-  --shadow-subtle: 0 4px 12px -8px rgba(17, 24, 39, 0.2);
-  --shadow-float: 0 10px 30px -5px rgba(17, 24, 39, 0.08);
-  --focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px #86bc25;
-  --transition-fast: all 0.15s ease-in-out;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+
+  /* Transitions */
+  --transition-fast: 150ms ease-in-out;
+  --transition-normal: 300ms ease-in-out;
+
+  /* Z-Index */
+  --z-header: 50;
+  --z-overlay: 100;
 }

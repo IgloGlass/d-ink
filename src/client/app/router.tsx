@@ -15,8 +15,8 @@ import { SessionGate } from "../features/auth/session-gate";
 import { GroupControlPanelPageV1 } from "../features/groups/group-control-panel-page.v1";
 import { CoreModuleShellPageV1 } from "../features/modules/core-module-shell-page.v1";
 import { CompanySelectorPageV1 } from "../features/workspaces/company-selector-page.v1";
+import { WorkspaceDashboardPageV1 } from "../features/workspaces/workspace-dashboard-page.v1";
 import { WorkspaceDetailPage } from "../features/workspaces/workspace-detail-page";
-import { WorkspaceWorkbenchPageV1 } from "../features/workspaces/workspace-workbench-page.v1";
 import {
   currentSessionQueryKeyV1,
   fetchCurrentSessionV1,
@@ -41,8 +41,8 @@ const legacyWorkspaceDetailPathsV1 = new Set([
   "workspace-detail",
   "legacy-detail",
 ]);
-const canonicalWorkspaceWorkbenchPathV1 = (workspaceId: string) =>
-  `/app/workspaces/${workspaceId}/workbench`;
+const canonicalWorkspaceDefaultPathV1 = (workspaceId: string) =>
+  `/app/workspaces/${workspaceId}`;
 const canonicalWorkspaceDetailPathV1 = (workspaceId: string) =>
   `/app/workspaces/${workspaceId}/detail`;
 
@@ -95,7 +95,7 @@ function LegacyWorkspaceWorkbenchRedirectV1() {
     return <Navigate replace to={appWorkspaceHomePathV1} />;
   }
 
-  return <Navigate replace to={canonicalWorkspaceWorkbenchPathV1(workspaceId)} />;
+  return <Navigate replace to={canonicalWorkspaceDefaultPathV1(workspaceId)} />;
 }
 
 function toLegacyWorkspaceDestinationV1(
@@ -105,7 +105,7 @@ function toLegacyWorkspaceDestinationV1(
   const normalizedAlias = normalizedPath.toLowerCase();
 
   if (legacyWorkspaceWorkbenchPathsV1.has(normalizedAlias)) {
-    return "workbench";
+    return "";
   }
 
   if (legacyWorkspaceDetailPathsV1.has(normalizedAlias)) {
@@ -123,7 +123,9 @@ function LegacyWorkspaceRedirectV1() {
 
   // Preserve deep links from pre-IA routes while normalizing detail aliases.
   const destination = toLegacyWorkspaceDestinationV1(legacySubPath);
-  return (
+  return destination.length === 0 ? (
+    <Navigate replace to={`/app/workspaces/${workspaceId}`} />
+  ) : (
     <Navigate replace to={`/app/workspaces/${workspaceId}/${destination}`} />
   );
 }
@@ -143,18 +145,17 @@ function LegacyWorkspaceAppFallbackRedirectV1() {
     return <Navigate replace to={appWorkspaceHomePathV1} />;
   }
 
-  // Unknown deep workspace paths should recover to workbench instead of app root.
+  // Unknown deep workspace paths should recover to the company dashboard.
   const destination = toLegacyWorkspaceDestinationV1(legacySubPath);
   const canonicalDestination =
-    destination === "detail" || destination === "workbench"
+    destination === "detail"
       ? destination
-      : "workbench";
+      : "";
 
-  return (
-    <Navigate
-      replace
-      to={`/app/workspaces/${workspaceId}/${canonicalDestination}`}
-    />
+  return canonicalDestination.length === 0 ? (
+    <Navigate replace to={`/app/workspaces/${workspaceId}`} />
+  ) : (
+    <Navigate replace to={`/app/workspaces/${workspaceId}/${canonicalDestination}`} />
   );
 }
 
@@ -244,11 +245,11 @@ const routerV1 = createBrowserRouter(
         },
         {
           path: "workspaces/:workspaceId",
-          element: <LegacyWorkspaceWorkbenchRedirectV1 />,
+          element: <WorkspaceDashboardPageV1 />,
         },
         {
           path: "workspaces/:workspaceId/workbench",
-          element: <WorkspaceWorkbenchPageV1 />,
+          element: <LegacyWorkspaceWorkbenchRedirectV1 />,
         },
         {
           path: "workspaces/:workspaceId/detail",

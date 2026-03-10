@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { AiRunMetadataV1Schema } from "./ai-run.v1";
 import { IsoDateSchema, IsoDateTimeSchema, UuidV4Schema } from "./common.v1";
 
 export const AnnualReportFileTypeV1Schema = z.enum(["pdf", "docx"]);
@@ -10,6 +11,21 @@ export type AnnualReportFileTypeV1 = z.infer<
 export const AnnualReportAccountingStandardV1Schema = z.enum(["K2", "K3"]);
 export type AnnualReportAccountingStandardV1 = z.infer<
   typeof AnnualReportAccountingStandardV1Schema
+>;
+
+export const AnnualReportAmountUnitV1Schema = z.enum(["sek", "ksek", "msek"]);
+export type AnnualReportAmountUnitV1 = z.infer<
+  typeof AnnualReportAmountUnitV1Schema
+>;
+
+export const AnnualReportRuntimeMetadataV1Schema = z
+  .object({
+    extractionEngineVersion: z.string().trim().min(1),
+    runtimeFingerprint: z.string().trim().min(1),
+  })
+  .strict();
+export type AnnualReportRuntimeMetadataV1 = z.infer<
+  typeof AnnualReportRuntimeMetadataV1Schema
 >;
 
 export const AnnualReportExtractionFieldStatusV1Schema = z.enum([
@@ -41,6 +57,194 @@ export const AnnualReportFieldSourceSnippetV1Schema = z
   .strict();
 export type AnnualReportFieldSourceSnippetV1 = z.infer<
   typeof AnnualReportFieldSourceSnippetV1Schema
+>;
+
+export const AnnualReportEvidenceReferenceV1Schema = z
+  .object({
+    snippet: z.string().trim().min(1),
+    section: z.string().trim().min(1).optional(),
+    noteReference: z.string().trim().min(1).optional(),
+    page: z.number().int().positive().optional(),
+  })
+  .strict();
+export type AnnualReportEvidenceReferenceV1 = z.infer<
+  typeof AnnualReportEvidenceReferenceV1Schema
+>;
+
+export const AnnualReportStatementLineV1Schema = z
+  .object({
+    code: z.string().trim().min(1),
+    label: z.string().trim().min(1),
+    currentYearValue: z.number().finite().optional(),
+    priorYearValue: z.number().finite().optional(),
+    evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
+  })
+  .strict();
+export type AnnualReportStatementLineV1 = z.infer<
+  typeof AnnualReportStatementLineV1Schema
+>;
+
+export const AnnualReportValueWithEvidenceV1Schema = z
+  .object({
+    value: z.number().finite().optional(),
+    currency: z.string().trim().min(1).optional(),
+    evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
+  })
+  .strict();
+export type AnnualReportValueWithEvidenceV1 = z.infer<
+  typeof AnnualReportValueWithEvidenceV1Schema
+>;
+
+export const AnnualReportTaxExpenseContextV1Schema = z
+  .object({
+    currentTax: AnnualReportValueWithEvidenceV1Schema.optional(),
+    deferredTax: AnnualReportValueWithEvidenceV1Schema.optional(),
+    totalTaxExpense: AnnualReportValueWithEvidenceV1Schema.optional(),
+    notes: z.array(z.string().trim().min(1)).default([]),
+    evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
+  })
+  .strict();
+export type AnnualReportTaxExpenseContextV1 = z.infer<
+  typeof AnnualReportTaxExpenseContextV1Schema
+>;
+
+export const AnnualReportNarrativeFlagV1Schema = z
+  .object({
+    code: z.string().trim().min(1),
+    label: z.string().trim().min(1),
+    value: z.boolean().optional(),
+    notes: z.array(z.string().trim().min(1)).default([]),
+    evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
+  })
+  .strict();
+export type AnnualReportNarrativeFlagV1 = z.infer<
+  typeof AnnualReportNarrativeFlagV1Schema
+>;
+
+export const AnnualReportAssetMovementLineV1Schema = z
+  .object({
+    assetArea: z.string().trim().min(1),
+    openingCarryingAmount: z.number().finite().optional(),
+    acquisitions: z.number().finite().optional(),
+    disposals: z.number().finite().optional(),
+    depreciationForYear: z.number().finite().optional(),
+    impairmentForYear: z.number().finite().optional(),
+    closingCarryingAmount: z.number().finite().optional(),
+    priorYearOpeningCarryingAmount: z.number().finite().optional(),
+    priorYearClosingCarryingAmount: z.number().finite().optional(),
+    evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
+  })
+  .strict();
+export type AnnualReportAssetMovementLineV1 = z.infer<
+  typeof AnnualReportAssetMovementLineV1Schema
+>;
+
+export const AnnualReportReserveMovementLineV1Schema = z
+  .object({
+    reserveType: z.string().trim().min(1),
+    openingBalance: z.number().finite().optional(),
+    movementForYear: z.number().finite().optional(),
+    closingBalance: z.number().finite().optional(),
+    priorYearClosingBalance: z.number().finite().optional(),
+    evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
+  })
+  .strict();
+export type AnnualReportReserveMovementLineV1 = z.infer<
+  typeof AnnualReportReserveMovementLineV1Schema
+>;
+
+export const AnnualReportPriorYearComparativeV1Schema = z
+  .object({
+    area: z.string().trim().min(1),
+    code: z.string().trim().min(1),
+    label: z.string().trim().min(1),
+    currentYearValue: z.number().finite().optional(),
+    priorYearValue: z.number().finite().optional(),
+    evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
+  })
+  .strict();
+export type AnnualReportPriorYearComparativeV1 = z.infer<
+  typeof AnnualReportPriorYearComparativeV1Schema
+>;
+
+export const AnnualReportTaxDeepExtractionV1Schema = z
+  .object({
+    ink2rExtracted: z
+      .object({
+        statementUnit: AnnualReportAmountUnitV1Schema.optional(),
+        incomeStatement: z.array(AnnualReportStatementLineV1Schema).default([]),
+        balanceSheet: z.array(AnnualReportStatementLineV1Schema).default([]),
+      })
+      .strict(),
+    depreciationContext: z
+      .object({
+        assetAreas: z.array(AnnualReportAssetMovementLineV1Schema).default([]),
+        evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
+      })
+      .strict(),
+    assetMovements: z
+      .object({
+        lines: z.array(AnnualReportAssetMovementLineV1Schema).default([]),
+        evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
+      })
+      .strict(),
+    reserveContext: z
+      .object({
+        movements: z.array(AnnualReportReserveMovementLineV1Schema).default([]),
+        notes: z.array(z.string().trim().min(1)).default([]),
+        evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
+      })
+      .strict(),
+    netInterestContext: z
+      .object({
+        financeIncome: AnnualReportValueWithEvidenceV1Schema.optional(),
+        financeExpense: AnnualReportValueWithEvidenceV1Schema.optional(),
+        interestIncome: AnnualReportValueWithEvidenceV1Schema.optional(),
+        interestExpense: AnnualReportValueWithEvidenceV1Schema.optional(),
+        netInterest: AnnualReportValueWithEvidenceV1Schema.optional(),
+        notes: z.array(z.string().trim().min(1)).default([]),
+        evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
+      })
+      .strict(),
+    pensionContext: z
+      .object({
+        specialPayrollTax: AnnualReportValueWithEvidenceV1Schema.optional(),
+        flags: z.array(AnnualReportNarrativeFlagV1Schema).default([]),
+        notes: z.array(z.string().trim().min(1)).default([]),
+        evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
+      })
+      .strict(),
+    taxExpenseContext: AnnualReportTaxExpenseContextV1Schema.optional(),
+    leasingContext: z
+      .object({
+        flags: z.array(AnnualReportNarrativeFlagV1Schema).default([]),
+        notes: z.array(z.string().trim().min(1)).default([]),
+        evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
+      })
+      .strict(),
+    groupContributionContext: z
+      .object({
+        flags: z.array(AnnualReportNarrativeFlagV1Schema).default([]),
+        notes: z.array(z.string().trim().min(1)).default([]),
+        evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
+      })
+      .strict(),
+    shareholdingContext: z
+      .object({
+        dividendsReceived: AnnualReportValueWithEvidenceV1Schema.optional(),
+        dividendsPaid: AnnualReportValueWithEvidenceV1Schema.optional(),
+        flags: z.array(AnnualReportNarrativeFlagV1Schema).default([]),
+        notes: z.array(z.string().trim().min(1)).default([]),
+        evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
+      })
+      .strict(),
+    priorYearComparatives: z
+      .array(AnnualReportPriorYearComparativeV1Schema)
+      .default([]),
+  })
+  .strict();
+export type AnnualReportTaxDeepExtractionV1 = z.infer<
+  typeof AnnualReportTaxDeepExtractionV1Schema
 >;
 
 const AnnualReportFieldMetaV1Schema = z
@@ -113,6 +317,27 @@ export const AnnualReportExtractionPayloadV1Schema = z
         needsReviewFieldCount: z.number().int().nonnegative(),
       })
       .strict(),
+    taxSignals: z
+      .array(
+        z
+          .object({
+            code: z.string().trim().min(1),
+            label: z.string().trim().min(1),
+            confidence: z.number().min(0).max(1),
+            snippet: z.string().trim().min(1).optional(),
+            section: z.string().trim().min(1).optional(),
+            noteReference: z.string().trim().min(1).optional(),
+            page: z.number().int().positive().optional(),
+            reviewFlag: z.boolean(),
+            policyRuleReference: z.string().trim().min(1),
+          })
+          .strict(),
+      )
+      .default([]),
+    documentWarnings: z.array(z.string().trim().min(1)).default([]),
+    taxDeep: AnnualReportTaxDeepExtractionV1Schema.optional(),
+    engineMetadata: AnnualReportRuntimeMetadataV1Schema.optional(),
+    aiRun: AiRunMetadataV1Schema.optional(),
     confirmation: z
       .object({
         isConfirmed: z.boolean(),
@@ -222,6 +447,17 @@ export type ConfirmAnnualReportExtractionRequestV1 = z.infer<
   typeof ConfirmAnnualReportExtractionRequestV1Schema
 >;
 
+export const ClearAnnualReportDataRequestV1Schema = z
+  .object({
+    tenantId: UuidV4Schema,
+    workspaceId: UuidV4Schema,
+    clearedByUserId: UuidV4Schema.optional(),
+  })
+  .strict();
+export type ClearAnnualReportDataRequestV1 = z.infer<
+  typeof ClearAnnualReportDataRequestV1Schema
+>;
+
 export const AnnualReportExtractionErrorCodeV1Schema = z.enum([
   "INPUT_INVALID",
   "WORKSPACE_NOT_FOUND",
@@ -256,6 +492,7 @@ export const RunAnnualReportExtractionSuccessV1Schema = z
     ok: z.literal(true),
     active: ActiveAnnualReportExtractionRefV1Schema,
     extraction: AnnualReportExtractionPayloadV1Schema,
+    runtime: AnnualReportRuntimeMetadataV1Schema.optional(),
   })
   .strict();
 export type RunAnnualReportExtractionSuccessV1 = z.infer<
@@ -278,6 +515,7 @@ export const GetActiveAnnualReportExtractionSuccessV1Schema = z
     ok: z.literal(true),
     active: ActiveAnnualReportExtractionRefV1Schema,
     extraction: AnnualReportExtractionPayloadV1Schema,
+    runtime: AnnualReportRuntimeMetadataV1Schema.optional(),
   })
   .strict();
 export type GetActiveAnnualReportExtractionSuccessV1 = z.infer<
@@ -293,12 +531,43 @@ export type GetActiveAnnualReportExtractionResultV1 = z.infer<
   typeof GetActiveAnnualReportExtractionResultV1Schema
 >;
 
+export const ClearAnnualReportDataSuccessV1Schema = z
+  .object({
+    ok: z.literal(true),
+    clearedArtifactTypes: z
+      .array(
+        z.enum([
+          "annual_report_extraction",
+          "annual_report_tax_analysis",
+          "tax_adjustments",
+          "tax_summary",
+          "ink2_form",
+          "export_package",
+        ]),
+      )
+      .default([]),
+    runtime: AnnualReportRuntimeMetadataV1Schema.optional(),
+  })
+  .strict();
+export type ClearAnnualReportDataSuccessV1 = z.infer<
+  typeof ClearAnnualReportDataSuccessV1Schema
+>;
+
+export const ClearAnnualReportDataResultV1Schema = z.discriminatedUnion("ok", [
+  ClearAnnualReportDataSuccessV1Schema,
+  AnnualReportExtractionFailureV1Schema,
+]);
+export type ClearAnnualReportDataResultV1 = z.infer<
+  typeof ClearAnnualReportDataResultV1Schema
+>;
+
 export const ApplyAnnualReportExtractionOverridesSuccessV1Schema = z
   .object({
     ok: z.literal(true),
     active: ActiveAnnualReportExtractionRefV1Schema,
     extraction: AnnualReportExtractionPayloadV1Schema,
     appliedCount: z.number().int().nonnegative(),
+    runtime: AnnualReportRuntimeMetadataV1Schema.optional(),
   })
   .strict();
 export type ApplyAnnualReportExtractionOverridesSuccessV1 = z.infer<
@@ -319,6 +588,7 @@ export const ConfirmAnnualReportExtractionSuccessV1Schema = z
     ok: z.literal(true),
     active: ActiveAnnualReportExtractionRefV1Schema,
     extraction: AnnualReportExtractionPayloadV1Schema,
+    runtime: AnnualReportRuntimeMetadataV1Schema.optional(),
   })
   .strict();
 export type ConfirmAnnualReportExtractionSuccessV1 = z.infer<
@@ -352,6 +622,12 @@ export function parseGetActiveAnnualReportExtractionResultV1(
   input: unknown,
 ): GetActiveAnnualReportExtractionResultV1 {
   return GetActiveAnnualReportExtractionResultV1Schema.parse(input);
+}
+
+export function parseClearAnnualReportDataResultV1(
+  input: unknown,
+): ClearAnnualReportDataResultV1 {
+  return ClearAnnualReportDataResultV1Schema.parse(input);
 }
 
 export function parseApplyAnnualReportExtractionOverridesResultV1(

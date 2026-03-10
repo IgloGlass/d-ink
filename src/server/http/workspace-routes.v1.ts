@@ -2,9 +2,15 @@ import { z } from "zod";
 
 import {
   ApplyAnnualReportExtractionOverridesRequestV1Schema,
+  ClearAnnualReportDataRequestV1Schema,
   ConfirmAnnualReportExtractionRequestV1Schema,
+  type AnnualReportFileTypeV1,
   RunAnnualReportExtractionRequestV1Schema,
 } from "../../shared/contracts/annual-report-extraction.v1";
+import {
+  CreateAnnualReportProcessingRunRequestV1Schema,
+} from "../../shared/contracts/annual-report-processing-run.v1";
+import { CreateAnnualReportUploadSessionRequestV1Schema } from "../../shared/contracts/annual-report-upload-session.v1";
 import {
   CompleteTaskRequestV1Schema,
   CreateCommentRequestV1Schema,
@@ -32,12 +38,23 @@ import { RunTaxSummaryRequestV1Schema } from "../../shared/contracts/tax-summary
 import { ExecuteTrialBalancePipelineRequestV1Schema } from "../../shared/contracts/tb-pipeline-run.v1";
 import { WorkspaceStatusV1Schema } from "../../shared/contracts/workspace.v1";
 import type { Env } from "../../shared/types/env";
-import { MAX_UPLOAD_JSON_BODY_BYTES_V1 } from "../security/payload-limits.v1";
+import {
+  MAX_ANNUAL_REPORT_FILE_BYTES_V1,
+  MAX_UPLOAD_JSON_BODY_BYTES_V1,
+  parseContentLengthHeaderV1,
+} from "../security/payload-limits.v1";
+import {
+  createAnnualReportProcessingRunV1,
+  createAnnualReportUploadSessionV1,
+  getLatestAnnualReportProcessingRunV1,
+  uploadAnnualReportSourceV1,
+} from "../workflow/annual-report-processing.v1";
 import {
   applyAnnualReportExtractionOverridesV1,
+  clearAnnualReportDataV1,
   confirmAnnualReportExtractionV1,
   getActiveAnnualReportExtractionV1,
-  runAnnualReportExtractionV1,
+  getActiveAnnualReportTaxAnalysisV1,
 } from "../workflow/annual-report-extraction.v1";
 import { resolveSessionPrincipalByTokenV1 } from "../workflow/auth-magic-link.v1";
 import {
@@ -66,7 +83,9 @@ import {
 } from "../workflow/tax-core-workflow.v1";
 import { executeTrialBalancePipelineRunV1 } from "../workflow/trial-balance-pipeline-run.v1";
 import {
+  buildAnnualReportRuntimeMetadataV1,
   createAnnualReportExtractionDepsV1,
+  createAnnualReportProcessingDepsV1,
   createCollaborationDepsV1,
   createMappingOverrideDepsV1,
   createMappingReviewDepsV1,
@@ -74,6 +93,7 @@ import {
   createTaxCoreWorkflowDepsV1,
   createTrialBalancePipelineRunDepsV1,
   createWorkspaceLifecycleDepsV1,
+  resolveAnnualReportProcessingRuntimeV1,
 } from "../workflow/workflow-deps.v1";
 import {
   applyWorkspaceTransitionV1,
@@ -92,6 +112,38 @@ import { parseCookiesV1 } from "./session-auth.v1";
 
 const SESSION_COOKIE_NAME_V1 = "dink_session_v1";
 const WORKSPACES_ROUTE_BASE_PATH_V1 = "/v1/workspaces";
+
+function createAnnualReportRuntimeHeadersV1(env: Env): HeadersInit {
+  const runtimeMetadata = buildAnnualReportRuntimeMetadataV1(env);
+
+  return {
+    "Cache-Control": "no-store",
+    "X-Dink-Annual-Report-Engine": runtimeMetadata.extractionEngineVersion,
+    "X-Dink-Annual-Report-Runtime": runtimeMetadata.runtimeFingerprint,
+  };
+}
+
+function inferAnnualReportFileTypeFromNameV1(
+  fileName: string,
+): AnnualReportFileTypeV1 | null {
+  const lower = fileName.toLowerCase();
+  if (lower === "application/pdf") {
+    return "pdf";
+  }
+  if (
+    lower ===
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ) {
+    return "docx";
+  }
+  if (lower.endsWith(".pdf")) {
+    return "pdf";
+  }
+  if (lower.endsWith(".docx")) {
+    return "docx";
+  }
+  return null;
+}
 
 const CreateWorkspaceHttpRequestBodyV1Schema = z
   .object({
@@ -128,6 +180,20 @@ const AnnualReportRunHttpRequestBodyV1Schema =
     createdByUserId: true,
   });
 
+const AnnualReportProcessingMultipartFieldsV1Schema =
+  CreateAnnualReportProcessingRunRequestV1Schema.omit({
+    workspaceId: true,
+    createdByUserId: true,
+    fileName: true,
+    fileType: true,
+  });
+
+const AnnualReportUploadSessionHttpRequestBodyV1Schema =
+  CreateAnnualReportUploadSessionRequestV1Schema.omit({
+    workspaceId: true,
+    createdByUserId: true,
+  });
+
 const AnnualReportOverrideHttpRequestBodyV1Schema =
   ApplyAnnualReportExtractionOverridesRequestV1Schema.omit({
     workspaceId: true,
@@ -138,6 +204,12 @@ const AnnualReportConfirmHttpRequestBodyV1Schema =
   ConfirmAnnualReportExtractionRequestV1Schema.omit({
     workspaceId: true,
     confirmedByUserId: true,
+  });
+
+const AnnualReportClearHttpRequestBodyV1Schema =
+  ClearAnnualReportDataRequestV1Schema.omit({
+    workspaceId: true,
+    clearedByUserId: true,
   });
 
 const TaxAdjustmentRunHttpRequestBodyV1Schema =
@@ -438,7 +510,8 @@ function mapAnnualReportFailureToResponseV1(
 
   if (
     input.error.code === "WORKSPACE_NOT_FOUND" ||
-    input.error.code === "EXTRACTION_NOT_FOUND"
+    input.error.code === "EXTRACTION_NOT_FOUND" ||
+    input.error.code === "TAX_ANALYSIS_NOT_FOUND"
   ) {
     return createWorkflowFailureResponseV1({
       status: 404,
@@ -456,6 +529,40 @@ function mapAnnualReportFailureToResponseV1(
   if (input.error.code === "PARSE_FAILED") {
     return createWorkflowFailureResponseV1({
       status: 422,
+      failure: input,
+    });
+  }
+
+  return createWorkflowFailureResponseV1({
+    status: 500,
+    code: "PERSISTENCE_ERROR",
+    failure: input,
+  });
+}
+
+function mapAnnualReportProcessingFailureToResponseV1(
+  input: WorkflowFailureResultV1,
+): Response {
+  if (input.error.code === "INPUT_INVALID") {
+    return createWorkflowFailureResponseV1({
+      status: 400,
+      failure: input,
+    });
+  }
+
+  if (
+    input.error.code === "WORKSPACE_NOT_FOUND" ||
+    input.error.code === "PROCESSING_RUN_NOT_FOUND"
+  ) {
+    return createWorkflowFailureResponseV1({
+      status: 404,
+      failure: input,
+    });
+  }
+
+  if (input.error.code === "PROCESSING_RUN_UNAVAILABLE") {
+    return createWorkflowFailureResponseV1({
+      status: 503,
       failure: input,
     });
   }
@@ -698,9 +805,7 @@ async function handleGetWorkspaceRouteV1(
 
   return Response.json(result, {
     status: 200,
-    headers: {
-      "Cache-Control": "no-store",
-    },
+    headers: createAnnualReportRuntimeHeadersV1(env),
   });
 }
 
@@ -742,9 +847,7 @@ async function handleListWorkspacesRouteV1(
 
   return Response.json(result, {
     status: 200,
-    headers: {
-      "Cache-Control": "no-store",
-    },
+    headers: createAnnualReportRuntimeHeadersV1(env),
   });
 }
 
@@ -803,9 +906,7 @@ async function handleWorkspaceTransitionRouteV1(
 
   return Response.json(result, {
     status: 200,
-    headers: {
-      "Cache-Control": "no-store",
-    },
+    headers: createAnnualReportRuntimeHeadersV1(env),
   });
 }
 
@@ -858,9 +959,7 @@ async function handleTrialBalancePipelineRunRouteV1(
 
   return Response.json(result, {
     status: 200,
-    headers: {
-      "Cache-Control": "no-store",
-    },
+    headers: createAnnualReportRuntimeHeadersV1(env),
   });
 }
 
@@ -878,11 +977,340 @@ async function handleAnnualReportRunRouteV1(
     return originValidationError;
   }
 
-  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+  const requestBody = await parseJsonBodyWithSchemaV1({
     request,
     maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
     routeLabel: "Annual report",
     schema: AnnualReportRunHttpRequestBodyV1Schema,
+  });
+  if (!requestBody.ok) {
+    return requestBody.response;
+  }
+
+  return createJsonErrorResponseV1({
+    status: 410,
+    code: "PROCESSING_RUN_UNAVAILABLE",
+    message:
+      "Synchronous annual-report runs are deprecated. Use upload sessions and processing runs.",
+    userMessage:
+      "Annual-report upload now runs asynchronously. Upload the file again from the annual-report module.",
+    context: {
+      replacementEndpoint: `/v1/workspaces/${workspaceId}/annual-report-upload-sessions`,
+    },
+  });
+}
+
+async function handleAnnualReportProcessingRunRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+
+  let formData: FormData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Annual report upload body is invalid.",
+      userMessage: "The uploaded annual report could not be read.",
+    });
+  }
+
+  const fieldsParse = AnnualReportProcessingMultipartFieldsV1Schema.safeParse({
+    tenantId: formData.get("tenantId"),
+    policyVersion: formData.get("policyVersion"),
+  });
+  if (!fieldsParse.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Annual-report upload fields are invalid.",
+      userMessage: "The annual report upload is invalid. Refresh and retry.",
+      context: {
+        issues: fieldsParse.error.issues.map((issue) => ({
+          code: issue.code,
+          message: issue.message,
+          path: issue.path.join("."),
+        })),
+      },
+    });
+  }
+
+  const fileEntry = formData.get("file");
+  if (!(fileEntry instanceof File) || fileEntry.size === 0) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Annual report upload is missing a file payload.",
+      userMessage: "Choose an annual report file before starting the analysis.",
+    });
+  }
+
+  const fileType =
+    inferAnnualReportFileTypeFromNameV1(fileEntry.name) ??
+    inferAnnualReportFileTypeFromNameV1(fileEntry.type);
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: fieldsParse.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await createAnnualReportProcessingRunV1(
+    {
+      tenantId: fieldsParse.data.tenantId,
+      workspaceId,
+      fileName: fileEntry.name,
+      fileType: fileType ?? undefined,
+      fileBytes: new Uint8Array(await fileEntry.arrayBuffer()),
+      policyVersion: fieldsParse.data.policyVersion,
+      createdByUserId: sessionGuardResult.principal.userId,
+    },
+    createAnnualReportProcessingDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapAnnualReportProcessingFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 202,
+    headers: createAnnualReportRuntimeHeadersV1(env),
+  });
+}
+
+async function handleCreateAnnualReportUploadSessionRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Annual report upload session",
+    schema: AnnualReportUploadSessionHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
+  }
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: bodyParseResult.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await createAnnualReportUploadSessionV1(
+    {
+      ...bodyParseResult.data,
+      workspaceId,
+      createdByUserId: sessionGuardResult.principal.userId,
+    },
+    createAnnualReportProcessingDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapAnnualReportProcessingFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 201,
+    headers: createAnnualReportRuntimeHeadersV1(env),
+  });
+}
+
+async function handleUploadAnnualReportSourceRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+  uploadSessionId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+
+  const requestUrl = new URL(request.url);
+  const parsedQuery = WorkspaceGetQueryV1Schema.safeParse({
+    tenantId: requestUrl.searchParams.get("tenantId"),
+  });
+  if (!parsedQuery.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Annual-report upload query parameters are invalid.",
+      userMessage: "The annual report upload is invalid. Refresh and retry.",
+    });
+  }
+
+  const contentLengthBytes = parseContentLengthHeaderV1(
+    request.headers.get("Content-Length"),
+  );
+  if (contentLengthBytes === null || Number.isNaN(contentLengthBytes)) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Annual-report upload requires a valid Content-Length header.",
+      userMessage:
+        "The uploaded annual report could not be read. Upload the file again.",
+    });
+  }
+  if (contentLengthBytes > MAX_ANNUAL_REPORT_FILE_BYTES_V1) {
+    return createJsonErrorResponseV1({
+      status: 413,
+      code: "INPUT_INVALID",
+      message: "Annual-report upload exceeds configured size limit.",
+      userMessage:
+        "The annual report file is too large. Upload a file smaller than 25 MB.",
+      context: {
+        maxBytes: MAX_ANNUAL_REPORT_FILE_BYTES_V1,
+        actualBytes: contentLengthBytes,
+      },
+    });
+  }
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedQuery.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await uploadAnnualReportSourceV1(
+    {
+      contentLengthBytes,
+      createdByUserId: sessionGuardResult.principal.userId,
+      tenantId: parsedQuery.data.tenantId,
+      uploadBody: request.body,
+      uploadSessionId,
+      workspaceId,
+    },
+    createAnnualReportProcessingDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapAnnualReportProcessingFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 202,
+    headers: createAnnualReportRuntimeHeadersV1(env),
+  });
+}
+
+async function handleGetLatestAnnualReportProcessingRunRouteV1(
+  request: Request,
+  env: Env,
+  workspaceId: string,
+): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const parsedQuery = WorkspaceGetQueryV1Schema.safeParse({
+    tenantId: requestUrl.searchParams.get("tenantId"),
+  });
+  if (!parsedQuery.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Annual-report processing query parameters are invalid.",
+    });
+  }
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedQuery.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await getLatestAnnualReportProcessingRunV1(
+    {
+      tenantId: parsedQuery.data.tenantId,
+      workspaceId,
+    },
+    createAnnualReportProcessingDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapAnnualReportProcessingFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: {
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+function handleAnnualReportRuntimeRouteV1(env: Env): Response {
+  const runtime = resolveAnnualReportProcessingRuntimeV1(env);
+
+  return Response.json(
+    {
+      ok: true,
+      service: "annual-report-runtime",
+      processing: {
+        available: runtime.available,
+        mode: runtime.mode,
+        inlineFallbackEnabled: runtime.inlineFallbackEnabled,
+        missingBindings: runtime.missingBindings,
+      },
+    },
+    {
+      status: 200,
+      headers: createAnnualReportRuntimeHeadersV1(env),
+    },
+  );
+}
+
+async function handleClearAnnualReportRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Annual report clear",
+    schema: AnnualReportClearHttpRequestBodyV1Schema,
   });
   if (!bodyParseResult.ok) {
     return bodyParseResult.response;
@@ -898,11 +1326,11 @@ async function handleAnnualReportRunRouteV1(
     return sessionGuardResult.response;
   }
 
-  const result = await runAnnualReportExtractionV1(
+  const result = await clearAnnualReportDataV1(
     {
       ...parsedBody,
       workspaceId,
-      createdByUserId: sessionGuardResult.principal.userId,
+      clearedByUserId: sessionGuardResult.principal.userId,
     },
     createAnnualReportExtractionDepsV1(env),
   );
@@ -912,9 +1340,7 @@ async function handleAnnualReportRunRouteV1(
 
   return Response.json(result, {
     status: 200,
-    headers: {
-      "Cache-Control": "no-store",
-    },
+    headers: createAnnualReportRuntimeHeadersV1(env),
   });
 }
 
@@ -945,6 +1371,51 @@ async function handleGetActiveAnnualReportRouteV1(
   }
 
   const result = await getActiveAnnualReportExtractionV1(
+    {
+      tenantId: parsedQuery.data.tenantId,
+      workspaceId,
+    },
+    createAnnualReportExtractionDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapAnnualReportFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: {
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+async function handleGetActiveAnnualReportTaxAnalysisRouteV1(
+  request: Request,
+  env: Env,
+  workspaceId: string,
+): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const parsedQuery = WorkspaceGetQueryV1Schema.safeParse({
+    tenantId: requestUrl.searchParams.get("tenantId"),
+  });
+  if (!parsedQuery.success) {
+    return createJsonErrorResponseV1({
+      status: 400,
+      code: "INPUT_INVALID",
+      message: "Annual-report tax-analysis query parameters are invalid.",
+    });
+  }
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedQuery.data.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await getActiveAnnualReportTaxAnalysisV1(
     {
       tenantId: parsedQuery.data.tenantId,
       workspaceId,
@@ -1954,6 +2425,14 @@ export async function handleWorkspaceRoutesV1(
   const requestUrl = new URL(request.url);
   const pathname = requestUrl.pathname;
 
+  if (pathname === `${WORKSPACES_ROUTE_BASE_PATH_V1}/annual-report-runtime`) {
+    if (request.method !== "GET") {
+      return createMethodNotAllowedResponseV1("GET");
+    }
+
+    return handleAnnualReportRuntimeRouteV1(env);
+  }
+
   if (pathname === WORKSPACES_ROUTE_BASE_PATH_V1) {
     if (request.method === "GET") {
       return handleListWorkspacesRouteV1(request, env);
@@ -2006,6 +2485,77 @@ export async function handleWorkspaceRoutesV1(
   if (
     routeSegments.length === 2 &&
     routeSegments[0] &&
+    routeSegments[1] === "annual-report-upload-sessions"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+
+    return handleCreateAnnualReportUploadSessionRouteV1(
+      request,
+      env,
+      appBaseUrl,
+      routeSegments[0],
+    );
+  }
+
+  if (
+    routeSegments.length === 4 &&
+    routeSegments[0] &&
+    routeSegments[1] === "annual-report-upload-sessions" &&
+    routeSegments[2] &&
+    routeSegments[3] === "file"
+  ) {
+    if (request.method !== "PUT") {
+      return createMethodNotAllowedResponseV1("PUT");
+    }
+
+    return handleUploadAnnualReportSourceRouteV1(
+      request,
+      env,
+      appBaseUrl,
+      routeSegments[0],
+      routeSegments[2],
+    );
+  }
+
+  if (
+    routeSegments.length === 2 &&
+    routeSegments[0] &&
+    routeSegments[1] === "annual-report-processing-runs"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+
+    return handleAnnualReportProcessingRunRouteV1(
+      request,
+      env,
+      appBaseUrl,
+      routeSegments[0],
+    );
+  }
+
+  if (
+    routeSegments.length === 3 &&
+    routeSegments[0] &&
+    routeSegments[1] === "annual-report-processing-runs" &&
+    routeSegments[2] === "latest"
+  ) {
+    if (request.method !== "GET") {
+      return createMethodNotAllowedResponseV1("GET");
+    }
+
+    return handleGetLatestAnnualReportProcessingRunRouteV1(
+      request,
+      env,
+      routeSegments[0],
+    );
+  }
+
+  if (
+    routeSegments.length === 2 &&
+    routeSegments[0] &&
     routeSegments[1] === "annual-report-runs"
   ) {
     if (request.method !== "POST") {
@@ -2036,6 +2586,23 @@ export async function handleWorkspaceRoutesV1(
   if (
     routeSegments.length === 3 &&
     routeSegments[0] &&
+    routeSegments[1] === "annual-report-tax-analysis" &&
+    routeSegments[2] === "active"
+  ) {
+    if (request.method !== "GET") {
+      return createMethodNotAllowedResponseV1("GET");
+    }
+
+    return handleGetActiveAnnualReportTaxAnalysisRouteV1(
+      request,
+      env,
+      routeSegments[0],
+    );
+  }
+
+  if (
+    routeSegments.length === 3 &&
+    routeSegments[0] &&
     routeSegments[1] === "annual-report-extractions" &&
     routeSegments[2] === "overrides"
   ) {
@@ -2044,6 +2611,24 @@ export async function handleWorkspaceRoutesV1(
     }
 
     return handleAnnualReportOverridesRouteV1(
+      request,
+      env,
+      appBaseUrl,
+      routeSegments[0],
+    );
+  }
+
+  if (
+    routeSegments.length === 3 &&
+    routeSegments[0] &&
+    routeSegments[1] === "annual-report-extractions" &&
+    routeSegments[2] === "clear"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+
+    return handleClearAnnualReportRouteV1(
       request,
       env,
       appBaseUrl,

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "tax-adjustments-non-deductible-expenses",
+  "moduleVersion": "v1",
+  "promptVersion": "tax-adjustments-non-deductible-expenses.prompts.v1",
+  "runtime": {
+    "provider": "gemini",
+    "modelTier": "thinking"
+  },
+  "policy": {
+    "basePolicyVersion": "tax-adjustments-non-deductible-expenses.v1",
+    "activePatchVersions": []
+  }
+}

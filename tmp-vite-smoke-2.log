@@ -1,0 +1,32 @@
+
+  [32m[1mVITE[22m v5.4.21[39m  [2mready in [0m[1m397[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m4175[22m/[39m
+[2m10:18:18 PM[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2msrc/client/main.tsx[22m
+[2m10:19:07 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/features/workspaces/workspace-workbench-page.v1.tsx[22m
+[2m10:19:07 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/features/modules/AccountMappingGridV1.tsx[22m
+[2m10:19:38 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/features/modules/AccountMappingGridV1.tsx[22m
+[2m10:19:38 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/features/workspaces/workspace-workbench-page.v1.tsx[22m
+[2m10:20:01 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/features/workspaces/workspace-workbench-page.v1.tsx[22m
+[2m10:31:31 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/app/router.tsx[22m
+[2m10:31:36 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/app/router.tsx[22m
+[2m10:31:58 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/components/app-shell.tsx[22m
+[2m10:32:53 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/features/workspaces/company-selector-page.v1.tsx[22m
+[2m10:33:40 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/features/modules/core-module-shell-page.v1.tsx[22m
+[2m10:34:31 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/styles/global.css[22m
+[2m10:54:49 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/app/app-context.v1.tsx[22m
+[2m10:56:52 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/app/router.tsx[22m
+[2m10:57:44 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/features/workspaces/company-selector-page.v1.tsx[22m
+[2m10:58:28 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/components/app-shell.tsx[22m
+[2m11:00:41 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/features/modules/core-module-shell-page.v1.tsx[22m
+[2m11:04:42 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/components/app-shell.tsx[22m
+[2m11:04:42 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/app/router.tsx[22m
+[2m11:05:10 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/features/modules/core-module-shell-page.v1.tsx[22m
+[2m11:07:15 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/features/modules/core-module-shell-page.v1.tsx[22m
+[2m11:07:24 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/features/modules/core-module-shell-page.v1.tsx[22m
+[2m11:09:00 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/styles/global.css[22m
+[2m11:09:06 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/styles/global.css[22m
+[2m11:10:09 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/styles/global.css[22m
+[2m11:10:20 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/styles/global.css[22m
+[2m11:12:53 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/components/app-shell.tsx[22m
+[2m11:13:05 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/client/components/app-shell.tsx[22m

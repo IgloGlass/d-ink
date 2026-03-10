@@ -94,13 +94,13 @@ describe("WorkspaceWorkbenchPageV1", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("heading", { name: "Workspace Workbench" }),
+        screen.getByRole("heading", { name: "AAAAAAAA-AAA" }),
       ).toBeInTheDocument();
       expect(screen.getByText("Annual Report Analysis")).toBeInTheDocument();
       expect(screen.getByText("Tax Return INK2")).toBeInTheDocument();
     });
 
-    await user.click(screen.getAllByText("Open module")[0]);
+    await user.click(screen.getAllByRole("button", { name: "Enter Module" })[0]);
 
     await waitFor(() => {
       expect(screen.getByText("Module Shell Loaded")).toBeInTheDocument();

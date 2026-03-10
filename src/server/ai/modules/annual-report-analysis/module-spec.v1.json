@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "annual-report-analysis",
+  "moduleVersion": "v1",
+  "promptVersion": "annual-report-analysis.prompts.v1",
+  "runtime": {
+    "provider": "gemini",
+    "modelTier": "fast"
+  },
+  "policy": {
+    "basePolicyVersion": "annual-report-analysis.v1",
+    "activePatchVersions": []
+  }
+}
