@@ -57,7 +57,11 @@ function installAnnualReportUploadXhrMock(input: {
     status = 0;
     upload = {
       onprogress: null as
-        | ((event: { lengthComputable: boolean; loaded: number; total: number }) => void)
+        | ((event: {
+            lengthComputable: boolean;
+            loaded: number;
+            total: number;
+          }) => void)
         | null,
     };
     withCredentials = false;
@@ -205,7 +209,9 @@ describe("CoreModuleShellPageV1", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       "This module is available, but a complete annual report must be uploaded before mapping starts.",
     );
-    expect(screen.queryByText("Populate the account table")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Populate the account table"),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Import trial balance" }),
     ).toBeInTheDocument();
@@ -355,10 +361,7 @@ describe("CoreModuleShellPageV1", () => {
         );
       }
 
-      if (
-        url.includes("/annual-report-upload-sessions") &&
-        method === "POST"
-      ) {
+      if (url.includes("/annual-report-upload-sessions") && method === "POST") {
         return Promise.resolve(
           mockJsonResponse({
             status: 201,
@@ -431,7 +434,11 @@ describe("CoreModuleShellPageV1", () => {
     expect(fileInput).not.toBeNull();
     fireEvent.change(fileInput!, {
       target: {
-        files: [new File(["annual report"], "annual-report.pdf", { type: "application/pdf" })],
+        files: [
+          new File(["annual report"], "annual-report.pdf", {
+            type: "application/pdf",
+          }),
+        ],
       },
     });
 
@@ -571,10 +578,7 @@ describe("CoreModuleShellPageV1", () => {
         );
       }
 
-      if (
-        url.includes("/annual-report-upload-sessions") &&
-        method === "POST"
-      ) {
+      if (url.includes("/annual-report-upload-sessions") && method === "POST") {
         uploadSessionRequests += 1;
         return Promise.resolve(
           mockJsonResponse({
@@ -648,7 +652,11 @@ describe("CoreModuleShellPageV1", () => {
     expect(fileInput).not.toBeNull();
     fireEvent.change(fileInput!, {
       target: {
-        files: [new File(["annual report"], "annual-report.pdf", { type: "application/pdf" })],
+        files: [
+          new File(["annual report"], "annual-report.pdf", {
+            type: "application/pdf",
+          }),
+        ],
       },
     });
 
@@ -791,10 +799,7 @@ describe("CoreModuleShellPageV1", () => {
         );
       }
 
-      if (
-        url.includes("/annual-report-upload-sessions") &&
-        method === "POST"
-      ) {
+      if (url.includes("/annual-report-upload-sessions") && method === "POST") {
         uploadSessionRequests += 1;
         return Promise.resolve(
           mockJsonResponse({
@@ -881,7 +886,9 @@ describe("CoreModuleShellPageV1", () => {
       },
     });
 
-    await userEvent.click(screen.getAllByRole("button", { name: "Retry analysis" })[0]!);
+    await userEvent.click(
+      screen.getAllByRole("button", { name: "Upload annual report" })[0]!,
+    );
 
     await waitFor(() => {
       expect(uploadSessionRequests).toBe(1);
@@ -1036,8 +1043,8 @@ describe("CoreModuleShellPageV1", () => {
     });
 
     const recoveryButton = screen
-      .getAllByRole("button", { name: "Choose replacement file" })
-      .find((button) => button.closest(".module-ai-analysis-card__actions"));
+      .getAllByRole("button", { name: "Choose annual report" })
+      .find((button) => button.closest(".module-upload-drop-zone__actions"));
     expect(recoveryButton).toBeDefined();
 
     await userEvent.click(recoveryButton!);
@@ -1047,9 +1054,7 @@ describe("CoreModuleShellPageV1", () => {
 
   it("requires confirmation before rerunning annual-report analysis when active extraction data exists", async () => {
     let annualReportRunCount = 0;
-    const confirmSpy = vi
-      .spyOn(window, "confirm")
-      .mockReturnValue(false);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     installAnnualReportUploadXhrMock({
       onSend: () => {
         annualReportRunCount += 1;
@@ -1226,10 +1231,7 @@ describe("CoreModuleShellPageV1", () => {
         });
       }
 
-      if (
-        url.includes("/annual-report-upload-sessions") &&
-        method === "POST"
-      ) {
+      if (url.includes("/annual-report-upload-sessions") && method === "POST") {
         return mockJsonResponse({
           status: 201,
           body: {
@@ -1298,7 +1300,11 @@ describe("CoreModuleShellPageV1", () => {
     expect(fileInput).not.toBeNull();
     fireEvent.change(fileInput!, {
       target: {
-        files: [new File(["annual report"], "annual-report.pdf", { type: "application/pdf" })],
+        files: [
+          new File(["annual report"], "annual-report.pdf", {
+            type: "application/pdf",
+          }),
+        ],
       },
     });
 
@@ -1366,20 +1372,58 @@ describe("CoreModuleShellPageV1", () => {
               sourceFileType: "pdf",
               policyVersion: "annual-report-manual-first.v1",
               fields: {
-                companyName: { value: "Test Company AB", status: "extracted", confidence: 0.95 },
-                organizationNumber: { value: "5561231234", status: "extracted", confidence: 0.95 },
-                fiscalYearStart: { value: "2025-01-01", status: "extracted", confidence: 0.95 },
-                fiscalYearEnd: { value: "2025-12-31", status: "extracted", confidence: 0.95 },
-                accountingStandard: { value: "K2", status: "extracted", confidence: 0.92 },
-                profitBeforeTax: { value: 120000, status: "extracted", confidence: 0.88 },
+                companyName: {
+                  value: "Test Company AB",
+                  status: "extracted",
+                  confidence: 0.95,
+                },
+                organizationNumber: {
+                  value: "5561231234",
+                  status: "extracted",
+                  confidence: 0.95,
+                },
+                fiscalYearStart: {
+                  value: "2025-01-01",
+                  status: "extracted",
+                  confidence: 0.95,
+                },
+                fiscalYearEnd: {
+                  value: "2025-12-31",
+                  status: "extracted",
+                  confidence: 0.95,
+                },
+                accountingStandard: {
+                  value: "K2",
+                  status: "extracted",
+                  confidence: 0.92,
+                },
+                profitBeforeTax: {
+                  value: 120000,
+                  status: "extracted",
+                  confidence: 0.88,
+                },
               },
               summary: { autoDetectedFieldCount: 6, needsReviewFieldCount: 0 },
               taxSignals: [],
               documentWarnings: [],
               taxDeep: {
                 ink2rExtracted: {
-                  incomeStatement: [{ code: "profit", label: "Profit", currentYearValue: 120000, evidence: [] }],
-                  balanceSheet: [{ code: "assets", label: "Assets", currentYearValue: 400000, evidence: [] }],
+                  incomeStatement: [
+                    {
+                      code: "profit",
+                      label: "Profit",
+                      currentYearValue: 120000,
+                      evidence: [],
+                    },
+                  ],
+                  balanceSheet: [
+                    {
+                      code: "assets",
+                      label: "Assets",
+                      currentYearValue: 400000,
+                      evidence: [],
+                    },
+                  ],
                 },
                 depreciationContext: { assetAreas: [], evidence: [] },
                 assetMovements: { lines: [], evidence: [] },
@@ -1387,7 +1431,11 @@ describe("CoreModuleShellPageV1", () => {
                 netInterestContext: { notes: [], evidence: [] },
                 pensionContext: { flags: [], notes: [], evidence: [] },
                 leasingContext: { flags: [], notes: [], evidence: [] },
-                groupContributionContext: { flags: [], notes: [], evidence: [] },
+                groupContributionContext: {
+                  flags: [],
+                  notes: [],
+                  evidence: [],
+                },
                 shareholdingContext: { flags: [], notes: [], evidence: [] },
                 priorYearComparatives: [],
               },
@@ -1417,16 +1465,25 @@ describe("CoreModuleShellPageV1", () => {
         return mockNotFoundResponse("INK2_FORM_NOT_FOUND");
       }
       if (url.includes("/comments?")) {
-        return mockJsonResponse({ status: 200, body: { ok: true, comments: [] } });
+        return mockJsonResponse({
+          status: 200,
+          body: { ok: true, comments: [] },
+        });
       }
       if (url.includes("/tasks?")) {
         return mockJsonResponse({ status: 200, body: { ok: true, tasks: [] } });
       }
-      if (url.includes("/annual-report-extractions/clear") && method === "POST") {
+      if (
+        url.includes("/annual-report-extractions/clear") &&
+        method === "POST"
+      ) {
         clearCount += 1;
         return mockJsonResponse({
           status: 200,
-          body: { ok: true, clearedArtifactTypes: ["annual_report_extraction"] },
+          body: {
+            ok: true,
+            clearedArtifactTypes: ["annual_report_extraction"],
+          },
         });
       }
 
@@ -1463,7 +1520,8 @@ describe("CoreModuleShellPageV1", () => {
 
     await waitFor(() => {
       expect(
-        screen.getAllByRole("button", { name: "Clear annual report data" }).length,
+        screen.getAllByRole("button", { name: "Clear annual report data" })
+          .length,
       ).toBeGreaterThan(0);
     });
 
@@ -1530,20 +1588,61 @@ describe("CoreModuleShellPageV1", () => {
                 sourceFileType: "pdf",
                 policyVersion: "annual-report-manual-first.v1",
                 fields: {
-                  companyName: { value: "Test Company AB", status: "extracted", confidence: 0.95 },
-                  organizationNumber: { value: "5561231234", status: "extracted", confidence: 0.95 },
-                  fiscalYearStart: { value: "2025-01-01", status: "extracted", confidence: 0.95 },
-                  fiscalYearEnd: { value: "2025-12-31", status: "extracted", confidence: 0.95 },
-                  accountingStandard: { value: "K2", status: "extracted", confidence: 0.92 },
-                  profitBeforeTax: { value: 120000, status: "extracted", confidence: 0.88 },
+                  companyName: {
+                    value: "Test Company AB",
+                    status: "extracted",
+                    confidence: 0.95,
+                  },
+                  organizationNumber: {
+                    value: "5561231234",
+                    status: "extracted",
+                    confidence: 0.95,
+                  },
+                  fiscalYearStart: {
+                    value: "2025-01-01",
+                    status: "extracted",
+                    confidence: 0.95,
+                  },
+                  fiscalYearEnd: {
+                    value: "2025-12-31",
+                    status: "extracted",
+                    confidence: 0.95,
+                  },
+                  accountingStandard: {
+                    value: "K2",
+                    status: "extracted",
+                    confidence: 0.92,
+                  },
+                  profitBeforeTax: {
+                    value: 120000,
+                    status: "extracted",
+                    confidence: 0.88,
+                  },
                 },
-                summary: { autoDetectedFieldCount: 6, needsReviewFieldCount: 0 },
+                summary: {
+                  autoDetectedFieldCount: 6,
+                  needsReviewFieldCount: 0,
+                },
                 taxSignals: [],
                 documentWarnings: [],
                 taxDeep: {
                   ink2rExtracted: {
-                    incomeStatement: [{ code: "profit", label: "Profit", currentYearValue: 120000, evidence: [] }],
-                    balanceSheet: [{ code: "assets", label: "Assets", currentYearValue: 400000, evidence: [] }],
+                    incomeStatement: [
+                      {
+                        code: "profit",
+                        label: "Profit",
+                        currentYearValue: 120000,
+                        evidence: [],
+                      },
+                    ],
+                    balanceSheet: [
+                      {
+                        code: "assets",
+                        label: "Assets",
+                        currentYearValue: 400000,
+                        evidence: [],
+                      },
+                    ],
                   },
                   depreciationContext: { assetAreas: [], evidence: [] },
                   assetMovements: { lines: [], evidence: [] },
@@ -1551,7 +1650,11 @@ describe("CoreModuleShellPageV1", () => {
                   netInterestContext: { notes: [], evidence: [] },
                   pensionContext: { flags: [], notes: [], evidence: [] },
                   leasingContext: { flags: [], notes: [], evidence: [] },
-                  groupContributionContext: { flags: [], notes: [], evidence: [] },
+                  groupContributionContext: {
+                    flags: [],
+                    notes: [],
+                    evidence: [],
+                  },
                   shareholdingContext: { flags: [], notes: [], evidence: [] },
                   priorYearComparatives: [],
                 },
@@ -1584,15 +1687,24 @@ describe("CoreModuleShellPageV1", () => {
         return mockNotFoundResponse("INK2_FORM_NOT_FOUND");
       }
       if (url.includes("/comments?")) {
-        return mockJsonResponse({ status: 200, body: { ok: true, comments: [] } });
+        return mockJsonResponse({
+          status: 200,
+          body: { ok: true, comments: [] },
+        });
       }
       if (url.includes("/tasks?")) {
         return mockJsonResponse({ status: 200, body: { ok: true, tasks: [] } });
       }
-      if (url.includes("/annual-report-extractions/clear") && method === "POST") {
+      if (
+        url.includes("/annual-report-extractions/clear") &&
+        method === "POST"
+      ) {
         return mockJsonResponse({
           status: 200,
-          body: { ok: true, clearedArtifactTypes: ["annual_report_extraction"] },
+          body: {
+            ok: true,
+            clearedArtifactTypes: ["annual_report_extraction"],
+          },
         });
       }
 
@@ -1636,11 +1748,304 @@ describe("CoreModuleShellPageV1", () => {
     await waitFor(() => {
       expect(
         screen.getByText(
-          "Upload an annual report to trigger extraction and forensic tax review.",
+          "Upload an annual report to populate the financial extraction workbench.",
         ),
       ).toBeInTheDocument();
     });
     expect(screen.queryByText("Test Company AB")).not.toBeInTheDocument();
+  });
+
+  it("runs forensic tax review manually from a saved extraction", async () => {
+    let hasTaxReview = false;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (
+        url.includes("/v1/workspaces/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa?") &&
+        method === "GET"
+      ) {
+        return mockJsonResponse({
+          status: 200,
+          body: {
+            ok: true,
+            workspace: {
+              id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              tenantId: sessionPrincipalMock.tenantId,
+              companyId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+              fiscalYearStart: "2025-01-01",
+              fiscalYearEnd: "2025-12-31",
+              status: "draft",
+              createdAt: "2026-03-01T10:00:00.000Z",
+              updatedAt: "2026-03-01T10:00:00.000Z",
+            },
+          },
+        });
+      }
+
+      if (url.includes("/annual-report-extractions/active?")) {
+        return mockJsonResponse({
+          status: 200,
+          body: {
+            ok: true,
+            active: {
+              artifactId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              version: 3,
+              schemaVersion: "annual_report_extraction_v1",
+            },
+            extraction: {
+              schemaVersion: "annual_report_extraction_v1",
+              sourceFileName: "annual-report.pdf",
+              sourceFileType: "pdf",
+              policyVersion: "annual-report-manual-first.v1",
+              fields: {
+                companyName: {
+                  value: "Test Company AB",
+                  status: "extracted",
+                  confidence: 0.95,
+                },
+                organizationNumber: {
+                  value: "556123-1234",
+                  status: "extracted",
+                  confidence: 0.95,
+                },
+                fiscalYearStart: {
+                  value: "2025-01-01",
+                  status: "extracted",
+                  confidence: 0.95,
+                },
+                fiscalYearEnd: {
+                  value: "2025-12-31",
+                  status: "extracted",
+                  confidence: 0.95,
+                },
+                accountingStandard: {
+                  value: "K3",
+                  status: "extracted",
+                  confidence: 0.92,
+                },
+                profitBeforeTax: {
+                  value: 545286000,
+                  status: "extracted",
+                  confidence: 0.9,
+                },
+              },
+              summary: { autoDetectedFieldCount: 6, needsReviewFieldCount: 0 },
+              taxSignals: [],
+              documentWarnings: [],
+              taxDeep: {
+                ink2rExtracted: {
+                  statementUnit: "sek",
+                  incomeStatement: [
+                    {
+                      code: "3.1",
+                      label: "Nettoomsättning",
+                      currentYearValue: 3989355000,
+                      evidence: [],
+                    },
+                  ],
+                  balanceSheet: [
+                    {
+                      code: "2.26",
+                      label: "Kassa, bank och redovisningsmedel",
+                      currentYearValue: 301521000,
+                      evidence: [],
+                    },
+                  ],
+                },
+                depreciationContext: { assetAreas: [], evidence: [] },
+                assetMovements: { lines: [], evidence: [] },
+                reserveContext: { movements: [], notes: [], evidence: [] },
+                netInterestContext: { notes: [], evidence: [] },
+                pensionContext: { flags: [], notes: [], evidence: [] },
+                leasingContext: { flags: [], notes: [], evidence: [] },
+                groupContributionContext: {
+                  flags: [],
+                  notes: [],
+                  evidence: [],
+                },
+                shareholdingContext: { flags: [], notes: [], evidence: [] },
+                priorYearComparatives: [],
+              },
+              confirmation: {
+                isConfirmed: true,
+                confirmedAt: "2026-03-01T10:00:00.000Z",
+                confirmedByUserId: sessionPrincipalMock.userId,
+              },
+            },
+          },
+        });
+      }
+
+      if (url.includes("/annual-report-tax-analysis/active?")) {
+        if (!hasTaxReview) {
+          return mockNotFoundResponse("TAX_ANALYSIS_NOT_FOUND");
+        }
+
+        return mockJsonResponse({
+          status: 200,
+          body: {
+            ok: true,
+            active: {
+              artifactId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+              version: 1,
+              schemaVersion: "annual_report_tax_analysis_v1",
+            },
+            taxAnalysis: {
+              schemaVersion: "annual_report_tax_analysis_v1",
+              sourceExtractionArtifactId:
+                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              policyVersion: "annual-report-manual-first.v1",
+              basedOn: {
+                ink2rExtracted: {
+                  incomeStatement: [],
+                  balanceSheet: [],
+                },
+                depreciationContext: { assetAreas: [], evidence: [] },
+                assetMovements: { lines: [], evidence: [] },
+                reserveContext: { movements: [], notes: [], evidence: [] },
+                netInterestContext: { notes: [], evidence: [] },
+                pensionContext: { flags: [], notes: [], evidence: [] },
+                leasingContext: { flags: [], notes: [], evidence: [] },
+                groupContributionContext: {
+                  flags: [],
+                  notes: [],
+                  evidence: [],
+                },
+                shareholdingContext: { flags: [], notes: [], evidence: [] },
+                priorYearComparatives: [],
+              },
+              executiveSummary: "Manual forensic review finished.",
+              accountingStandardAssessment: {
+                status: "aligned",
+                rationale: "K3 is explicit in the saved extraction.",
+              },
+              findings: [],
+              missingInformation: [],
+              recommendedNextActions: [],
+            },
+          },
+        });
+      }
+
+      if (
+        url.includes("/annual-report-tax-analysis/run") &&
+        method === "POST"
+      ) {
+        hasTaxReview = true;
+        return mockJsonResponse({
+          status: 200,
+          body: {
+            ok: true,
+            active: {
+              artifactId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+              version: 1,
+              schemaVersion: "annual_report_tax_analysis_v1",
+            },
+            taxAnalysis: {
+              schemaVersion: "annual_report_tax_analysis_v1",
+              sourceExtractionArtifactId:
+                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              policyVersion: "annual-report-manual-first.v1",
+              basedOn: {
+                ink2rExtracted: {
+                  incomeStatement: [],
+                  balanceSheet: [],
+                },
+                depreciationContext: { assetAreas: [], evidence: [] },
+                assetMovements: { lines: [], evidence: [] },
+                reserveContext: { movements: [], notes: [], evidence: [] },
+                netInterestContext: { notes: [], evidence: [] },
+                pensionContext: { flags: [], notes: [], evidence: [] },
+                leasingContext: { flags: [], notes: [], evidence: [] },
+                groupContributionContext: {
+                  flags: [],
+                  notes: [],
+                  evidence: [],
+                },
+                shareholdingContext: { flags: [], notes: [], evidence: [] },
+                priorYearComparatives: [],
+              },
+              executiveSummary: "Manual forensic review finished.",
+              accountingStandardAssessment: {
+                status: "aligned",
+                rationale: "K3 is explicit in the saved extraction.",
+              },
+              findings: [],
+              missingInformation: [],
+              recommendedNextActions: [],
+            },
+          },
+        });
+      }
+
+      if (url.includes("/annual-report-processing-runs/latest?")) {
+        return mockNotFoundResponse("PROCESSING_RUN_NOT_FOUND");
+      }
+      if (url.includes("/mapping-decisions/active?")) {
+        return mockNotFoundResponse("MAPPING_NOT_FOUND");
+      }
+      if (url.includes("/tax-adjustments/active?")) {
+        return mockNotFoundResponse("ADJUSTMENTS_NOT_FOUND");
+      }
+      if (url.includes("/tax-summary/active?")) {
+        return mockNotFoundResponse("TAX_SUMMARY_NOT_FOUND");
+      }
+      if (url.includes("/ink2-form/active?")) {
+        return mockNotFoundResponse("INK2_FORM_NOT_FOUND");
+      }
+      if (url.includes("/comments?")) {
+        return mockJsonResponse({
+          status: 200,
+          body: { ok: true, comments: [] },
+        });
+      }
+      if (url.includes("/tasks?")) {
+        return mockJsonResponse({ status: 200, body: { ok: true, tasks: [] } });
+      }
+
+      return mockJsonResponse({
+        status: 500,
+        body: {
+          ok: false,
+          error: {
+            code: "UNEXPECTED",
+            message: "Unexpected call",
+            user_message: "Unexpected call",
+            context: {},
+          },
+        },
+      });
+    });
+
+    render(
+      <AppProviders>
+        <MemoryRouter
+          initialEntries={[
+            "/app/workspaces/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/annual-report-analysis",
+          ]}
+        >
+          <Routes>
+            <Route
+              path="/app/workspaces/:workspaceId/:coreModule"
+              element={<CoreModuleShellPageV1 />}
+            />
+          </Routes>
+        </MemoryRouter>
+      </AppProviders>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Show forensic review" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Run forensic tax review" }),
+    );
+
+    expect(
+      await screen.findByText("Manual forensic review finished."),
+    ).toBeInTheDocument();
   });
 
   it("renders INK2-coded rows with a balance control instead of raw summary rows", async () => {
@@ -1776,7 +2181,11 @@ describe("CoreModuleShellPageV1", () => {
                 netInterestContext: { notes: [], evidence: [] },
                 pensionContext: { flags: [], notes: [], evidence: [] },
                 leasingContext: { flags: [], notes: [], evidence: [] },
-                groupContributionContext: { flags: [], notes: [], evidence: [] },
+                groupContributionContext: {
+                  flags: [],
+                  notes: [],
+                  evidence: [],
+                },
                 shareholdingContext: { flags: [], notes: [], evidence: [] },
                 priorYearComparatives: [],
               },
@@ -1809,7 +2218,10 @@ describe("CoreModuleShellPageV1", () => {
         return mockNotFoundResponse("INK2_FORM_NOT_FOUND");
       }
       if (url.includes("/comments?")) {
-        return mockJsonResponse({ status: 200, body: { ok: true, comments: [] } });
+        return mockJsonResponse({
+          status: 200,
+          body: { ok: true, comments: [] },
+        });
       }
       if (url.includes("/tasks?")) {
         return mockJsonResponse({ status: 200, body: { ok: true, tasks: [] } });
@@ -1855,18 +2267,14 @@ describe("CoreModuleShellPageV1", () => {
     expect(screen.getByText("Balance control")).toBeInTheDocument();
     expect(screen.getByText("Equity + liabilities")).toBeInTheDocument();
     expect(
-      screen.getByText(
-        "Control passed: assets equal equity plus liabilities.",
-      ),
+      screen.getByText("Control passed: assets equal equity plus liabilities."),
     ).toBeInTheDocument();
     expect(screen.queryByText("SUMMA TILLGÅNGAR")).not.toBeInTheDocument();
   });
 
   it("requires confirmation before rerunning account mapping when active mapping data exists", async () => {
     let trialBalanceRunCount = 0;
-    const confirmSpy = vi
-      .spyOn(window, "confirm")
-      .mockReturnValue(false);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
 
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
@@ -2039,9 +2447,11 @@ describe("CoreModuleShellPageV1", () => {
     expect(fileInput).not.toBeNull();
     fireEvent.change(fileInput!, {
       target: {
-        files: [new File(["trial balance"], "trial-balance.xlsx", {
-          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        })],
+        files: [
+          new File(["trial balance"], "trial-balance.xlsx", {
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          }),
+        ],
       },
     });
 
@@ -2063,7 +2473,7 @@ describe("CoreModuleShellPageV1", () => {
     expect(trialBalanceRunCount).toBe(1);
   });
 
-  it("renders extracted financial data and tax notes in the annual-report sidebar", async () => {
+  it("collapses the forensic rail by default and surfaces extracted tax notes in the annual-report review", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
       const method = (init?.method ?? "GET").toUpperCase();
@@ -2220,7 +2630,9 @@ describe("CoreModuleShellPageV1", () => {
                 },
                 pensionContext: {
                   flags: [],
-                  notes: ["Pension commitments should be reconciled to the special payroll tax base."],
+                  notes: [
+                    "Pension commitments should be reconciled to the special payroll tax base.",
+                  ],
                   evidence: [],
                 },
                 taxExpenseContext: {
@@ -2232,15 +2644,20 @@ describe("CoreModuleShellPageV1", () => {
                     value: -1200000,
                     evidence: [],
                   },
-                  notes: [
-                    "Deferred tax note indicates temporary differences that should be traced into the tax workpapers.",
-                  ],
+                  notes: [],
                   evidence: [],
                 },
                 leasingContext: {
                   flags: [],
                   notes: [],
-                  evidence: [],
+                  evidence: [
+                    {
+                      snippet:
+                        "Lease commitments continue through 2030 according to note 3.",
+                      noteReference: "Not 3",
+                      page: 24,
+                    },
+                  ],
                 },
                 groupContributionContext: {
                   flags: [],
@@ -2258,6 +2675,38 @@ describe("CoreModuleShellPageV1", () => {
                   notes: [],
                   evidence: [],
                 },
+                relevantNotes: [
+                  {
+                    category: "fixed_assets_depreciation",
+                    noteReference: "Not 12",
+                    title: "Programvaror",
+                    pages: [27],
+                    notes: [
+                      "Programvaror skrivs av med 10 procent per ar.",
+                    ],
+                    evidence: [],
+                  },
+                  {
+                    category: "tax_expense",
+                    noteReference: "Not 9",
+                    title: "Skatt pa arets resultat",
+                    pages: [26],
+                    notes: [
+                      "Aktuell skatt och skatteeffekter av ej avdragsgilla kostnader framgar av noten.",
+                    ],
+                    evidence: [],
+                  },
+                  {
+                    category: "impairments_write_downs",
+                    noteReference: "Not 22",
+                    title: "Nedskrivningar av andelar",
+                    pages: [30],
+                    notes: [
+                      "Andelar i koncernforetag ska foljas upp for eventuell skattemassig avdragsbegransning.",
+                    ],
+                    evidence: [],
+                  },
+                ],
                 priorYearComparatives: [],
               },
               confirmation: { isConfirmed: false },
@@ -2278,7 +2727,8 @@ describe("CoreModuleShellPageV1", () => {
             },
             taxAnalysis: {
               schemaVersion: "annual_report_tax_analysis_v1",
-              sourceExtractionArtifactId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              sourceExtractionArtifactId:
+                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
               policyVersion: "annual-report-tax-analysis.v1",
               basedOn: {
                 ink2rExtracted: { incomeStatement: [], balanceSheet: [] },
@@ -2288,7 +2738,11 @@ describe("CoreModuleShellPageV1", () => {
                 netInterestContext: { notes: [], evidence: [] },
                 pensionContext: { flags: [], notes: [], evidence: [] },
                 leasingContext: { flags: [], notes: [], evidence: [] },
-                groupContributionContext: { flags: [], notes: [], evidence: [] },
+                groupContributionContext: {
+                  flags: [],
+                  notes: [],
+                  evidence: [],
+                },
                 shareholdingContext: { flags: [], notes: [], evidence: [] },
                 priorYearComparatives: [],
               },
@@ -2392,7 +2846,9 @@ describe("CoreModuleShellPageV1", () => {
     expect(
       await screen.findByRole("heading", { name: "Financial data" }),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Extract company facts and financial values")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Extract company facts and financial values"),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("Deloitte AB")).toBeInTheDocument();
     expect(screen.getByText("Normalized from kSEK to SEK")).toBeInTheDocument();
     expect(screen.getByText("Income statement")).toBeInTheDocument();
@@ -2400,13 +2856,55 @@ describe("CoreModuleShellPageV1", () => {
     expect(screen.getByText("Nettoomsättning")).toBeInTheDocument();
     expect(screen.getByText("428 447 275 000")).toBeInTheDocument();
     expect(screen.getByText("Varulager")).toBeInTheDocument();
-    expect(
-      screen.getByText("Depreciation and movements"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Current and deferred tax")).toBeInTheDocument();
+    expect(screen.getByText("Depreciation and movements")).toBeInTheDocument();
     expect(screen.getByText("Current tax")).toBeInTheDocument();
     expect(screen.getByText("112 345 000")).toBeInTheDocument();
     expect(screen.getByText("Inventories and equipment")).toBeInTheDocument();
+    expect(screen.getByText("Relevant tax notes")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Not 12 Programvaror: Programvaror skrivs av med 10 procent per ar.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Not 9 Skatt pa arets resultat: Aktuell skatt och skatteeffekter av ej avdragsgilla kostnader framgar av noten.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Impairments and write-downs")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Not 22 Nedskrivningar av andelar: Andelar i koncernforetag ska foljas upp for eventuell skattemassig avdragsbegransning.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Lease commitments continue through 2030 according to note 3.",
+      ),
+    ).toBeInTheDocument();
+    const showForensicReviewButton = screen.getByRole("button", {
+      name: "Show forensic review",
+    });
+    const clearAnnualReportButton = screen.getByRole("button", {
+      name: "Clear annual report data",
+    });
+    expect(showForensicReviewButton).toBeInTheDocument();
+    expect(clearAnnualReportButton).toBeInTheDocument();
+    expect(
+      showForensicReviewButton.closest(
+        ".annual-report-sidebar__actions--header",
+      ),
+    ).toBe(
+      clearAnnualReportButton.closest(
+        ".annual-report-sidebar__actions--header",
+      ),
+    );
+    expect(
+      screen.getByRole("button", { name: "Continue to forensic review" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Forensic tax review" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText(
         "Overavskrivningar of 8,000 should be matched to the tax depreciation schedule.",
@@ -2417,13 +2915,34 @@ describe("CoreModuleShellPageV1", () => {
     ) as HTMLDetailsElement | null;
     expect(warningDisclosure).not.toBeNull();
     expect(warningDisclosure?.open).toBe(false);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Show forensic review" }),
+    );
+
     expect(
-      screen.getByRole("heading", { name: "Forensic tax review" }),
+      await screen.findByRole("heading", { name: "Forensic tax review" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hide" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Hide forensic review" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Fallback only")).not.toBeInTheDocument();
     expect(
       screen.getByText(
         "The report contains depreciation and reserve movements that require tax review.",
       ),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Hide" }));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("heading", { name: "Forensic tax review" }),
+      ).not.toBeInTheDocument();
+    });
+    expect(
+      screen.getByRole("button", { name: "Show forensic review" }),
     ).toBeInTheDocument();
   });
 
@@ -2475,21 +2994,41 @@ describe("CoreModuleShellPageV1", () => {
               sourceFileType: "pdf",
               policyVersion: "annual-report-manual-first.v1",
               fields: {
-                companyName: { value: "Deloitte AB", status: "extracted", confidence: 0.98 },
+                companyName: {
+                  value: "Deloitte AB",
+                  status: "extracted",
+                  confidence: 0.98,
+                },
                 organizationNumber: {
                   value: "556271-5309",
                   status: "extracted",
                   confidence: 0.98,
                 },
-                fiscalYearStart: { value: "2024-06-01", status: "extracted", confidence: 0.98 },
-                fiscalYearEnd: { value: "2025-05-31", status: "extracted", confidence: 0.98 },
-                accountingStandard: { value: "K3", status: "extracted", confidence: 0.95 },
-                profitBeforeTax: { value: 545286, status: "extracted", confidence: 0.9 },
+                fiscalYearStart: {
+                  value: "2024-06-01",
+                  status: "extracted",
+                  confidence: 0.98,
+                },
+                fiscalYearEnd: {
+                  value: "2025-05-31",
+                  status: "extracted",
+                  confidence: 0.98,
+                },
+                accountingStandard: {
+                  value: "K3",
+                  status: "extracted",
+                  confidence: 0.95,
+                },
+                profitBeforeTax: {
+                  value: 545286,
+                  status: "extracted",
+                  confidence: 0.9,
+                },
               },
               summary: { autoDetectedFieldCount: 6, needsReviewFieldCount: 0 },
               taxSignals: [],
               documentWarnings: [
-                "Gemini statements extraction skipped: {\"error\":{\"code\":400,\"message\":\"A schema in GenerationConfig in the request exceeds the maximum allowed nesting depth.\",\"status\":\"INVALID_ARGUMENT\"}}",
+                'Gemini statements extraction skipped: {"error":{"code":400,"message":"A schema in GenerationConfig in the request exceeds the maximum allowed nesting depth.","status":"INVALID_ARGUMENT"}}',
                 "Full financial extraction is missing on this artifact. Re-run the annual report analysis to populate full income statement, balance sheet, and tax-note data.",
               ],
               taxDeep: {
@@ -2503,7 +3042,11 @@ describe("CoreModuleShellPageV1", () => {
                 netInterestContext: { notes: [], evidence: [] },
                 pensionContext: { flags: [], notes: [], evidence: [] },
                 leasingContext: { flags: [], notes: [], evidence: [] },
-                groupContributionContext: { flags: [], notes: [], evidence: [] },
+                groupContributionContext: {
+                  flags: [],
+                  notes: [],
+                  evidence: [],
+                },
                 shareholdingContext: { flags: [], notes: [], evidence: [] },
                 priorYearComparatives: [],
               },
@@ -2530,7 +3073,10 @@ describe("CoreModuleShellPageV1", () => {
         return mockNotFoundResponse("INK2_FORM_NOT_FOUND");
       }
       if (url.includes("/comments?")) {
-        return mockJsonResponse({ status: 200, body: { ok: true, comments: [] } });
+        return mockJsonResponse({
+          status: 200,
+          body: { ok: true, comments: [] },
+        });
       }
       if (url.includes("/tasks?")) {
         return mockJsonResponse({ status: 200, body: { ok: true, tasks: [] } });
@@ -2568,20 +3114,24 @@ describe("CoreModuleShellPageV1", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getAllByText("Legacy result")).toHaveLength(2);
+      expect(screen.getAllByText("Legacy result")).toHaveLength(1);
     });
     expect(
       screen.getAllByText(
         "This saved result was created with an older extraction engine and is missing full statements and tax-note context. Upload the annual report again to refresh it.",
       ),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
     expect(screen.queryByText("Income statement")).not.toBeInTheDocument();
     expect(
-      screen.getAllByRole("button", { name: "Choose another file" }).length,
+      screen.getAllByRole("button", { name: "Choose annual report" }).length,
     ).toBeGreaterThan(0);
     expect(
-      screen.getAllByRole("button", { name: "Clear annual report data" }).length,
+      screen.getAllByRole("button", { name: "Clear annual report data" })
+        .length,
     ).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("button", { name: "Show forensic review" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Technical details (1)")).toBeInTheDocument();
   });
 });

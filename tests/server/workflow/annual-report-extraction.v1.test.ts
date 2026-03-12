@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { createD1AnnualReportProcessingRunRepositoryV1 } from "../../../src/db/repositories/annual-report-processing-run.repository.v1";
 import { createD1AuditRepositoryV1 } from "../../../src/db/repositories/audit.repository.v1";
 import { createD1WorkspaceArtifactRepositoryV1 } from "../../../src/db/repositories/workspace-artifact.repository.v1";
 import { createD1WorkspaceRepositoryV1 } from "../../../src/db/repositories/workspace.repository.v1";
@@ -13,6 +14,7 @@ import {
   getActiveAnnualReportExtractionV1,
   getActiveAnnualReportTaxAnalysisV1,
   runAnnualReportExtractionV1,
+  runAnnualReportTaxAnalysisV1,
 } from "../../../src/server/workflow/annual-report-extraction.v1";
 import { parseAnnualReportExtractionPayloadV1 } from "../../../src/shared/contracts/annual-report-extraction.v1";
 import { parseAnnualReportTaxAnalysisPayloadV1 } from "../../../src/shared/contracts/annual-report-tax-analysis.v1";
@@ -60,6 +62,9 @@ function createDeps(): AnnualReportExtractionDepsV1 {
   return {
     artifactRepository: createD1WorkspaceArtifactRepositoryV1(env.DB),
     auditRepository: createD1AuditRepositoryV1(env.DB),
+    processingRunRepository: createD1AnnualReportProcessingRunRepositoryV1(
+      env.DB,
+    ),
     workspaceRepository: createD1WorkspaceRepositoryV1(env.DB),
     getRuntimeMetadata: () => ({
       extractionEngineVersion: "annual-report-deep-extraction.v2",
@@ -341,7 +346,11 @@ describe("annual report extraction workflow v1", () => {
         sourceFileType: "pdf",
         policyVersion: input.policyVersion,
         fields: {
-          companyName: { status: "extracted", confidence: 0.99, value: "Acme AB" },
+          companyName: {
+            status: "extracted",
+            confidence: 0.99,
+            value: "Acme AB",
+          },
           organizationNumber: {
             status: "extracted",
             confidence: 0.99,
@@ -685,7 +694,7 @@ describe("annual report extraction workflow v1", () => {
     expect(runResult.extraction.taxSignals).toHaveLength(1);
   });
 
-  it("persists linked annual-report tax analysis after extraction when analyzer is injected", async () => {
+  it("persists annual-report tax analysis when the manual forensic run succeeds", async () => {
     await seedWorkspace();
     const deps = createDeps();
     deps.extractAnnualReport = async (input) => ({
@@ -735,8 +744,22 @@ describe("annual report extraction workflow v1", () => {
         documentWarnings: [],
         taxDeep: {
           ink2rExtracted: {
-            incomeStatement: [],
-            balanceSheet: [],
+            incomeStatement: [
+              {
+                code: "3.1",
+                label: "Nettoomsättning",
+                currentYearValue: 1000000,
+                evidence: [],
+              },
+            ],
+            balanceSheet: [
+              {
+                code: "2.26",
+                label: "Kassa, bank och redovisningsmedel",
+                currentYearValue: 250000,
+                evidence: [],
+              },
+            ],
           },
           depreciationContext: {
             assetAreas: [
@@ -796,7 +819,12 @@ describe("annual report extraction workflow v1", () => {
         schemaVersion: "annual_report_tax_analysis_v1",
         sourceExtractionArtifactId: input.extractionArtifactId,
         policyVersion: input.policyVersion,
-        basedOn: input.extraction.taxDeep!,
+        basedOn:
+          input.extraction.taxDeep ??
+          createCompleteExtractionPayloadV1({
+            fileName: input.extraction.sourceFileName,
+            policyVersion: input.policyVersion,
+          }).taxDeep,
         executiveSummary: "Depreciation note needs follow-up.",
         accountingStandardAssessment: {
           status: "aligned",
@@ -835,6 +863,23 @@ describe("annual report extraction workflow v1", () => {
       return;
     }
 
+    const taxRunResult = await runAnnualReportTaxAnalysisV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        expectedActiveExtraction: {
+          artifactId: runResult.active.artifactId,
+          version: runResult.active.version,
+        },
+        requestedByUserId: USER_ID,
+      },
+      deps,
+    );
+    expect(taxRunResult.ok).toBe(true);
+    if (!taxRunResult.ok) {
+      return;
+    }
+
     const taxAnalysis = await getActiveAnnualReportTaxAnalysisV1(
       {
         tenantId: TENANT_ID,
@@ -849,6 +894,122 @@ describe("annual report extraction workflow v1", () => {
     expect(taxAnalysis.taxAnalysis.findings[0]?.area).toBe(
       "depreciation_differences",
     );
+  });
+
+  it("forwards the stored source document into manual forensic tax analysis when available", async () => {
+    await seedWorkspace();
+    const deps = createDeps();
+    const sourceBytes = Uint8Array.from([37, 80, 68, 70, 45, 49, 46, 55]);
+    deps.sourceStore = {
+      async delete() {
+        return;
+      },
+      async get(key) {
+        if (key !== "annual-report-source/test.pdf") {
+          return null;
+        }
+
+        return {
+          async arrayBuffer() {
+            return Uint8Array.from(sourceBytes).buffer;
+          },
+        };
+      },
+      async put() {
+        return;
+      },
+    };
+    deps.extractAnnualReport = async (input) => ({
+      ok: true,
+      extraction: createCompleteExtractionPayloadV1({
+        fileName: input.fileName,
+        policyVersion: input.policyVersion,
+      }),
+    });
+    let receivedSourceDocument:
+      | {
+          fileBytes: Uint8Array;
+          fileName: string;
+          fileType: "pdf" | "docx";
+        }
+      | undefined;
+    deps.analyzeAnnualReportTax = async (input) => {
+      receivedSourceDocument = input.sourceDocument;
+      return {
+        ok: true,
+        taxAnalysis: parseAnnualReportTaxAnalysisPayloadV1({
+          schemaVersion: "annual_report_tax_analysis_v1",
+          sourceExtractionArtifactId: input.extractionArtifactId,
+          policyVersion: input.policyVersion,
+          basedOn:
+            input.extraction.taxDeep ??
+            createCompleteExtractionPayloadV1({
+              fileName: input.extraction.sourceFileName,
+              policyVersion: input.policyVersion,
+            }).taxDeep,
+          executiveSummary: "Review source document directly.",
+          accountingStandardAssessment: {
+            status: "aligned",
+            rationale: "K2 disclosed in report.",
+          },
+          findings: [],
+          missingInformation: [],
+          recommendedNextActions: [],
+        }),
+      };
+    };
+
+    const runResult = await runAnnualReportExtractionV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        fileName: "annual-report.pdf",
+        fileBytesBase64: toBase64("fake pdf text"),
+        policyVersion: "annual-report-ai.v1",
+      },
+      deps,
+    );
+    expect(runResult.ok).toBe(true);
+    if (!runResult.ok) {
+      return;
+    }
+
+    const persistedRun = await deps.processingRunRepository?.create({
+      id: "9d000000-0000-4000-8000-000000000099",
+      tenantId: TENANT_ID,
+      workspaceId: WORKSPACE_ID,
+      sourceFileName: "annual-report.pdf",
+      sourceFileType: "pdf",
+      sourceStorageKey: "annual-report-source/test.pdf",
+      sourceSizeBytes: sourceBytes.byteLength,
+      policyVersion: "annual-report-ai.v1",
+      status: "completed",
+      hasPreviousActiveResult: false,
+      technicalDetails: [],
+      resultExtractionArtifactId: runResult.active.artifactId,
+      createdAt: "2026-03-03T12:09:00.000Z",
+      updatedAt: "2026-03-03T12:09:00.000Z",
+    });
+    expect(persistedRun?.ok).toBe(true);
+
+    const taxRunResult = await runAnnualReportTaxAnalysisV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        expectedActiveExtraction: {
+          artifactId: runResult.active.artifactId,
+          version: runResult.active.version,
+        },
+        requestedByUserId: USER_ID,
+      },
+      deps,
+    );
+    expect(taxRunResult.ok).toBe(true);
+    expect(receivedSourceDocument).toEqual({
+      fileBytes: sourceBytes,
+      fileName: "annual-report.pdf",
+      fileType: "pdf",
+    });
   });
 
   it("rejects oversized annual report payloads deterministically", async () => {

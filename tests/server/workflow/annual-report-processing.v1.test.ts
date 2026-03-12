@@ -15,7 +15,6 @@ import {
   type AnnualReportProcessingDepsV1,
 } from "../../../src/server/workflow/annual-report-processing.v1";
 import { parseAnnualReportExtractionPayloadV1 } from "../../../src/shared/contracts/annual-report-extraction.v1";
-import { parseAnnualReportTaxAnalysisPayloadV1 } from "../../../src/shared/contracts/annual-report-tax-analysis.v1";
 import { applyWorkspaceAuditSchemaForTests } from "../../db/test-schema";
 
 const TENANT_ID = "9d100000-0000-4000-8000-000000000001";
@@ -321,8 +320,7 @@ describe("annual report processing workflow v1", () => {
       ok: false,
       error: {
         code: "PARSE_FAILED",
-        message:
-          "Annual-report source parsing failed: Invalid PDF structure.",
+        message: "Annual-report source parsing failed: Invalid PDF structure.",
         user_message:
           "The annual report could not be parsed for AI analysis. Upload the report again or contact your administrator.",
         context: {
@@ -426,9 +424,10 @@ describe("annual report processing workflow v1", () => {
     expect(latest.run.error?.technicalMessage).toContain("timed out");
   });
 
-  it("terminalizes extraction before background tax analysis failure", async () => {
+  it("does not auto-run forensic tax analysis after a successful extraction", async () => {
     await createQueuedRun();
     const deps = createBaseDeps();
+    let analyzeCallCount = 0;
     deps.sourceStore = {
       async delete() {
         return;
@@ -448,14 +447,17 @@ describe("annual report processing workflow v1", () => {
       ok: true as const,
       extraction: createCompleteExtractionPayloadV1(),
     });
-    deps.analyzeAnnualReportTax = async () => ({
-      ok: false as const,
-      error: {
-        code: "MODEL_EXECUTION_FAILED" as const,
-        message: "Gemini statements timeout",
-        context: {},
-      },
-    });
+    deps.analyzeAnnualReportTax = async () => {
+      analyzeCallCount += 1;
+      return {
+        ok: false as const,
+        error: {
+          code: "MODEL_EXECUTION_FAILED" as const,
+          message: "Gemini statements timeout",
+          context: {},
+        },
+      };
+    };
 
     await processAnnualReportProcessingRunV1(
       {
@@ -478,18 +480,19 @@ describe("annual report processing workflow v1", () => {
       return;
     }
 
+    expect(analyzeCallCount).toBe(0);
     expect(latest.run.status).toBe("completed");
     expect(latest.run.result?.extractionArtifactId).toBeTruthy();
     expect(latest.run.result?.taxAnalysisArtifactId).toBeUndefined();
     expect(latest.run.technicalDetails).toEqual(
       expect.arrayContaining([
-        "tax_analysis.background.failed",
-        "tax_analysis.background.error=MODEL_EXECUTION_FAILED",
+        "tax_analysis.execution_mode=manual_trigger",
+        "tax_analysis.manual_run_available=1",
       ]),
     );
   });
 
-  it("records fallback tax-analysis completion when a usable fallback review is persisted", async () => {
+  it("marks manual forensic review as blocked when extraction is incomplete", async () => {
     await createQueuedRun();
     const deps = createBaseDeps();
     deps.sourceStore = {
@@ -509,35 +512,14 @@ describe("annual report processing workflow v1", () => {
     };
     deps.extractAnnualReport = async () => ({
       ok: true as const,
-      extraction: createCompleteExtractionPayloadV1(),
-    });
-    deps.analyzeAnnualReportTax = async (input) => ({
-      ok: true as const,
-      taxAnalysis: parseAnnualReportTaxAnalysisPayloadV1({
-        schemaVersion: "annual_report_tax_analysis_v1",
-        sourceExtractionArtifactId: input.extractionArtifactId,
-        policyVersion: input.policyVersion,
-        basedOn: input.extraction.taxDeep!,
-        executiveSummary: "Forensic review completed using deterministic fallback.",
-        accountingStandardAssessment: {
-          status: "aligned",
-          rationale: "K3 is available in the extracted core facts.",
-        },
-        findings: [],
-        missingInformation: [],
-        recommendedNextActions: ["Review degraded note extraction manually."],
-        aiRun: {
-          runId: "fallback-run",
-          moduleId: "annual-report-tax-analysis",
-          moduleVersion: "v1",
-          promptVersion: "annual-report-tax-analysis.prompts.v1",
-          policyVersion: input.policyVersion,
-          activePatchVersions: [],
-          provider: "gemini",
-          model: "gemini-2.5-flash",
-          modelTier: "fast",
-          generatedAt: "2026-03-03T12:10:00.000Z",
-          usedFallback: true,
+      extraction: parseAnnualReportExtractionPayloadV1({
+        ...createCompleteExtractionPayloadV1(),
+        taxDeep: {
+          ...createCompleteExtractionPayloadV1().taxDeep,
+          ink2rExtracted: {
+            incomeStatement: [],
+            balanceSheet: [],
+          },
         },
       }),
     });
@@ -563,19 +545,20 @@ describe("annual report processing workflow v1", () => {
       return;
     }
 
-    expect(latest.run.status).toBe("completed");
-    expect(latest.run.result?.taxAnalysisArtifactId).toBeTruthy();
+    expect(latest.run.status).toBe("partial");
+    expect(latest.run.result?.taxAnalysisArtifactId).toBeUndefined();
     expect(latest.run.technicalDetails).toEqual(
       expect.arrayContaining([
-        "tax_analysis.background.fallback_used",
-        "tax_analysis.background.completed",
+        "tax_analysis.execution_mode=manual_trigger",
+        "tax_analysis.manual_run_blocked=extraction_incomplete",
       ]),
     );
   });
 
-  it("retries the active-extraction check before persisting tax analysis", async () => {
+  it("keeps manual tax-analysis mode even when an analyzer dependency is injected", async () => {
     await createQueuedRun();
     const deps = createBaseDeps();
+    let analyzeCallCount = 0;
     deps.sourceStore = {
       async delete() {
         return;
@@ -595,48 +578,16 @@ describe("annual report processing workflow v1", () => {
       ok: true as const,
       extraction: createCompleteExtractionPayloadV1(),
     });
-    deps.analyzeAnnualReportTax = async (input) => ({
-      ok: true as const,
-      taxAnalysis: parseAnnualReportTaxAnalysisPayloadV1({
-        schemaVersion: "annual_report_tax_analysis_v1",
-        sourceExtractionArtifactId: input.extractionArtifactId,
-        policyVersion: input.policyVersion,
-        basedOn: input.extraction.taxDeep!,
-        executiveSummary: "Forensic review completed after active-artifact retry.",
-        accountingStandardAssessment: {
-          status: "aligned",
-          rationale: "K3 is available in the extracted core facts.",
+    deps.analyzeAnnualReportTax = async () => {
+      analyzeCallCount += 1;
+      return {
+        ok: false as const,
+        error: {
+          code: "MODEL_EXECUTION_FAILED" as const,
+          message: "Should not be called during upload processing",
+          context: {},
         },
-        findings: [],
-        missingInformation: [],
-        recommendedNextActions: [],
-        aiRun: {
-          runId: "retry-run",
-          moduleId: "annual-report-tax-analysis",
-          moduleVersion: "v1",
-          promptVersion: "annual-report-tax-analysis.prompts.v1",
-          policyVersion: input.policyVersion,
-          activePatchVersions: [],
-          provider: "gemini",
-          model: "gemini-2.5-flash",
-          modelTier: "fast",
-          generatedAt: "2026-03-03T12:10:00.000Z",
-          usedFallback: false,
-        },
-      }),
-    });
-
-    const realArtifactRepository = deps.artifactRepository;
-    let activeExtractionReads = 0;
-    deps.artifactRepository = {
-      ...realArtifactRepository,
-      async getActiveAnnualReportExtraction(input) {
-        activeExtractionReads += 1;
-        if (activeExtractionReads === 1) {
-          return null;
-        }
-        return realArtifactRepository.getActiveAnnualReportExtraction(input);
-      },
+      };
     };
 
     await processAnnualReportProcessingRunV1(
@@ -660,10 +611,13 @@ describe("annual report processing workflow v1", () => {
       return;
     }
 
-    expect(activeExtractionReads).toBeGreaterThan(1);
-    expect(latest.run.result?.taxAnalysisArtifactId).toBeTruthy();
+    expect(analyzeCallCount).toBe(0);
+    expect(latest.run.result?.taxAnalysisArtifactId).toBeUndefined();
     expect(latest.run.technicalDetails).toEqual(
-      expect.arrayContaining(["tax_analysis.background.completed"]),
+      expect.arrayContaining([
+        "tax_analysis.execution_mode=manual_trigger",
+        "tax_analysis.manual_run_available=1",
+      ]),
     );
   });
 

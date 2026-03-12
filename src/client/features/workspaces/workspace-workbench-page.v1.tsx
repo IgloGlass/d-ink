@@ -103,7 +103,7 @@ export function WorkspaceWorkbenchPageV1() {
       id: "annual-report-analysis",
       step: "01",
       title: "Annual Report Analysis",
-      description: "Extract financial data and perform forensic tax risk analysis from PDF reports.",
+      description: "Extract financial data from PDF reports and optionally run forensic tax review once the statements are saved.",
       status: workspaceQuery.data?.workspace.status === "draft" ? "Pending" : "Complete",
       path: `/app/workspaces/${resolvedWorkspaceId}/annual-report-analysis`,
       recommended: true

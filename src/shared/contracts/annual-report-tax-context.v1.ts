@@ -5,6 +5,7 @@ import {
   AnnualReportEvidenceReferenceV1Schema,
   AnnualReportNarrativeFlagV1Schema,
   AnnualReportPriorYearComparativeV1Schema,
+  AnnualReportRelevantNoteV1Schema,
   AnnualReportReserveMovementLineV1Schema,
   AnnualReportStatementLineV1Schema,
   AnnualReportTaxExpenseContextV1Schema,
@@ -92,6 +93,7 @@ export const AnnualReportDownstreamTaxContextV1Schema = z
         evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
       })
       .strict(),
+    relevantNotes: z.array(AnnualReportRelevantNoteV1Schema).optional(),
     priorYearComparatives: z
       .array(AnnualReportPriorYearComparativeV1Schema)
       .default([]),
@@ -108,18 +110,33 @@ export type AnnualReportDownstreamTaxContextV1 = z.infer<
 export const AnnualReportMappingContextV1Schema = z
   .object({
     schemaVersion: z.literal("annual_report_mapping_context_v1"),
+    incomeStatementAnchors:
+      AnnualReportDownstreamTaxContextV1Schema.shape.incomeStatementAnchors,
+    balanceSheetAnchors:
+      AnnualReportDownstreamTaxContextV1Schema.shape.balanceSheetAnchors,
+    depreciationContext:
+      AnnualReportDownstreamTaxContextV1Schema.shape.depreciationContext,
+    assetMovements:
+      AnnualReportDownstreamTaxContextV1Schema.shape.assetMovements,
+    taxExpenseContext:
+      AnnualReportDownstreamTaxContextV1Schema.shape.taxExpenseContext,
     pensionContext: AnnualReportDownstreamTaxContextV1Schema.shape.pensionContext,
     leasingContext: AnnualReportDownstreamTaxContextV1Schema.shape.leasingContext,
     reserveContext: AnnualReportDownstreamTaxContextV1Schema.shape.reserveContext,
+    netInterestContext:
+      AnnualReportDownstreamTaxContextV1Schema.shape.netInterestContext,
     groupContributionContext:
       AnnualReportDownstreamTaxContextV1Schema.shape.groupContributionContext,
     shareholdingContext:
       AnnualReportDownstreamTaxContextV1Schema.shape.shareholdingContext,
-    netInterestContext:
-      AnnualReportDownstreamTaxContextV1Schema.shape.netInterestContext,
+    relevantNotes: AnnualReportDownstreamTaxContextV1Schema.shape.relevantNotes,
+    priorYearComparatives:
+      AnnualReportDownstreamTaxContextV1Schema.shape.priorYearComparatives,
     selectedRiskFindings: z
       .array(AnnualReportDownstreamRiskFindingV1Schema)
       .default([]),
+    missingInformation:
+      AnnualReportDownstreamTaxContextV1Schema.shape.missingInformation,
   })
   .strict();
 export type AnnualReportMappingContextV1 = z.infer<

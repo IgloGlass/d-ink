@@ -1,6 +1,5 @@
 import type { z } from "zod";
 
-import type { AuditRepositoryV1 } from "../../db/repositories/audit.repository.v1";
 import type {
   AnnualReportProcessingRunRecordV1,
   AnnualReportProcessingRunRepositoryV1,
@@ -9,42 +8,39 @@ import type {
   AnnualReportUploadSessionRecordV1,
   AnnualReportUploadSessionRepositoryV1,
 } from "../../db/repositories/annual-report-upload-session.repository.v1";
+import type { AuditRepositoryV1 } from "../../db/repositories/audit.repository.v1";
 import type { WorkspaceArtifactRepositoryV1 } from "../../db/repositories/workspace-artifact.repository.v1";
 import type { WorkspaceRepositoryV1 } from "../../db/repositories/workspace.repository.v1";
 import { AUDIT_EVENT_TYPES_V1 } from "../../shared/audit/audit-event-catalog.v1";
+import type {
+  AnnualReportExtractionPayloadV1,
+  AnnualReportRuntimeMetadataV1,
+} from "../../shared/contracts/annual-report-extraction.v1";
 import {
   type AnnualReportProcessingQueueMessageV1,
-  type AnnualReportProcessingRunDegradationV1,
   AnnualReportProcessingQueueMessageV1Schema,
+  type AnnualReportProcessingRunDegradationV1,
   type AnnualReportProcessingRunStatusV1,
-  type CreateAnnualReportProcessingRunResultV1,
   CreateAnnualReportProcessingRunRequestV1Schema,
+  type CreateAnnualReportProcessingRunResultV1,
   type GetLatestAnnualReportProcessingRunResultV1,
   parseAnnualReportProcessingRunV1,
   parseCreateAnnualReportProcessingRunResultV1,
   parseGetLatestAnnualReportProcessingRunResultV1,
 } from "../../shared/contracts/annual-report-processing-run.v1";
+import type { AnnualReportTaxAnalysisPayloadV1 } from "../../shared/contracts/annual-report-tax-analysis.v1";
 import {
   type AnnualReportUploadSessionV1,
-  type CreateAnnualReportUploadSessionResultV1,
-  type UploadAnnualReportSourceResultV1,
   CreateAnnualReportUploadSessionRequestV1Schema,
+  type CreateAnnualReportUploadSessionResultV1,
   MAX_ANNUAL_REPORT_UPLOAD_BYTES_V1,
+  type UploadAnnualReportSourceResultV1,
   parseAnnualReportUploadSessionV1,
   parseCreateAnnualReportUploadSessionResultV1,
   parseUploadAnnualReportSourceResultV1,
 } from "../../shared/contracts/annual-report-upload-session.v1";
 import { parseAuditEventV2 } from "../../shared/contracts/audit-event.v2";
-import type {
-  AnnualReportExtractionPayloadV1,
-  AnnualReportRuntimeMetadataV1,
-} from "../../shared/contracts/annual-report-extraction.v1";
-import type {
-  AnnualReportTaxAnalysisPayloadV1,
-} from "../../shared/contracts/annual-report-tax-analysis.v1";
-import type {
-  AnnualReportSourceStoreV1,
-} from "../../shared/types/env";
+import type { AnnualReportSourceStoreV1 } from "../../shared/types/env";
 import type { ParseAnnualReportExtractionResultV1 } from "../parsing/annual-report-extractor.v1";
 import { validateAnnualReportFileTypeCoherenceV1 } from "../security/file-type-coherence.v1";
 import { MAX_ANNUAL_REPORT_FILE_BYTES_V1 } from "../security/payload-limits.v1";
@@ -53,7 +49,6 @@ import {
   hasAnnualReportFullExtractionV1,
   listMissingRequiredExtractionFieldsV1,
   persistAnnualReportExtractionArtifactV1,
-  persistAnnualReportTaxAnalysisArtifactV1,
 } from "./annual-report-extraction.v1";
 
 type AnnualReportCreateRunFailureCodeV1 =
@@ -96,6 +91,11 @@ export interface AnnualReportProcessingDepsV1 {
     extraction: AnnualReportExtractionPayloadV1;
     extractionArtifactId: string;
     policyVersion: string;
+    sourceDocument?: {
+      fileBytes: Uint8Array;
+      fileName: string;
+      fileType: "pdf" | "docx";
+    };
   }) => Promise<
     | { ok: true; taxAnalysis: AnnualReportTaxAnalysisPayloadV1 }
     | {
@@ -385,7 +385,8 @@ async function markRunStatusV1(input: {
     resultExtractionArtifactId:
       input.resultExtractionArtifactId ?? input.run.resultExtractionArtifactId,
     resultTaxAnalysisArtifactId:
-      input.resultTaxAnalysisArtifactId ?? input.run.resultTaxAnalysisArtifactId,
+      input.resultTaxAnalysisArtifactId ??
+      input.run.resultTaxAnalysisArtifactId,
     updatedAt: input.deps.nowIsoUtc(),
     startedAt: input.startedAt ?? input.run.startedAt,
     finishedAt:
@@ -400,10 +401,12 @@ async function supersedeOpenRunsV1(input: {
   workspaceId: string;
   actorUserId?: string;
 }): Promise<void> {
-  const openRuns = await input.deps.processingRunRepository.listOpenByWorkspace({
-    tenantId: input.tenantId,
-    workspaceId: input.workspaceId,
-  });
+  const openRuns = await input.deps.processingRunRepository.listOpenByWorkspace(
+    {
+      tenantId: input.tenantId,
+      workspaceId: input.workspaceId,
+    },
+  );
   const finishedAt = input.deps.nowIsoUtc();
 
   for (const run of openRuns) {
@@ -528,7 +531,8 @@ async function createQueuedProcessingRunForStoredSourceV1(input: {
     updatedAt: now,
   };
 
-  const persistedRun = await input.deps.processingRunRepository.create(createdRun);
+  const persistedRun =
+    await input.deps.processingRunRepository.create(createdRun);
   if (!persistedRun.ok) {
     return parseCreateAnnualReportProcessingRunResultV1(
       buildFailureV1({
@@ -651,7 +655,6 @@ function createArtifactPersistenceDepsV1(deps: AnnualReportProcessingDepsV1) {
     auditRepository: deps.auditRepository,
     workspaceRepository: deps.workspaceRepository,
     getRuntimeMetadata: deps.getRuntimeMetadata,
-    analyzeAnnualReportTax: deps.analyzeAnnualReportTax,
     extractAnnualReport: deps.extractAnnualReport,
     generateId: deps.generateId,
     nowIsoUtc: deps.nowIsoUtc,
@@ -668,10 +671,7 @@ async function markRunFailedForRuntimeIssueV1(input: {
     deps: input.deps,
     run: input.run,
     status: "failed",
-    technicalDetails: [
-      ...input.run.technicalDetails,
-      input.technicalDetail,
-    ],
+    technicalDetails: [...input.run.technicalDetails, input.technicalDetail],
     error: {
       code: "PROCESSING_RUN_UNAVAILABLE",
       userMessage:
@@ -691,47 +691,6 @@ function buildExtractionFailureTechnicalDetailsV1(input: {
     details.push(`processing.extraction.failed stage=${stage}`);
   }
   return details;
-}
-
-async function isExtractionArtifactStillActiveV1(input: {
-  artifactId: string;
-  deps: AnnualReportProcessingDepsV1;
-  tenantId: string;
-  workspaceId: string;
-}): Promise<boolean> {
-  const activeExtraction =
-    await input.deps.artifactRepository.getActiveAnnualReportExtraction({
-      tenantId: input.tenantId,
-      workspaceId: input.workspaceId,
-  });
-  return activeExtraction?.id === input.artifactId;
-}
-
-const EXTRACTION_ACTIVE_RETRY_ATTEMPTS_V1 = 6;
-const EXTRACTION_ACTIVE_RETRY_DELAY_MS_V1 = 50;
-
-async function delayV1(milliseconds: number): Promise<void> {
-  await new Promise((resolve) => {
-    globalThis.setTimeout(resolve, milliseconds);
-  });
-}
-
-async function waitForActiveExtractionArtifactV1(input: {
-  artifactId: string;
-  deps: AnnualReportProcessingDepsV1;
-  tenantId: string;
-  workspaceId: string;
-}): Promise<boolean> {
-  for (let attempt = 0; attempt < EXTRACTION_ACTIVE_RETRY_ATTEMPTS_V1; attempt += 1) {
-    if (await isExtractionArtifactStillActiveV1(input)) {
-      return true;
-    }
-    if (attempt < EXTRACTION_ACTIVE_RETRY_ATTEMPTS_V1 - 1) {
-      await delayV1(EXTRACTION_ACTIVE_RETRY_DELAY_MS_V1);
-    }
-  }
-
-  return false;
 }
 
 async function executeProcessingRunFromSourceBytesV1(input: {
@@ -822,13 +781,14 @@ async function executeProcessingRunFromSourceBytesV1(input: {
       confirmedAt: deps.nowIsoUtc(),
     });
     const pendingExtractionArtifactId = deps.generateId();
-    const missingRequiredFields = listMissingRequiredExtractionFieldsV1(
-      finalizedExtraction,
-    );
+    const missingRequiredFields =
+      listMissingRequiredExtractionFieldsV1(finalizedExtraction);
     const extractionIsPartial =
       missingRequiredFields.length > 0 ||
       !hasAnnualReportFullExtractionV1(finalizedExtraction);
-    const extractionWarnings = [...(finalizedExtraction.documentWarnings ?? [])];
+    const extractionWarnings = [
+      ...(finalizedExtraction.documentWarnings ?? []),
+    ];
     if (missingRequiredFields.length > 0) {
       extractionWarnings.push(
         `degraded.extraction.partial Missing required core facts: ${missingRequiredFields.join(", ")}.`,
@@ -880,7 +840,13 @@ async function executeProcessingRunFromSourceBytesV1(input: {
       run: currentRun,
       status: extractionIsPartial ? "partial" : "completed",
       previewExtraction: finalizedExtraction,
-      technicalDetails: extractionWarnings,
+      technicalDetails: [
+        ...extractionWarnings,
+        "tax_analysis.execution_mode=manual_trigger",
+        extractionIsPartial
+          ? "tax_analysis.manual_run_blocked=extraction_incomplete"
+          : "tax_analysis.manual_run_available=1",
+      ],
       degradation: extractionIsPartial
         ? {
             mode: "partial_without_analysis",
@@ -914,124 +880,6 @@ async function executeProcessingRunFromSourceBytesV1(input: {
         timestamp: deps.nowIsoUtc(),
         context: {},
       }),
-    });
-
-    if (!deps.analyzeAnnualReportTax) {
-      return;
-    }
-    if (
-      !(await waitForActiveExtractionArtifactV1({
-        artifactId: persistedExtraction.artifact.id,
-        deps,
-        tenantId: currentRun.tenantId,
-        workspaceId: currentRun.workspaceId,
-      }))
-    ) {
-      await markRunStatusV1({
-        deps,
-        run,
-        status: run.status,
-        resultExtractionArtifactId: persistedExtraction.artifact.id,
-        technicalDetails: [
-          ...extractionWarnings,
-          "tax_analysis.background.skipped",
-          "tax_analysis.background.skip_reason=extraction_not_active_after_retry_pre_analysis",
-        ],
-      });
-      return;
-    }
-
-    const taxAnalysisResult = await deps.analyzeAnnualReportTax({
-      extraction: finalizedExtraction,
-      extractionArtifactId: persistedExtraction.artifact.id,
-      policyVersion: currentRun.policyVersion,
-    });
-    if (!taxAnalysisResult.ok) {
-      await markRunStatusV1({
-        deps,
-        run,
-        status: run.status,
-        resultExtractionArtifactId: persistedExtraction.artifact.id,
-        technicalDetails: [
-          ...extractionWarnings,
-          "tax_analysis.background.failed",
-          `tax_analysis.background.error=${taxAnalysisResult.error.code}`,
-          `tax_analysis.background.message=${taxAnalysisResult.error.message.slice(0, 180)}`,
-        ],
-      });
-      return;
-    }
-
-    if (
-      !(await waitForActiveExtractionArtifactV1({
-        artifactId: persistedExtraction.artifact.id,
-        deps,
-        tenantId: currentRun.tenantId,
-        workspaceId: currentRun.workspaceId,
-      }))
-    ) {
-      await markRunStatusV1({
-        deps,
-        run,
-        status: run.status,
-        resultExtractionArtifactId: persistedExtraction.artifact.id,
-        technicalDetails: [
-          ...extractionWarnings,
-          "tax_analysis.background.skipped",
-          "tax_analysis.background.skip_reason=extraction_not_active_after_retry_pre_persist",
-        ],
-      });
-      return;
-    }
-
-    const persistedTaxAnalysis = await persistAnnualReportTaxAnalysisArtifactV1({
-      actorType: currentRun.createdByUserId ? "user" : "system",
-      actorUserId: currentRun.createdByUserId,
-      deps: createArtifactPersistenceDepsV1(deps),
-      sourceExtractionArtifactId: persistedExtraction.artifact.id,
-      taxAnalysis: taxAnalysisResult.taxAnalysis,
-      tenantId: currentRun.tenantId,
-      workspaceId: currentRun.workspaceId,
-    });
-    if (!persistedTaxAnalysis.ok) {
-      await markRunStatusV1({
-        deps,
-        run,
-        status: run.status,
-        resultExtractionArtifactId: persistedExtraction.artifact.id,
-        technicalDetails: [
-          ...extractionWarnings,
-          "tax_analysis.background.persist_failed",
-          `tax_analysis.background.persist_error=${persistedTaxAnalysis.code}`,
-        ],
-      });
-      return;
-    }
-
-    await markRunStatusV1({
-      deps,
-      run,
-      status: run.status,
-      resultExtractionArtifactId: persistedExtraction.artifact.id,
-      resultTaxAnalysisArtifactId: persistedTaxAnalysis.artifact.id,
-      technicalDetails: [
-        ...extractionWarnings,
-        ...(taxAnalysisResult.taxAnalysis.aiRun?.usedFallback
-          ? ["tax_analysis.background.fallback_used"]
-          : []),
-        "tax_analysis.background.completed",
-      ],
-      degradation: extractionIsPartial
-        ? {
-            mode: "partial_with_analysis",
-            warnings: extractionWarnings,
-            fallbacks: [],
-          }
-        : {
-            mode: "none",
-            warnings: [],
-            fallbacks: [],
-          },
     });
   } catch (error) {
     const failedRun =
@@ -1126,7 +974,8 @@ async function createInlineProcessingRunV1(input: {
     updatedAt: now,
   };
 
-  const persistedRun = await input.deps.processingRunRepository.create(createdRun);
+  const persistedRun =
+    await input.deps.processingRunRepository.create(createdRun);
   if (!persistedRun.ok) {
     return parseCreateAnnualReportProcessingRunResultV1(
       buildFailureV1({
@@ -1155,7 +1004,8 @@ async function createInlineProcessingRunV1(input: {
     return parseCreateAnnualReportProcessingRunResultV1(
       buildFailureV1({
         code: "PERSISTENCE_ERROR",
-        message: "Processed annual-report run could not be loaded after completion.",
+        message:
+          "Processed annual-report run could not be loaded after completion.",
         userMessage:
           "The annual report was processed, but the result could not be loaded.",
         context: {
@@ -1171,15 +1021,18 @@ async function createInlineProcessingRunV1(input: {
   });
 }
 
-export async function createAnnualReportProcessingRunV1(input: {
-  createdByUserId?: string;
-  fileBytes: Uint8Array;
-  fileName: string;
-  fileType?: "pdf" | "docx";
-  policyVersion: string;
-  tenantId: string;
-  workspaceId: string;
-}, deps: AnnualReportProcessingDepsV1): Promise<CreateAnnualReportProcessingRunResultV1> {
+export async function createAnnualReportProcessingRunV1(
+  input: {
+    createdByUserId?: string;
+    fileBytes: Uint8Array;
+    fileName: string;
+    fileType?: "pdf" | "docx";
+    policyVersion: string;
+    tenantId: string;
+    workspaceId: string;
+  },
+  deps: AnnualReportProcessingDepsV1,
+): Promise<CreateAnnualReportProcessingRunResultV1> {
   const parsed = CreateAnnualReportProcessingRunRequestV1Schema.safeParse({
     tenantId: input.tenantId,
     workspaceId: input.workspaceId,
@@ -1213,7 +1066,8 @@ export async function createAnnualReportProcessingRunV1(input: {
       buildFailureV1({
         code: "INPUT_INVALID",
         message: "Decoded annual report file exceeds configured size limit.",
-        userMessage: "The annual report file is too large for V1 processing limits.",
+        userMessage:
+          "The annual report file is too large for V1 processing limits.",
         context: {
           maxBytes: MAX_ANNUAL_REPORT_FILE_BYTES_V1,
           actualBytes: input.fileBytes.byteLength,
@@ -1293,7 +1147,8 @@ export async function createAnnualReportProcessingRunV1(input: {
     return parseCreateAnnualReportProcessingRunResultV1(
       buildFailureV1({
         code: "PERSISTENCE_ERROR",
-        message: error instanceof Error ? error.message : "Source store failed.",
+        message:
+          error instanceof Error ? error.message : "Source store failed.",
         userMessage:
           "The uploaded annual report could not be stored for analysis.",
         context: {},
@@ -1314,15 +1169,18 @@ export async function createAnnualReportProcessingRunV1(input: {
   });
 }
 
-export async function createAnnualReportUploadSessionV1(input: {
-  createdByUserId?: string;
-  fileName: string;
-  fileSizeBytes: number;
-  fileType: "pdf" | "docx";
-  policyVersion: string;
-  tenantId: string;
-  workspaceId: string;
-}, deps: AnnualReportProcessingDepsV1): Promise<CreateAnnualReportUploadSessionResultV1> {
+export async function createAnnualReportUploadSessionV1(
+  input: {
+    createdByUserId?: string;
+    fileName: string;
+    fileSizeBytes: number;
+    fileType: "pdf" | "docx";
+    policyVersion: string;
+    tenantId: string;
+    workspaceId: string;
+  },
+  deps: AnnualReportProcessingDepsV1,
+): Promise<CreateAnnualReportUploadSessionResultV1> {
   if (!canUseQueuedInfrastructureV1(deps)) {
     return parseCreateAnnualReportUploadSessionResultV1(
       buildFailureV1({
@@ -1439,14 +1297,17 @@ export async function createAnnualReportUploadSessionV1(input: {
   });
 }
 
-export async function uploadAnnualReportSourceV1(input: {
-  contentLengthBytes: number;
-  createdByUserId?: string;
-  tenantId: string;
-  uploadBody: ReadableStream<Uint8Array> | null;
-  uploadSessionId: string;
-  workspaceId: string;
-}, deps: AnnualReportProcessingDepsV1): Promise<UploadAnnualReportSourceResultV1> {
+export async function uploadAnnualReportSourceV1(
+  input: {
+    contentLengthBytes: number;
+    createdByUserId?: string;
+    tenantId: string;
+    uploadBody: ReadableStream<Uint8Array> | null;
+    uploadSessionId: string;
+    workspaceId: string;
+  },
+  deps: AnnualReportProcessingDepsV1,
+): Promise<UploadAnnualReportSourceResultV1> {
   if (!deps.sourceStore) {
     return buildProcessingUnavailableUploadFailureV1({
       message:
@@ -1465,7 +1326,8 @@ export async function uploadAnnualReportSourceV1(input: {
       buildFailureV1({
         code: "PROCESSING_RUN_NOT_FOUND",
         message: "Annual-report upload session could not be found.",
-        userMessage: "The annual report upload session has expired. Upload the file again.",
+        userMessage:
+          "The annual report upload session has expired. Upload the file again.",
         context: {},
       }),
     );
@@ -1475,7 +1337,8 @@ export async function uploadAnnualReportSourceV1(input: {
       buildFailureV1({
         code: "INPUT_INVALID",
         message: "Annual-report upload session is no longer open for upload.",
-        userMessage: "This upload session can no longer accept a file. Start again.",
+        userMessage:
+          "This upload session can no longer accept a file. Start again.",
         context: {
           status: session.status,
         },
@@ -1512,8 +1375,10 @@ export async function uploadAnnualReportSourceV1(input: {
     return parseUploadAnnualReportSourceResultV1(
       buildFailureV1({
         code: "INPUT_INVALID",
-        message: "Annual-report upload size does not match the created session.",
-        userMessage: "The uploaded annual report did not match the expected file size.",
+        message:
+          "Annual-report upload size does not match the created session.",
+        userMessage:
+          "The uploaded annual report did not match the expected file size.",
         context: {
           expectedBytes: session.fileSizeBytes,
           actualBytes: input.contentLengthBytes,
@@ -1532,7 +1397,8 @@ export async function uploadAnnualReportSourceV1(input: {
     return parseUploadAnnualReportSourceResultV1(
       buildFailureV1({
         code: "PERSISTENCE_ERROR",
-        message: error instanceof Error ? error.message : "Source store failed.",
+        message:
+          error instanceof Error ? error.message : "Source store failed.",
         userMessage:
           "The uploaded annual report could not be stored for analysis.",
         context: {},
@@ -1568,17 +1434,19 @@ export async function uploadAnnualReportSourceV1(input: {
   });
 }
 
-export async function getLatestAnnualReportProcessingRunV1(input: {
-  tenantId: string;
-  workspaceId: string;
-}, deps: AnnualReportProcessingDepsV1): Promise<GetLatestAnnualReportProcessingRunResultV1> {
+export async function getLatestAnnualReportProcessingRunV1(
+  input: {
+    tenantId: string;
+    workspaceId: string;
+  },
+  deps: AnnualReportProcessingDepsV1,
+): Promise<GetLatestAnnualReportProcessingRunResultV1> {
   const run = await deps.processingRunRepository.getLatestByWorkspace(input);
   if (!run) {
     return parseGetLatestAnnualReportProcessingRunResultV1(
       buildFailureV1({
         code: "PROCESSING_RUN_NOT_FOUND",
-        message:
-          "No annual-report processing run exists for this workspace.",
+        message: "No annual-report processing run exists for this workspace.",
         userMessage:
           "No annual-report processing run was found for this workspace.",
         context: {
@@ -1636,7 +1504,7 @@ export async function processAnnualReportProcessingRunV1(
     });
     return;
   }
-  let run: AnnualReportProcessingRunRecordV1 = initialRun;
+  const run: AnnualReportProcessingRunRecordV1 = initialRun;
 
   const latest = await deps.processingRunRepository.getLatestByWorkspace({
     tenantId: run.tenantId,

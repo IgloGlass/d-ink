@@ -5,6 +5,7 @@ import {
 } from "../../../src/shared/contracts/annual-report-tax-analysis.v1";
 import {
   parseAnnualReportDownstreamTaxContextV1,
+  parseAnnualReportMappingContextV1,
 } from "../../../src/shared/contracts/annual-report-tax-context.v1";
 
 describe("annual-report tax analysis contracts v1", () => {
@@ -165,5 +166,84 @@ describe("annual-report tax analysis contracts v1", () => {
       "Interest expense disclosed in finance note.",
     );
     expect(projection.taxExpenseContext?.currentTax?.value).toBe(12000);
+  });
+
+  it("parses expanded mapping-context payloads", () => {
+    const projection = parseAnnualReportMappingContextV1({
+      schemaVersion: "annual_report_mapping_context_v1",
+      incomeStatementAnchors: [],
+      balanceSheetAnchors: [
+        {
+          code: "leasehold_improvements",
+          label: "Forbattringsutgifter pa annans fastighet",
+          currentYearValue: 125000,
+          evidence: [],
+        },
+      ],
+      depreciationContext: {
+        assetAreas: [
+          {
+            assetArea: "Leasehold improvements",
+            acquisitions: 50000,
+            depreciationForYear: 25000,
+            closingCarryingAmount: 125000,
+            evidence: [],
+          },
+        ],
+        evidence: [],
+      },
+      assetMovements: {
+        lines: [],
+        evidence: [],
+      },
+      netInterestContext: {
+        notes: [],
+        evidence: [],
+      },
+      reserveContext: {
+        movements: [],
+        notes: [],
+        evidence: [],
+      },
+      pensionContext: {
+        flags: [],
+        notes: [],
+        evidence: [],
+      },
+      taxExpenseContext: {
+        deferredTax: {
+          value: 12000,
+          evidence: [],
+        },
+        notes: ["Deferred tax note captured from the annual report."],
+        evidence: [],
+      },
+      leasingContext: {
+        flags: [],
+        notes: [],
+        evidence: [],
+      },
+      groupContributionContext: {
+        flags: [],
+        notes: [],
+        evidence: [],
+      },
+      shareholdingContext: {
+        flags: [],
+        notes: [],
+        evidence: [],
+      },
+      priorYearComparatives: [],
+      selectedRiskFindings: [],
+      missingInformation: ["No building note was found in the annual report."],
+    });
+
+    expect(projection.depreciationContext.assetAreas[0]?.assetArea).toBe(
+      "Leasehold improvements",
+    );
+    expect(projection.taxExpenseContext?.deferredTax?.value).toBe(12000);
+    expect(projection.missingInformation).toContain(
+      "No building note was found in the annual report.",
+    );
   });
 });

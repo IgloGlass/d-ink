@@ -78,6 +78,7 @@ export function projectAnnualReportTaxContextV1(input: {
       notes: taxDeep?.shareholdingContext.notes ?? [],
       evidence: taxDeep?.shareholdingContext.evidence ?? [],
     },
+    relevantNotes: taxDeep?.relevantNotes ?? [],
     priorYearComparatives: taxDeep?.priorYearComparatives ?? [],
     selectedRiskFindings:
       taxAnalysis?.findings.map((finding) => ({
@@ -97,12 +98,20 @@ export function projectAnnualReportMappingContextV1(input: {
 }): AnnualReportMappingContextV1 {
   return parseAnnualReportMappingContextV1({
     schemaVersion: "annual_report_mapping_context_v1",
+    incomeStatementAnchors: input.annualReportTaxContext.incomeStatementAnchors,
+    balanceSheetAnchors: input.annualReportTaxContext.balanceSheetAnchors,
+    depreciationContext: input.annualReportTaxContext.depreciationContext,
+    assetMovements: input.annualReportTaxContext.assetMovements,
+    taxExpenseContext: input.annualReportTaxContext.taxExpenseContext,
     pensionContext: input.annualReportTaxContext.pensionContext,
     leasingContext: input.annualReportTaxContext.leasingContext,
     reserveContext: input.annualReportTaxContext.reserveContext,
+    netInterestContext: input.annualReportTaxContext.netInterestContext,
     groupContributionContext: input.annualReportTaxContext.groupContributionContext,
     shareholdingContext: input.annualReportTaxContext.shareholdingContext,
-    netInterestContext: input.annualReportTaxContext.netInterestContext,
+    relevantNotes: input.annualReportTaxContext.relevantNotes,
+    priorYearComparatives: input.annualReportTaxContext.priorYearComparatives,
     selectedRiskFindings: input.annualReportTaxContext.selectedRiskFindings,
+    missingInformation: input.annualReportTaxContext.missingInformation,
   });
 }

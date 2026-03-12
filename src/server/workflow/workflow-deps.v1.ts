@@ -15,6 +15,8 @@ import {
   ANNUAL_REPORT_CODES_SV_V1,
   getAnnualReportCodeDefinitionV1,
   getAnnualReportCodeOrderV1,
+  isAnnualReportBalanceAssetCodeV1,
+  isAnnualReportBalanceEquityLiabilityCodeV1,
   type AnnualReportCodeDefinitionV1,
 } from "../../shared/contracts/annual-report-codes.v1";
 import {
@@ -24,11 +26,19 @@ import {
   parseAnnualReportExtractionPayloadV1,
 } from "../../shared/contracts/annual-report-extraction.v1";
 import type { AnnualReportTaxAnalysisPayloadV1 } from "../../shared/contracts/annual-report-tax-analysis.v1";
+import type {
+  AnnualReportDownstreamTaxContextV1,
+  AnnualReportMappingContextV1,
+} from "../../shared/contracts/annual-report-tax-context.v1";
+import type { AnnualReportSourceTextV1 } from "../../shared/contracts/annual-report-source-text.v1";
 import type { AiRunMetadataV1 } from "../../shared/contracts/ai-run.v1";
 import type { ReconciliationResultPayloadV1 } from "../../shared/contracts/reconciliation.v1";
 import type { TaxAdjustmentAiProposalDecisionV1 } from "../../shared/contracts/tax-adjustment-ai.v1";
 import type { TrialBalanceNormalizedV1 } from "../../shared/contracts/trial-balance.v1";
-import { generateTaxAdjustmentsFromAiProposalsV1, generateTaxAdjustmentsV1 } from "../adjustments/tax-adjustments-engine.v1";
+import {
+  generateTaxAdjustmentsFromAiProposalsV1,
+  generateTaxAdjustmentsV1,
+} from "../adjustments/tax-adjustments-engine.v1";
 import type { GenerateTaxAdjustmentsInputV1 } from "../adjustments/tax-adjustments-engine.v1";
 import {
   projectAnnualReportMappingContextV1,
@@ -36,6 +46,7 @@ import {
 } from "../ai/context/annual-report-tax-context.v1";
 import {
   prepareAnnualReportDocumentV1,
+  type AnnualReportPreparedDocumentV1,
 } from "../ai/document-prep/annual-report-document.v1";
 import { executeAnnualReportAnalysisV1 } from "../ai/modules/annual-report-analysis/executor.v1";
 import { loadAnnualReportAnalysisModuleConfigV1 } from "../ai/modules/annual-report-analysis/loader.v1";
@@ -67,10 +78,11 @@ import {
   executeTaxAdjustmentSubmoduleV1,
   projectTaxAdjustmentCandidatesV1,
 } from "../ai/modules/tax-adjustments-shared/executor.v1";
-import { getGeminiApiKeyV1, getGeminiModelConfigV1 } from "../ai/providers/gemini-config.v1";
 import {
-  toBase64V1,
-} from "../ai/providers/gemini-client.v1";
+  getGeminiApiKeyV1,
+  getGeminiModelConfigV1,
+} from "../ai/providers/gemini-config.v1";
+import { toBase64V1 } from "../ai/providers/gemini-client.v1";
 import type { AnnualReportExtractionDepsV1 } from "./annual-report-extraction.v1";
 import type { AnnualReportProcessingDepsV1 } from "./annual-report-processing.v1";
 import type {
@@ -190,8 +202,12 @@ function buildAnnualReportFallbackExtractionV1(input: {
   modelTier: "fast" | "thinking";
   modelName: string;
   runtimeMetadata: AnnualReportRuntimeMetadataV1;
-}): Extract<Awaited<ReturnType<typeof parseAnnualReportExtractionV1>>, { ok: true }> {
-  const existingWarnings = input.extractionResult.extraction.documentWarnings ?? [];
+}): Extract<
+  Awaited<ReturnType<typeof parseAnnualReportExtractionV1>>,
+  { ok: true }
+> {
+  const existingWarnings =
+    input.extractionResult.extraction.documentWarnings ?? [];
 
   return {
     ok: true,
@@ -279,6 +295,7 @@ function createEmptyAnnualReportTaxDeepV1(): AnnualReportTaxDeepExtractionV1 {
       notes: [],
       evidence: [],
     },
+    relevantNotes: [],
     priorYearComparatives: [],
   };
 }
@@ -293,7 +310,10 @@ function buildAnnualReportPdfDegradedFallbackExtractionV1(input: {
   modelName: string;
   policyVersion: string;
   runtimeMetadata: AnnualReportRuntimeMetadataV1;
-}): Extract<Awaited<ReturnType<typeof parseAnnualReportExtractionV1>>, { ok: true }> {
+}): Extract<
+  Awaited<ReturnType<typeof parseAnnualReportExtractionV1>>,
+  { ok: true }
+> {
   return {
     ok: true,
     extraction: stampAnnualReportEngineMetadataV1({
@@ -477,7 +497,9 @@ function normalizeSingleAnnualReportDateTokenV1(value: string): string | null {
     );
   }
 
-  const yearFirstMatch = normalized.match(/^(\d{4})[/.](\d{1,2})[/.](\d{1,2})$/);
+  const yearFirstMatch = normalized.match(
+    /^(\d{4})[/.](\d{1,2})[/.](\d{1,2})$/,
+  );
   if (yearFirstMatch) {
     return toIsoDateV1(
       Number(yearFirstMatch[1]),
@@ -486,7 +508,9 @@ function normalizeSingleAnnualReportDateTokenV1(value: string): string | null {
     );
   }
 
-  const dayFirstMatch = normalized.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+  const dayFirstMatch = normalized.match(
+    /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/,
+  );
   if (dayFirstMatch) {
     return toIsoDateV1(
       Number(dayFirstMatch[3]),
@@ -514,15 +538,15 @@ function normalizeSingleAnnualReportDateTokenV1(value: string): string | null {
   return null;
 }
 
-function extractAnnualReportDateCandidatesV1(value: string | undefined): string[] {
+function extractAnnualReportDateCandidatesV1(
+  value: string | undefined,
+): string[] {
   if (!value) {
     return [];
   }
 
   const candidates = new Set<string>();
-  const normalizedValue = value
-    .replace(/\u00a0/g, " ")
-    .replace(/[–—]/g, "-");
+  const normalizedValue = value.replace(/\u00a0/g, " ").replace(/[–—]/g, "-");
 
   const tokenPatterns = [
     /\b\d{4}-\d{2}-\d{2}\b/g,
@@ -592,7 +616,11 @@ export function normalizeAnnualReportAiDateFieldV1(input: {
     };
   }
 
-  if (!input.field.valueText && !input.field.snippet && !input.field.normalizedValue) {
+  if (
+    !input.field.valueText &&
+    !input.field.snippet &&
+    !input.field.normalizedValue
+  ) {
     return {
       field: {
         status: "needs_review",
@@ -642,10 +670,7 @@ export function normalizeAnnualReportOrganizationNumberV1(
     return undefined;
   }
 
-  const normalized = value
-    .trim()
-    .replace(/[–—]/g, "-")
-    .replace(/\s+/g, "");
+  const normalized = value.trim().replace(/[–—]/g, "-").replace(/\s+/g, "");
   return /^\d{6}-\d{4}$/.test(normalized) ? normalized : value.trim();
 }
 
@@ -735,6 +760,16 @@ const ANNUAL_REPORT_SUMMARY_LABELS_V1 = new Set<string>([
   "skatt",
   "tillgangar",
   "eget kapital och skulder",
+  "anlaggningstillgangar",
+  "immateriella anlaggningstillgangar",
+  "materiella anlaggningstillgangar",
+  "finansiella anlaggningstillgangar",
+  "omsattningstillgangar",
+  "kortfristiga fordringar",
+  "kortfristiga skulder",
+  "langfristiga skulder",
+  "bundet eget kapital",
+  "fritt eget kapital",
 ]);
 
 function dedupeAnnualReportEvidenceV1<
@@ -772,7 +807,9 @@ function isAnnualReportSummaryLineV1(input: {
   label: string;
   statementSv: AnnualReportStatementNameSvV1;
 }): boolean {
-  const normalizedLabel = normalizeAnnualReportStatementMatchTextV1(input.label);
+  const normalizedLabel = normalizeAnnualReportStatementMatchTextV1(
+    input.label,
+  );
   if (normalizedLabel.length === 0) {
     return true;
   }
@@ -814,7 +851,9 @@ function findAnnualReportStatementLineIndexOnPageV1(input: {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
-  const normalizedLabel = normalizeAnnualReportStatementMatchTextV1(input.label);
+  const normalizedLabel = normalizeAnnualReportStatementMatchTextV1(
+    input.label,
+  );
   const normalizedEvidenceSnippets = input.evidence
     .map((entry) => normalizeAnnualReportStatementMatchTextV1(entry.snippet))
     .filter((entry) => entry.length > 0);
@@ -849,7 +888,11 @@ function resolveAnnualReportStatementContextFromPageTextV1(input: {
   pageTexts: string[];
 }): AnnualReportStatementContextV1 {
   for (const evidence of input.evidence) {
-    if (!evidence.page || evidence.page < 1 || evidence.page > input.pageTexts.length) {
+    if (
+      !evidence.page ||
+      evidence.page < 1 ||
+      evidence.page > input.pageTexts.length
+    ) {
       continue;
     }
     const pageText = input.pageTexts[evidence.page - 1] ?? "";
@@ -900,7 +943,9 @@ function resolveAnnualReportCodeCandidatesByLabelV1(input: {
   label: string;
   statementSv: AnnualReportStatementNameSvV1;
 }): AnnualReportCodeDefinitionV1[] {
-  const normalizedLabel = normalizeAnnualReportStatementMatchTextV1(input.label);
+  const normalizedLabel = normalizeAnnualReportStatementMatchTextV1(
+    input.label,
+  );
   return (
     ANNUAL_REPORT_CODE_CANDIDATES_BY_LABEL_V1[input.statementSv].get(
       normalizedLabel,
@@ -969,7 +1014,9 @@ function resolveAnnualReportCodeByHeuristicV1(input: {
   label: string;
   statementSv: AnnualReportStatementNameSvV1;
 }): string | undefined {
-  const normalizedLabel = normalizeAnnualReportStatementMatchTextV1(input.label);
+  const normalizedLabel = normalizeAnnualReportStatementMatchTextV1(
+    input.label,
+  );
   const normalizedGroup = normalizeAnnualReportStatementMatchTextV1(
     input.context.groupSv ?? "",
   );
@@ -977,13 +1024,18 @@ function resolveAnnualReportCodeByHeuristicV1(input: {
     input.context.sectionSv ?? "",
   );
   const isLongTermAssetContext =
-    normalizedSection === normalizeAnnualReportStatementMatchTextV1("Tillgångar") &&
+    normalizedSection ===
+      normalizeAnnualReportStatementMatchTextV1("Tillgångar") &&
     normalizedGroup.includes("anlaggningstillgang");
-  const isShortTermReceivableContext =
-    normalizedGroup.includes("kortfristiga fordringar");
-  const isShortTermPlacementContext =
-    normalizedGroup.includes("kortfristiga placeringar");
-  const isLongTermDebtContext = normalizedGroup.includes("langfristiga skulder");
+  const isShortTermReceivableContext = normalizedGroup.includes(
+    "kortfristiga fordringar",
+  );
+  const isShortTermPlacementContext = normalizedGroup.includes(
+    "kortfristiga placeringar",
+  );
+  const isLongTermDebtContext = normalizedGroup.includes(
+    "langfristiga skulder",
+  );
   const isShortTermDebtContext =
     normalizedGroup.includes("kortfristiga skulder") ||
     normalizedSection === normalizeAnnualReportStatementMatchTextV1("Skulder");
@@ -1110,7 +1162,10 @@ function resolveAnnualReportCodeByHeuristicV1(input: {
   ) {
     return "2.2";
   }
-  if (normalizedLabel.includes("byggnader") || normalizedLabel.includes("mark")) {
+  if (
+    normalizedLabel.includes("byggnader") ||
+    normalizedLabel.includes("mark")
+  ) {
     return "2.3";
   }
   if (
@@ -1271,6 +1326,9 @@ function resolveAnnualReportCodeByHeuristicV1(input: {
   if (normalizedLabel.includes("ovriga langfristiga skulder")) {
     return "2.39";
   }
+  if (normalizedLabel.includes("ovriga kortfristiga skulder")) {
+    return "2.48";
+  }
   if (
     normalizedLabel.includes("skulder till koncern") ||
     normalizedLabel.includes("skulder till intresse")
@@ -1318,6 +1376,25 @@ function resolveAnnualReportCodeByHeuristicV1(input: {
   return undefined;
 }
 
+function hasAnnualReportLineNumericValuesV1(
+  line:
+    | AnnualReportTaxDeepExtractionV1["ink2rExtracted"]["incomeStatement"][number]
+    | AnnualReportTaxDeepExtractionV1["ink2rExtracted"]["balanceSheet"][number],
+): boolean {
+  if (
+    typeof line.currentYearValue === "number" ||
+    typeof line.priorYearValue === "number"
+  ) {
+    return true;
+  }
+
+  return line.evidence.some((evidence) =>
+    extractAnnualReportStatementSnippetAmountsV1(evidence.snippet).some(
+      (value) => typeof value === "number",
+    ),
+  );
+}
+
 export function alignAnnualReportStatementsToInk2CodesV1(input: {
   pageTexts: string[];
   taxDeep: AnnualReportTaxDeepExtractionV1;
@@ -1326,7 +1403,8 @@ export function alignAnnualReportStatementsToInk2CodesV1(input: {
   warnings: string[];
 } {
   const alignLines = <
-    TLine extends AnnualReportTaxDeepExtractionV1["ink2rExtracted"]["incomeStatement"][number],
+    TLine extends
+      AnnualReportTaxDeepExtractionV1["ink2rExtracted"]["incomeStatement"][number],
   >(
     lines: TLine[],
     statementSv: AnnualReportStatementNameSvV1,
@@ -1344,6 +1422,11 @@ export function alignAnnualReportStatementsToInk2CodesV1(input: {
           currentYearValue: line.currentYearValue,
         })
       ) {
+        continue;
+      }
+      // Ignore valueless placeholder rows so dash-only statement labels do not
+      // masquerade as real unmapped findings in the balance rebuild.
+      if (!hasAnnualReportLineNumericValuesV1(line)) {
         continue;
       }
       const context = resolveAnnualReportStatementContextFromPageTextV1({
@@ -1417,7 +1500,9 @@ export function alignAnnualReportStatementsToInk2CodesV1(input: {
     const warnings =
       alignedLines.length > 0 && unmappedLabels.size > 0
         ? [
-            `statement_alignment.${statementSv === "Balansräkning" ? "balance_sheet" : "income_statement"}.unmapped=${[...unmappedLabels]
+            `statement_alignment.${statementSv === "Balansräkning" ? "balance_sheet" : "income_statement"}.unmapped=${[
+              ...unmappedLabels,
+            ]
               .slice(0, 8)
               .join(" | ")}`,
           ]
@@ -1451,11 +1536,13 @@ export function alignAnnualReportStatementsToInk2CodesV1(input: {
   };
 }
 
-function normalizeAnnualReportValueWithEvidenceV1<TValue extends {
-  currency?: string;
-  evidence: Array<unknown>;
-  value?: number;
-}>(value: TValue | undefined, multiplier: number): TValue | undefined {
+function normalizeAnnualReportValueWithEvidenceV1<
+  TValue extends {
+    currency?: string;
+    evidence: Array<unknown>;
+    value?: number;
+  },
+>(value: TValue | undefined, multiplier: number): TValue | undefined {
   if (!value || value.value === undefined || multiplier === 1) {
     return value;
   }
@@ -1469,7 +1556,7 @@ function normalizeAnnualReportValueWithEvidenceV1<TValue extends {
 
 function extractAnnualReportStatementSnippetAmountsV1(
   snippet: string | undefined,
-): number[] {
+): Array<number | undefined> {
   if (typeof snippet !== "string" || snippet.trim().length === 0) {
     return [];
   }
@@ -1495,6 +1582,8 @@ function extractAnnualReportStatementSnippetAmountsV1(
       return !token.startsWith("-") && digits.length <= 2;
     });
   const hasTrailingDash = /(?:^|\s)-\s*$/.test(normalized);
+  const hasLeadingStandaloneDashBeforeSuffix =
+    !hasTrailingDash && /(?:^|\s)-\s+\d{1,3}(?:\s\d{3})+\s*$/.test(normalized);
 
   if (hasTrailingDash && groupMatches.length >= 2) {
     for (
@@ -1519,56 +1608,104 @@ function extractAnnualReportStatementSnippetAmountsV1(
     }
   }
 
-  let bestTwoAmountSplit:
+  const parseRemainingTokens = (
+    remainingTokens: string[],
+  ): Array<number | undefined> | undefined => {
+    if (remainingTokens.length === 0 || remainingTokens.length > 6) {
+      return undefined;
+    }
+
+    if (hasLeadingStandaloneDashBeforeSuffix && remainingTokens.length >= 2) {
+      const priorOnlyAmount = parseAmountTokens(remainingTokens);
+      if (priorOnlyAmount !== undefined) {
+        return [undefined, priorOnlyAmount];
+      }
+    }
+
+    if (remainingTokens.length === 1) {
+      const parsed = parseAmountTokens(remainingTokens);
+      return parsed === undefined ? undefined : [parsed];
+    }
+
+    if (remainingTokens.length === 2) {
+      const currentAmount = parseAmountTokens([remainingTokens[0]!]);
+      const priorAmount = parseAmountTokens([remainingTokens[1]!]);
+      if (currentAmount === undefined || priorAmount === undefined) {
+        return undefined;
+      }
+      return [currentAmount, priorAmount];
+    }
+
+    const currentGroupCount =
+      remainingTokens.length === 3
+        ? 2
+        : remainingTokens.length === 4
+          ? 2
+          : remainingTokens.length === 5
+            ? 3
+            : 3;
+    const priorGroupCount = remainingTokens.length - currentGroupCount;
+    const currentAmount = parseAmountTokens(
+      remainingTokens.slice(0, currentGroupCount),
+    );
+    const priorAmount = parseAmountTokens(
+      remainingTokens.slice(currentGroupCount),
+    );
+    if (currentAmount === undefined || priorAmount === undefined) {
+      return undefined;
+    }
+    return [currentAmount, priorAmount];
+  };
+
+  let bestCandidate:
     | {
-        currentAmount: number;
-        priorAmount: number;
+        amounts: Array<number | undefined>;
         score: number;
       }
     | undefined;
+  const maxPrefixLength = Math.min(3, Math.max(0, groupMatches.length - 1));
+  for (
+    let prefixLength = 0;
+    prefixLength <= maxPrefixLength;
+    prefixLength += 1
+  ) {
+    const prefixTokens = groupMatches.slice(0, prefixLength);
+    if (prefixTokens.length > 0 && !prefixLooksLikeNoteRefs(prefixTokens)) {
+      continue;
+    }
 
-  for (let currentGroupCount = 1; currentGroupCount <= 3; currentGroupCount += 1) {
-    for (let priorGroupCount = 1; priorGroupCount <= 3; priorGroupCount += 1) {
-      const suffixGroupCount = currentGroupCount + priorGroupCount;
-      if (suffixGroupCount > groupMatches.length) {
-        continue;
-      }
+    const candidate = parseRemainingTokens(groupMatches.slice(prefixLength));
+    if (!candidate || candidate.length === 0) {
+      continue;
+    }
 
-      const prefixTokens = groupMatches.slice(0, groupMatches.length - suffixGroupCount);
-      const currentTokens = groupMatches.slice(
-        groupMatches.length - suffixGroupCount,
-        groupMatches.length - priorGroupCount,
+    const score =
+      (prefixTokens.length > 0 ? 40 - prefixTokens.length * 8 : 18) +
+      candidate.filter((value) => typeof value === "number").length * 14 -
+      Math.abs(
+        (candidate[0] === undefined ? 0 : 1) -
+          (candidate[1] === undefined ? 0 : 1),
       );
-      const priorTokens = groupMatches.slice(groupMatches.length - priorGroupCount);
-      const currentAmount = parseAmountTokens(currentTokens);
-      const priorAmount = parseAmountTokens(priorTokens);
-      if (currentAmount === undefined || priorAmount === undefined) {
-        continue;
-      }
-
-      const score =
-        (currentGroupCount === priorGroupCount ? 100 : 0) +
-        (prefixLooksLikeNoteRefs(prefixTokens) ? 50 - prefixTokens.length * 10 : -100) +
-        suffixGroupCount;
-      if (!bestTwoAmountSplit || score > bestTwoAmountSplit.score) {
-        bestTwoAmountSplit = {
-          currentAmount,
-          priorAmount,
-          score,
-        };
-      }
+    if (!bestCandidate || score > bestCandidate.score) {
+      bestCandidate = {
+        amounts: candidate,
+        score,
+      };
     }
   }
 
-  if (bestTwoAmountSplit && bestTwoAmountSplit.score >= 100) {
-    return [bestTwoAmountSplit.currentAmount, bestTwoAmountSplit.priorAmount];
+  if (bestCandidate) {
+    return bestCandidate.amounts;
   }
 
   if (groupMatches.length === 2) {
     const parsed = parseAmountTokens(groupMatches);
     return parsed === undefined ? [] : [parsed];
   }
-  if (groupMatches.length === 3 && groupMatches[0]?.replace("-", "").length === 2) {
+  if (
+    groupMatches.length === 3 &&
+    groupMatches[0]?.replace("-", "").length === 2
+  ) {
     const parsed = parseAmountTokens(groupMatches.slice(1));
     return parsed === undefined ? [] : [parsed];
   }
@@ -1585,7 +1722,10 @@ function extractAnnualReportStatementSnippetAmountsV1(
 }
 
 function cleanAnnualReportStatementLabelV1(value: string): string {
-  const tokens = value.trim().split(/\s+/).filter((token) => token.length > 0);
+  const tokens = value
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token.length > 0);
   while (
     tokens.length > 0 &&
     /^\d+(?:,\d+)?(?:-\d+)?$/.test(tokens[tokens.length - 1] ?? "")
@@ -1593,12 +1733,121 @@ function cleanAnnualReportStatementLabelV1(value: string): string {
     tokens.pop();
   }
 
-  return tokens.join(" ").replace(/[-,:;]+$/g, "").trim();
+  return tokens
+    .join(" ")
+    .replace(/[-,:;]+$/g, "")
+    .trim();
+}
+
+function listNormalizedAnnualReportPageLinesV1(pageText: string): string[] {
+  return pageText
+    .split(/\r?\n/)
+    .map((line) => normalizeAnnualReportStatementMatchTextV1(line))
+    .filter((line) => line.length > 0);
+}
+
+function refineAnnualReportStatementPagesV1(input: {
+  pageTexts: string[];
+  pages: number[];
+  statement: "income" | "balance";
+}): number[] {
+  if (input.pages.length <= 1) {
+    return input.pages;
+  }
+
+  const anchorMatchers =
+    input.statement === "income"
+      ? [
+          /^resultatrakning\b/i,
+          /^rorelsens intakter\b/i,
+          /^rorelsens kostnader\b/i,
+          /^finansiella poster\b/i,
+        ]
+      : [
+          /^balansrakning\b/i,
+          /^tillgangar\b/i,
+          /^eget kapital och skulder\b/i,
+          /^kortfristiga skulder\b/i,
+        ];
+  const stopMatchers =
+    input.statement === "income"
+      ? [/^balansrakning\b/i, /^tillgangar\b/i, /^eget kapital och skulder\b/i]
+      : [/^not\s+\d+\b/i, /^noter\b/i];
+
+  const normalizedPages = [...new Set(input.pages)].sort(
+    (left, right) => left - right,
+  );
+  let anchorIndex = -1;
+  for (let index = 0; index < normalizedPages.length; index += 1) {
+    const page = normalizedPages[index]!;
+    const lines = listNormalizedAnnualReportPageLinesV1(
+      input.pageTexts[page - 1] ?? "",
+    );
+    if (
+      lines.some((line) => anchorMatchers.some((matcher) => matcher.test(line)))
+    ) {
+      anchorIndex = index;
+      break;
+    }
+  }
+
+  if (anchorIndex === -1) {
+    return normalizedPages;
+  }
+
+  const refined: number[] = [];
+  for (let index = anchorIndex; index < normalizedPages.length; index += 1) {
+    const page = normalizedPages[index]!;
+    const lines = listNormalizedAnnualReportPageLinesV1(
+      input.pageTexts[page - 1] ?? "",
+    );
+    if (
+      index > anchorIndex &&
+      lines.some((line) => stopMatchers.some((matcher) => matcher.test(line)))
+    ) {
+      break;
+    }
+    refined.push(page);
+  }
+
+  return refined.length > 0 ? refined : normalizedPages;
+}
+
+function formatAnnualReportSelectedPagesV1(pages: number[]): string {
+  const normalizedPages = [...new Set(pages)].sort(
+    (left, right) => left - right,
+  );
+  if (normalizedPages.length === 0) {
+    return "none";
+  }
+
+  const ranges: Array<{ start: number; end: number }> = [];
+  let start = normalizedPages[0]!;
+  let end = normalizedPages[0]!;
+  for (const page of normalizedPages.slice(1)) {
+    if (page === end + 1) {
+      end = page;
+      continue;
+    }
+    ranges.push({ start, end });
+    start = page;
+    end = page;
+  }
+  ranges.push({ start, end });
+
+  return ranges
+    .map((range) =>
+      range.start === range.end
+        ? `${range.start}`
+        : `${range.start}-${range.end}`,
+    )
+    .join(", ");
 }
 
 function buildDeterministicStatementLinesFromPageTextV1(input: {
   pageTexts: string[];
   pages: number[];
+  statement: "income" | "balance";
 }): AnnualReportTaxDeepExtractionV1["ink2rExtracted"]["incomeStatement"] {
   const lines: AnnualReportTaxDeepExtractionV1["ink2rExtracted"]["incomeStatement"] =
     [];
@@ -1609,9 +1858,36 @@ function buildDeterministicStatementLinesFromPageTextV1(input: {
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter((line) => line.length > 0);
+    let statementRegionStarted = input.statement === "income";
 
     for (const line of pageLines) {
       const normalizedLine = normalizeAnnualReportStatementMatchTextV1(line);
+      // Proposal/disposition pages can appear adjacent to the statements in some
+      // PDFs; keep the rebuild scoped to the actual statement body even if an
+      // upstream page window is broader than intended.
+      if (
+        normalizedLine.includes("forslag till vinstdisposition") ||
+        normalizedLine.includes("arsstammans forfogande star") ||
+        normalizedLine.includes("styrelsen foreslar att") ||
+        normalizedLine.includes("till aktieagarna utdelas") ||
+        normalizedLine.includes("i ny rakning balanseras")
+      ) {
+        continue;
+      }
+
+      if (input.statement === "balance" && !statementRegionStarted) {
+        if (
+          normalizedLine === "tillgangar" ||
+          normalizedLine.startsWith("eget kapital och skulder")
+        ) {
+          statementRegionStarted = true;
+          currentSectionLabel = undefined;
+          continue;
+        }
+
+        continue;
+      }
+
       if (
         normalizedLine.length === 0 ||
         normalizedLine.startsWith("resultatrakning") ||
@@ -1690,7 +1966,9 @@ function buildAnnualReportStatementEvidenceFromPagesV1(input: {
   pageTexts: string[];
   pages: number[];
 }): Array<{ snippet: string; page?: number }> {
-  const normalizedLabel = normalizeAnnualReportStatementMatchTextV1(input.label);
+  const normalizedLabel = normalizeAnnualReportStatementMatchTextV1(
+    input.label,
+  );
   if (normalizedLabel.length === 0) {
     return [];
   }
@@ -1711,9 +1989,13 @@ function buildAnnualReportStatementEvidenceFromPagesV1(input: {
       }
 
       const nextLine = lines[index + 1];
+      const shouldAvoidConcatenation =
+        isAnnualReportContextHeadingV1(normalizedLabel) ||
+        normalizedLabel.startsWith("summa ");
       const snippet =
         extractAnnualReportStatementSnippetAmountsV1(line).length > 0 ||
-        !nextLine
+        !nextLine ||
+        shouldAvoidConcatenation
           ? line
           : `${line} ${nextLine}`;
       return [{ snippet, page }];
@@ -1747,16 +2029,30 @@ export function hydrateAnnualReportStatementEvidenceFromPageTextV1(input: {
 
   const incomeStatementPages = toPages(input.incomeStatementRanges);
   const balanceSheetPages = toPages(input.balanceSheetRanges);
-  const statementPages = [...new Set([...incomeStatementPages, ...balanceSheetPages])];
+  const refinedIncomeStatementPages = refineAnnualReportStatementPagesV1({
+    pageTexts: input.pageTexts,
+    pages: incomeStatementPages,
+    statement: "income",
+  });
+  const refinedBalanceSheetPages = refineAnnualReportStatementPagesV1({
+    pageTexts: input.pageTexts,
+    pages: balanceSheetPages,
+    statement: "balance",
+  });
+  const statementPages = [
+    ...new Set([...incomeStatementPages, ...balanceSheetPages]),
+  ];
   const shouldReplaceWithDeterministicIncome =
     input.taxDeep.ink2rExtracted.incomeStatement.length === 0 ||
     input.taxDeep.ink2rExtracted.incomeStatement.every(
-      (line) => line.code === "unclassified_line" || line.label === "Unknown line",
+      (line) =>
+        line.code === "unclassified_line" || line.label === "Unknown line",
     );
   const shouldReplaceWithDeterministicBalance =
     input.taxDeep.ink2rExtracted.balanceSheet.length === 0 ||
     input.taxDeep.ink2rExtracted.balanceSheet.every(
-      (line) => line.code === "unclassified_line" || line.label === "Unknown line",
+      (line) =>
+        line.code === "unclassified_line" || line.label === "Unknown line",
     );
 
   const hydrateLines = <
@@ -1771,36 +2067,46 @@ export function hydrateAnnualReportStatementEvidenceFromPageTextV1(input: {
     pages: number[],
   ): TLine[] =>
     lines.map((line) => {
-      const hasRecoverableEvidence = line.evidence.some(
+      const scopedEvidence =
+        pages.length === 0
+          ? line.evidence
+          : line.evidence.filter(
+              (evidence) =>
+                evidence.page === undefined || pages.includes(evidence.page),
+            );
+      const hasRecoverableEvidence = scopedEvidence.some(
         (evidence) =>
-          extractAnnualReportStatementSnippetAmountsV1(evidence.snippet).length > 0,
+          extractAnnualReportStatementSnippetAmountsV1(evidence.snippet)
+            .length > 0,
       );
       const shouldHydrate =
-        line.evidence.length === 0 ||
+        scopedEvidence.length === 0 ||
+        scopedEvidence.length !== line.evidence.length ||
         ((!hasRecoverableEvidence ||
           line.currentYearValue === undefined ||
           line.priorYearValue === undefined) &&
           pages.length > 0);
-      if (!shouldHydrate) {
-        return line;
-      }
-
       const hydratedEvidence = buildAnnualReportStatementEvidenceFromPagesV1({
         label: line.label,
         pageTexts: input.pageTexts,
         pages,
       });
-      if (hydratedEvidence.length === 0) {
+      const preferredEvidence =
+        hydratedEvidence.length > 0 ? hydratedEvidence : scopedEvidence;
+
+      if (!shouldHydrate && preferredEvidence.length === line.evidence.length) {
         return line;
       }
 
-      return {
-        ...line,
-        evidence:
-          line.evidence.length > 0
-            ? [...line.evidence, ...hydratedEvidence]
-            : hydratedEvidence,
-      };
+      return recoverAnnualReportStatementLineValuesV1(
+        {
+          ...line,
+          evidence: preferredEvidence,
+        },
+        {
+          preferEvidenceValues: hydratedEvidence.length > 0,
+        },
+      );
     });
 
   return {
@@ -1816,20 +2122,22 @@ export function hydrateAnnualReportStatementEvidenceFromPageTextV1(input: {
       incomeStatement: shouldReplaceWithDeterministicIncome
         ? buildDeterministicStatementLinesFromPageTextV1({
             pageTexts: input.pageTexts,
-            pages: incomeStatementPages,
+            pages: refinedIncomeStatementPages,
+            statement: "income",
           })
         : hydrateLines(
             input.taxDeep.ink2rExtracted.incomeStatement,
-            incomeStatementPages,
+            refinedIncomeStatementPages,
           ),
       balanceSheet: shouldReplaceWithDeterministicBalance
         ? buildDeterministicStatementLinesFromPageTextV1({
             pageTexts: input.pageTexts,
-            pages: balanceSheetPages,
+            pages: refinedBalanceSheetPages,
+            statement: "balance",
           })
         : hydrateLines(
             input.taxDeep.ink2rExtracted.balanceSheet,
-            balanceSheetPages,
+            refinedBalanceSheetPages,
           ),
     },
   };
@@ -1841,13 +2149,31 @@ function recoverAnnualReportStatementLineValuesV1<
     priorYearValue?: number;
     evidence?: Array<{ snippet: string }>;
   },
->(line: TLine): TLine {
+>(
+  line: TLine,
+  options?: {
+    preferEvidenceValues?: boolean;
+  },
+): TLine {
   const evidenceWithAmounts = (line.evidence ?? [])
     .map((evidence) => ({
       snippet: evidence.snippet,
       amounts: extractAnnualReportStatementSnippetAmountsV1(evidence.snippet),
     }))
     .find((entry) => entry.amounts.length > 0);
+  const snippetAmounts = evidenceWithAmounts?.amounts;
+
+  if (
+    options?.preferEvidenceValues &&
+    snippetAmounts &&
+    snippetAmounts.length > 0
+  ) {
+    return {
+      ...line,
+      currentYearValue: snippetAmounts[0],
+      priorYearValue: snippetAmounts[1],
+    };
+  }
 
   if (
     typeof line.currentYearValue === "number" &&
@@ -1855,13 +2181,13 @@ function recoverAnnualReportStatementLineValuesV1<
     (!evidenceWithAmounts ||
       evidenceWithAmounts.amounts.length !== 1 ||
       !/(?:^|\s)-\s*$/.test(
-        evidenceWithAmounts.snippet.replace(/\u00a0/g, " ").replace(/[−–—]/g, "-"),
+        evidenceWithAmounts.snippet
+          .replace(/\u00a0/g, " ")
+          .replace(/[−–—]/g, "-"),
       ))
   ) {
     return line;
   }
-
-  const snippetAmounts = evidenceWithAmounts?.amounts;
 
   if (!snippetAmounts || snippetAmounts.length === 0) {
     return line;
@@ -1986,13 +2312,17 @@ function normalizeAnnualReportReserveMovementLinesV1<
   return lines.map((line) => ({
     ...line,
     openingBalance:
-      line.openingBalance === undefined ? undefined : line.openingBalance * multiplier,
+      line.openingBalance === undefined
+        ? undefined
+        : line.openingBalance * multiplier,
     movementForYear:
       line.movementForYear === undefined
         ? undefined
         : line.movementForYear * multiplier,
     closingBalance:
-      line.closingBalance === undefined ? undefined : line.closingBalance * multiplier,
+      line.closingBalance === undefined
+        ? undefined
+        : line.closingBalance * multiplier,
     priorYearClosingBalance:
       line.priorYearClosingBalance === undefined
         ? undefined
@@ -2023,11 +2353,14 @@ function sanitizeAnnualReportEvidenceReferenceV1(value: unknown) {
     {
       snippet,
       page:
-        typeof candidate.page === "number" && Number.isInteger(candidate.page) && candidate.page > 0
+        typeof candidate.page === "number" &&
+        Number.isInteger(candidate.page) &&
+        candidate.page > 0
           ? candidate.page
           : undefined,
       section:
-        typeof candidate.section === "string" && candidate.section.trim().length > 0
+        typeof candidate.section === "string" &&
+        candidate.section.trim().length > 0
           ? candidate.section.trim()
           : undefined,
       noteReference:
@@ -2056,13 +2389,18 @@ function sanitizeAnnualReportValueWithEvidenceV1(value: unknown) {
       ? candidate.value
       : undefined;
   const evidence = Array.isArray(candidate.evidence)
-    ? candidate.evidence.flatMap((entry) => sanitizeAnnualReportEvidenceReferenceV1(entry))
+    ? candidate.evidence.flatMap((entry) =>
+        sanitizeAnnualReportEvidenceReferenceV1(entry),
+      )
     : sanitizeAnnualReportEvidenceReferenceV1(candidate);
 
   if (
     numericValue === undefined &&
     evidence.length === 0 &&
-    !(typeof candidate.currency === "string" && candidate.currency.trim().length > 0)
+    !(
+      typeof candidate.currency === "string" &&
+      candidate.currency.trim().length > 0
+    )
   ) {
     return undefined;
   }
@@ -2070,7 +2408,8 @@ function sanitizeAnnualReportValueWithEvidenceV1(value: unknown) {
   return {
     value: numericValue,
     currency:
-      typeof candidate.currency === "string" && candidate.currency.trim().length > 0
+      typeof candidate.currency === "string" &&
+      candidate.currency.trim().length > 0
         ? candidate.currency.trim()
         : undefined,
     evidence,
@@ -2078,23 +2417,33 @@ function sanitizeAnnualReportValueWithEvidenceV1(value: unknown) {
 }
 
 function sanitizeAnnualReportNotesV1(values: unknown[]): string[] {
-  return values.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  return values.filter(
+    (value): value is string =>
+      typeof value === "string" && value.trim().length > 0,
+  );
 }
 
-function sanitizeAnnualReportAssetLinesV1(values: unknown[]): AnnualReportTaxDeepExtractionV1["assetMovements"]["lines"] {
+function sanitizeAnnualReportAssetLinesV1(
+  values: unknown[],
+): AnnualReportTaxDeepExtractionV1["assetMovements"]["lines"] {
   return values
-    .filter((value): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value))
+    .filter(
+      (value): value is Record<string, unknown> =>
+        typeof value === "object" && value !== null && !Array.isArray(value),
+    )
     .map((line) => ({
       assetArea:
         typeof line.assetArea === "string" && line.assetArea.trim().length > 0
           ? line.assetArea.trim()
           : "Unspecified asset area",
       openingCarryingAmount:
-        typeof line.openingCarryingAmount === "number" && Number.isFinite(line.openingCarryingAmount)
+        typeof line.openingCarryingAmount === "number" &&
+        Number.isFinite(line.openingCarryingAmount)
           ? line.openingCarryingAmount
           : undefined,
       acquisitions:
-        typeof line.acquisitions === "number" && Number.isFinite(line.acquisitions)
+        typeof line.acquisitions === "number" &&
+        Number.isFinite(line.acquisitions)
           ? line.acquisitions
           : undefined,
       disposals:
@@ -2102,15 +2451,18 @@ function sanitizeAnnualReportAssetLinesV1(values: unknown[]): AnnualReportTaxDee
           ? line.disposals
           : undefined,
       depreciationForYear:
-        typeof line.depreciationForYear === "number" && Number.isFinite(line.depreciationForYear)
+        typeof line.depreciationForYear === "number" &&
+        Number.isFinite(line.depreciationForYear)
           ? line.depreciationForYear
           : undefined,
       impairmentForYear:
-        typeof line.impairmentForYear === "number" && Number.isFinite(line.impairmentForYear)
+        typeof line.impairmentForYear === "number" &&
+        Number.isFinite(line.impairmentForYear)
           ? line.impairmentForYear
           : undefined,
       closingCarryingAmount:
-        typeof line.closingCarryingAmount === "number" && Number.isFinite(line.closingCarryingAmount)
+        typeof line.closingCarryingAmount === "number" &&
+        Number.isFinite(line.closingCarryingAmount)
           ? line.closingCarryingAmount
           : undefined,
       priorYearOpeningCarryingAmount:
@@ -2124,37 +2476,51 @@ function sanitizeAnnualReportAssetLinesV1(values: unknown[]): AnnualReportTaxDee
           ? line.priorYearClosingCarryingAmount
           : undefined,
       evidence: Array.isArray(line.evidence)
-        ? line.evidence.flatMap((entry) => sanitizeAnnualReportEvidenceReferenceV1(entry))
+        ? line.evidence.flatMap((entry) =>
+            sanitizeAnnualReportEvidenceReferenceV1(entry),
+          )
         : [],
     }));
 }
 
-function sanitizeAnnualReportReserveLinesV1(values: unknown[]): AnnualReportTaxDeepExtractionV1["reserveContext"]["movements"] {
+function sanitizeAnnualReportReserveLinesV1(
+  values: unknown[],
+): AnnualReportTaxDeepExtractionV1["reserveContext"]["movements"] {
   return values
-    .filter((value): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value))
+    .filter(
+      (value): value is Record<string, unknown> =>
+        typeof value === "object" && value !== null && !Array.isArray(value),
+    )
     .map((line) => ({
       reserveType:
-        typeof line.reserveType === "string" && line.reserveType.trim().length > 0
+        typeof line.reserveType === "string" &&
+        line.reserveType.trim().length > 0
           ? line.reserveType.trim()
           : "Unspecified reserve",
       openingBalance:
-        typeof line.openingBalance === "number" && Number.isFinite(line.openingBalance)
+        typeof line.openingBalance === "number" &&
+        Number.isFinite(line.openingBalance)
           ? line.openingBalance
           : undefined,
       movementForYear:
-        typeof line.movementForYear === "number" && Number.isFinite(line.movementForYear)
+        typeof line.movementForYear === "number" &&
+        Number.isFinite(line.movementForYear)
           ? line.movementForYear
           : undefined,
       closingBalance:
-        typeof line.closingBalance === "number" && Number.isFinite(line.closingBalance)
+        typeof line.closingBalance === "number" &&
+        Number.isFinite(line.closingBalance)
           ? line.closingBalance
           : undefined,
       priorYearClosingBalance:
-        typeof line.priorYearClosingBalance === "number" && Number.isFinite(line.priorYearClosingBalance)
+        typeof line.priorYearClosingBalance === "number" &&
+        Number.isFinite(line.priorYearClosingBalance)
           ? line.priorYearClosingBalance
           : undefined,
       evidence: Array.isArray(line.evidence)
-        ? line.evidence.flatMap((entry) => sanitizeAnnualReportEvidenceReferenceV1(entry))
+        ? line.evidence.flatMap((entry) =>
+            sanitizeAnnualReportEvidenceReferenceV1(entry),
+          )
         : [],
     }));
 }
@@ -2164,7 +2530,8 @@ export function sanitizeAnnualReportTaxDeepV1(
 ): AnnualReportTaxDeepExtractionV1 {
   const raw = taxDeep as unknown as Record<string, unknown>;
   const depreciationContext =
-    typeof raw.depreciationContext === "object" && raw.depreciationContext !== null
+    typeof raw.depreciationContext === "object" &&
+    raw.depreciationContext !== null
       ? (raw.depreciationContext as Record<string, unknown>)
       : {};
   const assetMovements =
@@ -2176,7 +2543,8 @@ export function sanitizeAnnualReportTaxDeepV1(
       ? (raw.reserveContext as Record<string, unknown>)
       : {};
   const netInterestContext =
-    typeof raw.netInterestContext === "object" && raw.netInterestContext !== null
+    typeof raw.netInterestContext === "object" &&
+    raw.netInterestContext !== null
       ? (raw.netInterestContext as Record<string, unknown>)
       : {};
   const pensionContext =
@@ -2197,7 +2565,8 @@ export function sanitizeAnnualReportTaxDeepV1(
       ? (raw.groupContributionContext as Record<string, unknown>)
       : {};
   const shareholdingContext =
-    typeof raw.shareholdingContext === "object" && raw.shareholdingContext !== null
+    typeof raw.shareholdingContext === "object" &&
+    raw.shareholdingContext !== null
       ? (raw.shareholdingContext as Record<string, unknown>)
       : {};
 
@@ -2212,75 +2581,127 @@ export function sanitizeAnnualReportTaxDeepV1(
         ...(Array.isArray(depreciationContext.assetAreas)
           ? depreciationContext.assetAreas
           : []),
-        ...(Array.isArray(depreciationContext.depreciationOnTangibleAndIntangibleAssets)
+        ...(Array.isArray(
+          depreciationContext.depreciationOnTangibleAndIntangibleAssets,
+        )
           ? depreciationContext.depreciationOnTangibleAndIntangibleAssets
           : []),
       ]),
       evidence: Array.isArray(depreciationContext.evidence)
-        ? depreciationContext.evidence.flatMap((entry) => sanitizeAnnualReportEvidenceReferenceV1(entry))
+        ? depreciationContext.evidence.flatMap((entry) =>
+            sanitizeAnnualReportEvidenceReferenceV1(entry),
+          )
         : [],
     },
     assetMovements: {
       lines: sanitizeAnnualReportAssetLinesV1([
         ...(Array.isArray(assetMovements.lines) ? assetMovements.lines : []),
-        ...(Array.isArray(assetMovements.tangibleAssets) ? assetMovements.tangibleAssets : []),
-        ...(Array.isArray(assetMovements.intangibleAssets) ? assetMovements.intangibleAssets : []),
+        ...(Array.isArray(assetMovements.tangibleAssets)
+          ? assetMovements.tangibleAssets
+          : []),
+        ...(Array.isArray(assetMovements.intangibleAssets)
+          ? assetMovements.intangibleAssets
+          : []),
       ]),
       evidence: Array.isArray(assetMovements.evidence)
-        ? assetMovements.evidence.flatMap((entry) => sanitizeAnnualReportEvidenceReferenceV1(entry))
+        ? assetMovements.evidence.flatMap((entry) =>
+            sanitizeAnnualReportEvidenceReferenceV1(entry),
+          )
         : [],
     },
     reserveContext: {
       movements: sanitizeAnnualReportReserveLinesV1([
-        ...(Array.isArray(reserveContext.movements) ? reserveContext.movements : []),
-        ...(Array.isArray(reserveContext.untaxedReserves) ? reserveContext.untaxedReserves : []),
+        ...(Array.isArray(reserveContext.movements)
+          ? reserveContext.movements
+          : []),
+        ...(Array.isArray(reserveContext.untaxedReserves)
+          ? reserveContext.untaxedReserves
+          : []),
       ]),
       notes: sanitizeAnnualReportNotesV1([
         ...(Array.isArray(reserveContext.notes) ? reserveContext.notes : []),
-        ...(Array.isArray(reserveContext.appropriations) ? reserveContext.appropriations : []),
+        ...(Array.isArray(reserveContext.appropriations)
+          ? reserveContext.appropriations
+          : []),
       ]),
       evidence: Array.isArray(reserveContext.evidence)
-        ? reserveContext.evidence.flatMap((entry) => sanitizeAnnualReportEvidenceReferenceV1(entry))
+        ? reserveContext.evidence.flatMap((entry) =>
+            sanitizeAnnualReportEvidenceReferenceV1(entry),
+          )
         : [],
     },
     netInterestContext: {
       financeIncome:
-        sanitizeAnnualReportValueWithEvidenceV1(netInterestContext.financeIncome) ??
-        sanitizeAnnualReportValueWithEvidenceV1(netInterestContext.otherFinancialIncome),
+        sanitizeAnnualReportValueWithEvidenceV1(
+          netInterestContext.financeIncome,
+        ) ??
+        sanitizeAnnualReportValueWithEvidenceV1(
+          netInterestContext.otherFinancialIncome,
+        ),
       financeExpense:
-        sanitizeAnnualReportValueWithEvidenceV1(netInterestContext.financeExpense) ??
-        sanitizeAnnualReportValueWithEvidenceV1(netInterestContext.otherFinancialExpense),
-      interestIncome: sanitizeAnnualReportValueWithEvidenceV1(netInterestContext.interestIncome),
-      interestExpense: sanitizeAnnualReportValueWithEvidenceV1(netInterestContext.interestExpense),
-      netInterest: sanitizeAnnualReportValueWithEvidenceV1(netInterestContext.netInterest),
+        sanitizeAnnualReportValueWithEvidenceV1(
+          netInterestContext.financeExpense,
+        ) ??
+        sanitizeAnnualReportValueWithEvidenceV1(
+          netInterestContext.otherFinancialExpense,
+        ),
+      interestIncome: sanitizeAnnualReportValueWithEvidenceV1(
+        netInterestContext.interestIncome,
+      ),
+      interestExpense: sanitizeAnnualReportValueWithEvidenceV1(
+        netInterestContext.interestExpense,
+      ),
+      netInterest: sanitizeAnnualReportValueWithEvidenceV1(
+        netInterestContext.netInterest,
+      ),
       notes: sanitizeAnnualReportNotesV1(
         Array.isArray(netInterestContext.notes) ? netInterestContext.notes : [],
       ),
       evidence: Array.isArray(netInterestContext.evidence)
-        ? netInterestContext.evidence.flatMap((entry) => sanitizeAnnualReportEvidenceReferenceV1(entry))
+        ? netInterestContext.evidence.flatMap((entry) =>
+            sanitizeAnnualReportEvidenceReferenceV1(entry),
+          )
         : [],
     },
     pensionContext: {
-      specialPayrollTax: sanitizeAnnualReportValueWithEvidenceV1(pensionContext.specialPayrollTax),
+      specialPayrollTax: sanitizeAnnualReportValueWithEvidenceV1(
+        pensionContext.specialPayrollTax,
+      ),
       flags: taxDeep.pensionContext.flags,
       notes: sanitizeAnnualReportNotesV1([
         ...taxDeep.pensionContext.notes,
-        ...(Array.isArray(pensionContext.pensionCosts) ? pensionContext.pensionCosts : []),
-        ...(Array.isArray(pensionContext.pensionObligations) ? pensionContext.pensionObligations : []),
+        ...(Array.isArray(pensionContext.pensionCosts)
+          ? pensionContext.pensionCosts
+          : []),
+        ...(Array.isArray(pensionContext.pensionObligations)
+          ? pensionContext.pensionObligations
+          : []),
       ]),
       evidence: Array.isArray(pensionContext.evidence)
-        ? pensionContext.evidence.flatMap((entry) => sanitizeAnnualReportEvidenceReferenceV1(entry))
+        ? pensionContext.evidence.flatMap((entry) =>
+            sanitizeAnnualReportEvidenceReferenceV1(entry),
+          )
         : taxDeep.pensionContext.evidence,
     },
     taxExpenseContext: taxExpenseContext
       ? {
           currentTax:
-            sanitizeAnnualReportValueWithEvidenceV1(taxExpenseContext.currentTax) ??
-            sanitizeAnnualReportValueWithEvidenceV1(taxExpenseContext.recognizedTax),
-          deferredTax: sanitizeAnnualReportValueWithEvidenceV1(taxExpenseContext.deferredTax),
-          totalTaxExpense: sanitizeAnnualReportValueWithEvidenceV1(taxExpenseContext.totalTaxExpense),
+            sanitizeAnnualReportValueWithEvidenceV1(
+              taxExpenseContext.currentTax,
+            ) ??
+            sanitizeAnnualReportValueWithEvidenceV1(
+              taxExpenseContext.recognizedTax,
+            ),
+          deferredTax: sanitizeAnnualReportValueWithEvidenceV1(
+            taxExpenseContext.deferredTax,
+          ),
+          totalTaxExpense: sanitizeAnnualReportValueWithEvidenceV1(
+            taxExpenseContext.totalTaxExpense,
+          ),
           notes: sanitizeAnnualReportNotesV1([
-            ...(Array.isArray(taxExpenseContext.notes) ? taxExpenseContext.notes : []),
+            ...(Array.isArray(taxExpenseContext.notes)
+              ? taxExpenseContext.notes
+              : []),
             ...(Array.isArray(taxExpenseContext.reconciliation)
               ? taxExpenseContext.reconciliation
               : []),
@@ -2291,8 +2712,12 @@ export function sanitizeAnnualReportTaxDeepV1(
                   sanitizeAnnualReportEvidenceReferenceV1(entry),
                 )
               : []),
-            ...sanitizeAnnualReportEvidenceReferenceV1(taxExpenseContext.recognizedTax),
-            ...sanitizeAnnualReportEvidenceReferenceV1(taxExpenseContext.totalTaxExpense),
+            ...sanitizeAnnualReportEvidenceReferenceV1(
+              taxExpenseContext.recognizedTax,
+            ),
+            ...sanitizeAnnualReportEvidenceReferenceV1(
+              taxExpenseContext.totalTaxExpense,
+            ),
           ],
         }
       : undefined,
@@ -2300,8 +2725,12 @@ export function sanitizeAnnualReportTaxDeepV1(
       flags: taxDeep.leasingContext.flags,
       notes: sanitizeAnnualReportNotesV1([
         ...taxDeep.leasingContext.notes,
-        ...(Array.isArray(leasingContext.leasingCosts) ? leasingContext.leasingCosts : []),
-        ...(Array.isArray(leasingContext.leasingExpenses) ? leasingContext.leasingExpenses : []),
+        ...(Array.isArray(leasingContext.leasingCosts)
+          ? leasingContext.leasingCosts
+          : []),
+        ...(Array.isArray(leasingContext.leasingExpenses)
+          ? leasingContext.leasingExpenses
+          : []),
         ...(Array.isArray(leasingContext.futureLeasingCommitments)
           ? leasingContext.futureLeasingCommitments
           : []),
@@ -2310,7 +2739,9 @@ export function sanitizeAnnualReportTaxDeepV1(
           : []),
       ]),
       evidence: Array.isArray(leasingContext.evidence)
-        ? leasingContext.evidence.flatMap((entry) => sanitizeAnnualReportEvidenceReferenceV1(entry))
+        ? leasingContext.evidence.flatMap((entry) =>
+            sanitizeAnnualReportEvidenceReferenceV1(entry),
+          )
         : taxDeep.leasingContext.evidence,
     },
     groupContributionContext: {
@@ -2325,12 +2756,18 @@ export function sanitizeAnnualReportTaxDeepV1(
           : []),
       ]),
       evidence: Array.isArray(groupContributionContext.evidence)
-        ? groupContributionContext.evidence.flatMap((entry) => sanitizeAnnualReportEvidenceReferenceV1(entry))
+        ? groupContributionContext.evidence.flatMap((entry) =>
+            sanitizeAnnualReportEvidenceReferenceV1(entry),
+          )
         : taxDeep.groupContributionContext.evidence,
     },
     shareholdingContext: {
-      dividendsReceived: sanitizeAnnualReportValueWithEvidenceV1(shareholdingContext.dividendsReceived),
-      dividendsPaid: sanitizeAnnualReportValueWithEvidenceV1(shareholdingContext.dividendsPaid),
+      dividendsReceived: sanitizeAnnualReportValueWithEvidenceV1(
+        shareholdingContext.dividendsReceived,
+      ),
+      dividendsPaid: sanitizeAnnualReportValueWithEvidenceV1(
+        shareholdingContext.dividendsPaid,
+      ),
       flags: taxDeep.shareholdingContext.flags,
       notes: sanitizeAnnualReportNotesV1([
         ...taxDeep.shareholdingContext.notes,
@@ -2346,7 +2783,9 @@ export function sanitizeAnnualReportTaxDeepV1(
         ...(Array.isArray(shareholdingContext.participationsInGroupCompanies)
           ? shareholdingContext.participationsInGroupCompanies
           : []),
-        ...(Array.isArray(shareholdingContext.participationsInAssociatedCompanies)
+        ...(Array.isArray(
+          shareholdingContext.participationsInAssociatedCompanies,
+        )
           ? shareholdingContext.participationsInAssociatedCompanies
           : []),
         ...(Array.isArray(shareholdingContext.otherLongTermSecurities)
@@ -2354,9 +2793,44 @@ export function sanitizeAnnualReportTaxDeepV1(
           : []),
       ]),
       evidence: Array.isArray(shareholdingContext.evidence)
-        ? shareholdingContext.evidence.flatMap((entry) => sanitizeAnnualReportEvidenceReferenceV1(entry))
+        ? shareholdingContext.evidence.flatMap((entry) =>
+            sanitizeAnnualReportEvidenceReferenceV1(entry),
+          )
         : taxDeep.shareholdingContext.evidence,
     },
+    relevantNotes: Array.isArray(raw.relevantNotes)
+      ? raw.relevantNotes
+          .filter(
+            (
+              value,
+            ): value is NonNullable<AnnualReportTaxDeepExtractionV1["relevantNotes"]>[number] =>
+              typeof value === "object" && value !== null,
+          )
+          .map((note) => ({
+            category: note.category,
+            title: typeof note.title === "string" ? note.title : undefined,
+            noteReference:
+              typeof note.noteReference === "string"
+                ? note.noteReference
+                : undefined,
+            pages: Array.isArray(note.pages)
+              ? note.pages.filter(
+                  (page): page is number =>
+                    typeof page === "number" &&
+                    Number.isInteger(page) &&
+                    page > 0,
+                )
+              : [],
+            notes: sanitizeAnnualReportNotesV1(
+              Array.isArray(note.notes) ? note.notes : [],
+            ),
+            evidence: Array.isArray(note.evidence)
+              ? note.evidence.flatMap((entry) =>
+                  sanitizeAnnualReportEvidenceReferenceV1(entry),
+                )
+              : [],
+          }))
+      : taxDeep.relevantNotes,
     priorYearComparatives: taxDeep.priorYearComparatives,
   };
 }
@@ -2372,17 +2846,17 @@ export function normalizeAnnualReportTaxDeepV1(
     return sanitizedTaxDeep;
   }
 
-    return {
-      ...sanitizedTaxDeep,
-      ink2rExtracted: {
-        ...sanitizedTaxDeep.ink2rExtracted,
-        // After normalization every amount in taxDeep is expressed in SEK.
-        statementUnit: "sek",
-        incomeStatement: normalizeAnnualReportStatementLinesV1(
-          sanitizedTaxDeep.ink2rExtracted.incomeStatement,
-          multiplier,
-        ),
-        balanceSheet: normalizeAnnualReportStatementLinesV1(
+  return {
+    ...sanitizedTaxDeep,
+    ink2rExtracted: {
+      ...sanitizedTaxDeep.ink2rExtracted,
+      // After normalization every amount in taxDeep is expressed in SEK.
+      statementUnit: "sek",
+      incomeStatement: normalizeAnnualReportStatementLinesV1(
+        sanitizedTaxDeep.ink2rExtracted.incomeStatement,
+        multiplier,
+      ),
+      balanceSheet: normalizeAnnualReportStatementLinesV1(
         sanitizedTaxDeep.ink2rExtracted.balanceSheet,
         multiplier,
       ),
@@ -2486,6 +2960,104 @@ function hasAnnualReportFullExtractionV1(
   );
 }
 
+function collectAnnualReportPagesFromRangesV1(input: {
+  maxPage: number;
+  ranges: Array<{ startPage: number; endPage: number }>;
+}): number[] {
+  const pages = new Set<number>();
+  for (const range of input.ranges) {
+    const startPage = Math.max(1, Math.min(input.maxPage, range.startPage));
+    const endPage = Math.max(1, Math.min(input.maxPage, range.endPage));
+    for (
+      let page = Math.min(startPage, endPage);
+      page <= Math.max(startPage, endPage);
+      page += 1
+    ) {
+      pages.add(page);
+    }
+  }
+  return [...pages].sort((left, right) => left - right);
+}
+
+function calculateAnnualReportBalanceControlFromLinesV1(
+  lines: AnnualReportTaxDeepExtractionV1["ink2rExtracted"]["balanceSheet"],
+): {
+  currentAssets: number;
+  currentDifference: number;
+  currentEquityAndLiabilities: number;
+} {
+  let currentAssets = 0;
+  let currentEquityAndLiabilities = 0;
+  for (const line of lines) {
+    if (isAnnualReportBalanceAssetCodeV1(line.code)) {
+      currentAssets += line.currentYearValue ?? 0;
+    }
+    if (isAnnualReportBalanceEquityLiabilityCodeV1(line.code)) {
+      currentEquityAndLiabilities += line.currentYearValue ?? 0;
+    }
+  }
+
+  return {
+    currentAssets,
+    currentDifference: currentAssets - currentEquityAndLiabilities,
+    currentEquityAndLiabilities,
+  };
+}
+
+function countAnnualReportStatementPopulatedValuesV1(
+  lines:
+    | AnnualReportTaxDeepExtractionV1["ink2rExtracted"]["incomeStatement"]
+    | AnnualReportTaxDeepExtractionV1["ink2rExtracted"]["balanceSheet"],
+): number {
+  return lines.reduce((count, line) => {
+    let nextCount = count;
+    if (typeof line.currentYearValue === "number") {
+      nextCount += 1;
+    }
+    if (typeof line.priorYearValue === "number") {
+      nextCount += 1;
+    }
+    return nextCount;
+  }, 0);
+}
+
+function hasAnnualReportEvidenceOutsidePagesV1(
+  lines:
+    | AnnualReportTaxDeepExtractionV1["ink2rExtracted"]["incomeStatement"]
+    | AnnualReportTaxDeepExtractionV1["ink2rExtracted"]["balanceSheet"],
+  pages: number[],
+): boolean {
+  if (pages.length === 0) {
+    return false;
+  }
+
+  return lines.some((line) =>
+    line.evidence.some(
+      (evidence) =>
+        typeof evidence.page === "number" && !pages.includes(evidence.page),
+    ),
+  );
+}
+
+function extractProfitBeforeTaxFromStatementLinesV1(input: {
+  statementUnit?: AnnualReportAmountUnitV1;
+  lines: AnnualReportTaxDeepExtractionV1["ink2rExtracted"]["incomeStatement"];
+}): number | undefined {
+  const line = input.lines.find((candidate) =>
+    normalizeAnnualReportStatementMatchTextV1(candidate.label).includes(
+      "resultat fore skatt",
+    ),
+  );
+  if (!line || typeof line.currentYearValue !== "number") {
+    return undefined;
+  }
+
+  return normalizeAnnualReportNumericFieldValueV1(
+    line.currentYearValue,
+    input.statementUnit,
+  );
+}
+
 function sleepV1(delayMs: number): Promise<void> {
   return new Promise((resolve) => {
     globalThis.setTimeout(resolve, delayMs);
@@ -2562,7 +3134,10 @@ async function withAnnualReportAiRetryV1<TValue>(input: {
     }
 
     lastFailure = result;
-    if (!isRetryableAnnualReportAiErrorV1(result.error) || attempt >= input.maxAttempts) {
+    if (
+      !isRetryableAnnualReportAiErrorV1(result.error) ||
+      attempt >= input.maxAttempts
+    ) {
       break;
     }
 
@@ -2582,7 +3157,7 @@ async function withAnnualReportAiRetryV1<TValue>(input: {
 }
 
 function buildAnnualReportSourceDiagnosticsV1(input: {
-  sourceText: import("../../shared/contracts/annual-report-source-text.v1").AnnualReportSourceTextV1;
+  sourceText: AnnualReportSourceTextV1;
 }): string[] {
   const diagnostics = [
     `parsing.${input.sourceText.fileType}.parser=${input.sourceText.parserVersion}`,
@@ -2605,6 +3180,61 @@ function buildAnnualReportSourceDiagnosticsV1(input: {
 
   diagnostics.push(...input.sourceText.warnings);
   return diagnostics;
+}
+
+async function prepareAnnualReportSourceDocumentForAiV1(input: {
+  fileBytes: Uint8Array;
+  fileType: "pdf" | "docx";
+}): Promise<
+  | {
+      ok: true;
+      preparedDocument: AnnualReportPreparedDocumentV1;
+      sourceDiagnostics: string[];
+    }
+  | {
+      ok: false;
+      error: {
+        code: "INPUT_INVALID" | "PARSE_FAILED";
+        context: Record<string, unknown>;
+        message: string;
+        user_message: string;
+      };
+    }
+> {
+  const sourceTextResult = await withTimeoutV1({
+    label: "Annual-report source parsing",
+    timeoutMs: ANNUAL_REPORT_SOURCE_PARSING_TIMEOUT_MS_V1,
+    operation: () =>
+      parseAnnualReportSourceTextForAiV1({
+        fileBytes: input.fileBytes,
+        fileType: input.fileType,
+      }),
+  });
+  if (!sourceTextResult.ok) {
+    return sourceTextResult;
+  }
+
+  const pdfRouting =
+    sourceTextResult.sourceText.fileType === "pdf" &&
+    sourceTextResult.sourceText.pdfAnalysis?.classification ===
+      "extractable_text_pdf"
+      ? prepareAnnualReportPdfRoutingV1({
+          sourceText: sourceTextResult.sourceText,
+        })
+      : undefined;
+
+  return {
+    ok: true,
+    preparedDocument: prepareAnnualReportDocumentV1({
+      fileBytes: input.fileBytes,
+      pdfRouting,
+      sourceText: sourceTextResult.sourceText,
+      toBase64: toBase64V1,
+    }),
+    sourceDiagnostics: buildAnnualReportSourceDiagnosticsV1({
+      sourceText: sourceTextResult.sourceText,
+    }),
+  };
 }
 
 async function withTimeoutV1<TValue>(input: {
@@ -2681,24 +3311,20 @@ async function extractAnnualReportWithPrimaryAiV1(input: {
   }
 
   try {
-    const sourceTextResult = await withTimeoutV1({
-      label: "Annual-report source parsing",
-      timeoutMs: ANNUAL_REPORT_SOURCE_PARSING_TIMEOUT_MS_V1,
-      operation: () =>
-        parseAnnualReportSourceTextForAiV1({
-          fileBytes: input.fileBytes,
-          fileType: resolvedFileType,
-        }),
-    });
-    if (!sourceTextResult.ok) {
+    const preparedDocumentResult =
+      await prepareAnnualReportSourceDocumentForAiV1({
+        fileBytes: input.fileBytes,
+        fileType: resolvedFileType,
+      });
+    if (!preparedDocumentResult.ok) {
       return {
         ok: false,
         error: {
-          code: sourceTextResult.error.code,
-          message: `Annual-report source parsing failed: ${sourceTextResult.error.message}`,
-          user_message: sourceTextResult.error.user_message,
+          code: preparedDocumentResult.error.code,
+          message: `Annual-report source parsing failed: ${preparedDocumentResult.error.message}`,
+          user_message: preparedDocumentResult.error.user_message,
           context: {
-            ...sourceTextResult.error.context,
+            ...preparedDocumentResult.error.context,
             fileType: resolvedFileType,
             stage: "source_parsing",
           },
@@ -2706,26 +3332,8 @@ async function extractAnnualReportWithPrimaryAiV1(input: {
       };
     }
 
-    const sourceDiagnostics = buildAnnualReportSourceDiagnosticsV1({
-      sourceText: sourceTextResult.sourceText,
-    });
-    const pdfRouting =
-      sourceTextResult.sourceText.fileType === "pdf" &&
-      sourceTextResult.sourceText.pdfAnalysis?.classification ===
-        "extractable_text_pdf"
-        ? prepareAnnualReportPdfRoutingV1({
-            sourceText: sourceTextResult.sourceText,
-          })
-        : undefined;
-    let aiResult:
-      | Awaited<ReturnType<typeof executeAnnualReportAnalysisV1>>
-      | undefined;
-    const preparedDocument = prepareAnnualReportDocumentV1({
-      fileBytes: input.fileBytes,
-      pdfRouting,
-      sourceText: sourceTextResult.sourceText,
-      toBase64: toBase64V1,
-    });
+    const preparedDocument = preparedDocumentResult.preparedDocument;
+    const sourceDiagnostics = preparedDocumentResult.sourceDiagnostics;
     const aiResultWithRetry = await withAnnualReportAiRetryV1({
       maxAttempts: 2,
       execute: async () => {
@@ -2763,7 +3371,7 @@ async function extractAnnualReportWithPrimaryAiV1(input: {
       });
     }
 
-    aiResult = aiResultWithRetry.value;
+    const aiResult = aiResultWithRetry.value;
 
     if (!aiResult) {
       throw new Error("Annual-report AI extraction returned no result.");
@@ -2781,20 +3389,121 @@ async function extractAnnualReportWithPrimaryAiV1(input: {
     const sanitizedTaxDeep = sanitizeAnnualReportTaxDeepV1(
       aiResult.extraction.taxDeep,
     );
+    const incomeStatementPages = collectAnnualReportPagesFromRangesV1({
+      maxPage: preparedDocument.sourceText?.pageTexts.length ?? 0,
+      ranges: preparedDocument.pdfRouting?.sections.incomeStatement ?? [],
+    });
+    const balanceSheetPages = collectAnnualReportPagesFromRangesV1({
+      maxPage: preparedDocument.sourceText?.pageTexts.length ?? 0,
+      ranges: preparedDocument.pdfRouting?.sections.balanceSheet ?? [],
+    });
+    const refinedIncomeStatementPages = refineAnnualReportStatementPagesV1({
+      pageTexts: preparedDocument.sourceText?.pageTexts ?? [],
+      pages: incomeStatementPages,
+      statement: "income",
+    });
+    const refinedBalanceSheetPages = refineAnnualReportStatementPagesV1({
+      pageTexts: preparedDocument.sourceText?.pageTexts ?? [],
+      pages: balanceSheetPages,
+      statement: "balance",
+    });
     const hydratedTaxDeep = hydrateAnnualReportStatementEvidenceFromPageTextV1({
       taxDeep: sanitizedTaxDeep,
       pageTexts: preparedDocument.sourceText?.pageTexts ?? [],
-      incomeStatementRanges: preparedDocument.pdfRouting?.sections.incomeStatement ?? [],
-      balanceSheetRanges: preparedDocument.pdfRouting?.sections.balanceSheet ?? [],
+      incomeStatementRanges:
+        preparedDocument.pdfRouting?.sections.incomeStatement ?? [],
+      balanceSheetRanges:
+        preparedDocument.pdfRouting?.sections.balanceSheet ?? [],
     });
-    const normalizedTaxDeep = normalizeAnnualReportTaxDeepV1(
-      hydratedTaxDeep,
-    );
-    const alignedTaxDeepResult = alignAnnualReportStatementsToInk2CodesV1({
-      taxDeep: normalizedTaxDeep,
-      pageTexts: preparedDocument.sourceText?.pageTexts ?? [],
+    const normalizedTaxDeep = normalizeAnnualReportTaxDeepV1(hydratedTaxDeep);
+    const alignedHydratedTaxDeepResult =
+      alignAnnualReportStatementsToInk2CodesV1({
+        taxDeep: normalizedTaxDeep,
+        pageTexts: preparedDocument.sourceText?.pageTexts ?? [],
+      });
+    const deterministicStatementTaxDeep = normalizeAnnualReportTaxDeepV1({
+      ...sanitizedTaxDeep,
+      ink2rExtracted: {
+        ...sanitizedTaxDeep.ink2rExtracted,
+        statementUnit:
+          sanitizedTaxDeep.ink2rExtracted.statementUnit ??
+          resolveAnnualReportStatementUnitFromPageTextsV1({
+            pageTexts: preparedDocument.sourceText?.pageTexts ?? [],
+            pages: [
+              ...new Set([
+                ...refinedIncomeStatementPages,
+                ...refinedBalanceSheetPages,
+              ]),
+            ],
+          }),
+        incomeStatement: buildDeterministicStatementLinesFromPageTextV1({
+          pageTexts: preparedDocument.sourceText?.pageTexts ?? [],
+          pages: refinedIncomeStatementPages,
+          statement: "income",
+        }),
+        balanceSheet: buildDeterministicStatementLinesFromPageTextV1({
+          pageTexts: preparedDocument.sourceText?.pageTexts ?? [],
+          pages: refinedBalanceSheetPages,
+          statement: "balance",
+        }),
+      },
     });
-    const alignedTaxDeep = alignedTaxDeepResult.taxDeep;
+    const alignedDeterministicTaxDeepResult =
+      alignAnnualReportStatementsToInk2CodesV1({
+        taxDeep: deterministicStatementTaxDeep,
+        pageTexts: preparedDocument.sourceText?.pageTexts ?? [],
+      });
+    const hydratedBalanceControl =
+      calculateAnnualReportBalanceControlFromLinesV1(
+        alignedHydratedTaxDeepResult.taxDeep.ink2rExtracted.balanceSheet,
+      );
+    const deterministicBalanceControl =
+      calculateAnnualReportBalanceControlFromLinesV1(
+        alignedDeterministicTaxDeepResult.taxDeep.ink2rExtracted.balanceSheet,
+      );
+    const hydratedStatementValueCount =
+      countAnnualReportStatementPopulatedValuesV1(
+        alignedHydratedTaxDeepResult.taxDeep.ink2rExtracted.incomeStatement,
+      ) +
+      countAnnualReportStatementPopulatedValuesV1(
+        alignedHydratedTaxDeepResult.taxDeep.ink2rExtracted.balanceSheet,
+      );
+    const deterministicStatementValueCount =
+      countAnnualReportStatementPopulatedValuesV1(
+        alignedDeterministicTaxDeepResult.taxDeep.ink2rExtracted
+          .incomeStatement,
+      ) +
+      countAnnualReportStatementPopulatedValuesV1(
+        alignedDeterministicTaxDeepResult.taxDeep.ink2rExtracted.balanceSheet,
+      );
+    const hydratedStatementPageLeak =
+      hasAnnualReportEvidenceOutsidePagesV1(
+        alignedHydratedTaxDeepResult.taxDeep.ink2rExtracted.incomeStatement,
+        refinedIncomeStatementPages,
+      ) ||
+      hasAnnualReportEvidenceOutsidePagesV1(
+        alignedHydratedTaxDeepResult.taxDeep.ink2rExtracted.balanceSheet,
+        refinedBalanceSheetPages,
+      );
+    const shouldDefaultToDeterministicStatements =
+      preparedDocument.sourceText?.fileType === "pdf" &&
+      preparedDocument.sourceText.pdfAnalysis?.classification ===
+        "extractable_text_pdf" &&
+      deterministicStatementValueCount > 0;
+    const shouldPreferDeterministicStatements =
+      alignedDeterministicTaxDeepResult.taxDeep.ink2rExtracted.incomeStatement
+        .length > 0 &&
+      alignedDeterministicTaxDeepResult.taxDeep.ink2rExtracted.balanceSheet
+        .length > 0 &&
+      (shouldDefaultToDeterministicStatements ||
+        Math.abs(deterministicBalanceControl.currentDifference) <
+          Math.abs(hydratedBalanceControl.currentDifference) ||
+        hydratedStatementPageLeak ||
+        deterministicStatementValueCount > hydratedStatementValueCount);
+    const preferredStatementsTaxDeepResult = shouldPreferDeterministicStatements
+      ? alignedDeterministicTaxDeepResult
+      : alignedHydratedTaxDeepResult;
+    const alignedTaxDeep = preferredStatementsTaxDeepResult.taxDeep;
     const fullExtractionMissing =
       !hasAnnualReportFullExtractionV1(alignedTaxDeep) &&
       aiResult.extraction.documentWarnings.some(
@@ -2805,7 +3514,18 @@ async function extractAnnualReportWithPrimaryAiV1(input: {
     const extractionWarnings = [
       ...sourceDiagnostics,
       ...aiResult.extraction.documentWarnings,
-      ...alignedTaxDeepResult.warnings,
+      ...preferredStatementsTaxDeepResult.warnings,
+      `statement_pages.income=pages ${formatAnnualReportSelectedPagesV1(
+        refinedIncomeStatementPages,
+      )}`,
+      `statement_pages.balance=pages ${formatAnnualReportSelectedPagesV1(
+        refinedBalanceSheetPages,
+      )}`,
+      ...(shouldPreferDeterministicStatements
+        ? [
+            `fallback.statements=deterministic_page_rebuild(profile=${shouldDefaultToDeterministicStatements ? "extractable_text_pdf" : "comparison"},current_difference=${hydratedBalanceControl.currentDifference},rebuilt_difference=${deterministicBalanceControl.currentDifference},page_leak=${hydratedStatementPageLeak ? 1 : 0},current_values=${hydratedStatementValueCount},rebuilt_values=${deterministicStatementValueCount})`,
+          ]
+        : []),
       ...[fiscalYearStartResult.warning, fiscalYearEndResult.warning].filter(
         (warning): warning is string => typeof warning === "string",
       ),
@@ -2815,6 +3535,29 @@ async function extractAnnualReportWithPrimaryAiV1(input: {
           ]
         : []),
     ];
+    const deterministicStatementProfitBeforeTax =
+      extractProfitBeforeTaxFromStatementLinesV1({
+        statementUnit:
+          deterministicStatementTaxDeep.ink2rExtracted.statementUnit,
+        lines: deterministicStatementTaxDeep.ink2rExtracted.incomeStatement,
+      });
+    const extractedProfitBeforeTax = normalizeAnnualReportNumericFieldValueV1(
+      fields.profitBeforeTax.normalizedValue,
+      hydratedTaxDeep.ink2rExtracted.statementUnit,
+    );
+    const normalizedProfitBeforeTax =
+      typeof deterministicStatementProfitBeforeTax === "number"
+        ? deterministicStatementProfitBeforeTax
+        : extractedProfitBeforeTax;
+    if (
+      typeof extractedProfitBeforeTax === "number" &&
+      typeof deterministicStatementProfitBeforeTax === "number" &&
+      extractedProfitBeforeTax !== deterministicStatementProfitBeforeTax
+    ) {
+      extractionWarnings.push(
+        `validation.profit_before_tax.statement_mismatch=field:${extractedProfitBeforeTax},statement:${deterministicStatementProfitBeforeTax}`,
+      );
+    }
     const normalizedFields = {
       companyName: {
         status: fields.companyName.status,
@@ -2861,10 +3604,7 @@ async function extractAnnualReportWithPrimaryAiV1(input: {
       profitBeforeTax: {
         status: fields.profitBeforeTax.status,
         confidence: fields.profitBeforeTax.confidence,
-        value: normalizeAnnualReportNumericFieldValueV1(
-          fields.profitBeforeTax.normalizedValue,
-          hydratedTaxDeep.ink2rExtracted.statementUnit,
-        ),
+        value: normalizedProfitBeforeTax,
         sourceSnippet: fields.profitBeforeTax.snippet
           ? {
               snippet: fields.profitBeforeTax.snippet,
@@ -2876,26 +3616,26 @@ async function extractAnnualReportWithPrimaryAiV1(input: {
     const payload = stampAnnualReportEngineMetadataV1({
       runtimeMetadata,
       extraction: parseAnnualReportExtractionPayloadV1({
-      schemaVersion: "annual_report_extraction_v1",
-      sourceFileName: input.fileName,
-      sourceFileType: resolvedFileType,
-      policyVersion: input.policyVersion,
-      fields: normalizedFields,
-      summary: {
-        autoDetectedFieldCount: Object.values(normalizedFields).filter(
-          (field) => field.status === "extracted",
-        ).length,
-        needsReviewFieldCount: Object.values(normalizedFields).filter(
-          (field) => field.status === "needs_review",
-        ).length,
-      },
-      taxSignals: aiResult.extraction.taxSignals,
-      documentWarnings: extractionWarnings,
-      taxDeep: alignedTaxDeep,
-      aiRun: aiResult.aiRun,
-      confirmation: {
-        isConfirmed: false,
-      },
+        schemaVersion: "annual_report_extraction_v1",
+        sourceFileName: input.fileName,
+        sourceFileType: resolvedFileType,
+        policyVersion: input.policyVersion,
+        fields: normalizedFields,
+        summary: {
+          autoDetectedFieldCount: Object.values(normalizedFields).filter(
+            (field) => field.status === "extracted",
+          ).length,
+          needsReviewFieldCount: Object.values(normalizedFields).filter(
+            (field) => field.status === "needs_review",
+          ).length,
+        },
+        taxSignals: aiResult.extraction.taxSignals,
+        documentWarnings: extractionWarnings,
+        taxDeep: alignedTaxDeep,
+        aiRun: aiResult.aiRun,
+        confirmation: {
+          isConfirmed: false,
+        },
       }),
     });
 
@@ -2953,16 +3693,15 @@ function buildAnnualReportTaxAnalysisFallbackFindingV1(input: {
 }
 
 export function buildDeterministicAnnualReportTaxAnalysisFallbackV1(input: {
-  config:
-    | AnnualReportTaxAnalysisRuntimeConfigV1
-    | null;
+  config: AnnualReportTaxAnalysisRuntimeConfigV1 | null;
   extraction: ReturnType<typeof parseAnnualReportExtractionPayloadV1>;
   extractionArtifactId: string;
   fallbackReason: string;
   modelName: string;
   policyVersion: string;
 }): AnnualReportTaxAnalysisPayloadV1 {
-  const taxDeep = input.extraction.taxDeep ?? createEmptyAnnualReportTaxDeepV1();
+  const taxDeep =
+    input.extraction.taxDeep ?? createEmptyAnnualReportTaxDeepV1();
   const findings: AnnualReportTaxAnalysisPayloadV1["findings"] = [];
   const recommendedNextActions = new Set<string>();
   const missingInformation = new Set<string>();
@@ -3141,7 +3880,8 @@ export function buildDeterministicAnnualReportTaxAnalysisFallbackV1(input: {
     );
   }
 
-  const accountingStandardValue = input.extraction.fields.accountingStandard.value;
+  const accountingStandardValue =
+    input.extraction.fields.accountingStandard.value;
   if (!accountingStandardValue) {
     missingInformation.add(
       "The accounting standard needs confirmation before relying on the forensic review.",
@@ -3174,7 +3914,8 @@ export function buildDeterministicAnnualReportTaxAnalysisFallbackV1(input: {
           moduleVersion: input.config.moduleSpec.moduleVersion,
           promptVersion: input.config.moduleSpec.promptVersion,
           policyVersion: input.config.policyPack.policyVersion,
-          activePatchVersions: input.config.moduleSpec.policy.activePatchVersions,
+          activePatchVersions:
+            input.config.moduleSpec.policy.activePatchVersions,
           provider: "gemini",
           model: input.modelName,
           modelTier: input.config.moduleSpec.runtime.modelTier,
@@ -3190,12 +3931,20 @@ async function analyzeAnnualReportTaxWithPrimaryAiV1(input: {
   extraction: ReturnType<typeof parseAnnualReportExtractionPayloadV1>;
   extractionArtifactId: string;
   policyVersion: string;
+  sourceDocument?: {
+    fileBytes: Uint8Array;
+    fileName: string;
+    fileType: "pdf" | "docx";
+  };
 }): Promise<
   | { ok: true; taxAnalysis: AnnualReportTaxAnalysisPayloadV1 }
   | {
       ok: false;
       error: {
-        code: "MODEL_EXECUTION_FAILED" | "MODEL_RESPONSE_INVALID" | "CONFIG_INVALID";
+        code:
+          | "MODEL_EXECUTION_FAILED"
+          | "MODEL_RESPONSE_INVALID"
+          | "CONFIG_INVALID";
         message: string;
         context: Record<string, unknown>;
       };
@@ -3209,6 +3958,24 @@ async function analyzeAnnualReportTaxWithPrimaryAiV1(input: {
   const configFailureMessage = configResult.ok
     ? undefined
     : configResult.error.message;
+  const preparedSourceDocumentResult = input.sourceDocument
+    ? await prepareAnnualReportSourceDocumentForAiV1({
+        fileBytes: input.sourceDocument.fileBytes,
+        fileType: input.sourceDocument.fileType,
+      })
+    : undefined;
+  const preparedSourceDocument =
+    preparedSourceDocumentResult?.ok === true
+      ? preparedSourceDocumentResult.preparedDocument
+      : undefined;
+  const sourceDiagnostics =
+    preparedSourceDocumentResult?.ok === true
+      ? preparedSourceDocumentResult.sourceDiagnostics
+      : undefined;
+  const sourcePreparationWarning =
+    preparedSourceDocumentResult && !preparedSourceDocumentResult.ok
+      ? preparedSourceDocumentResult.error.message
+      : undefined;
 
   if (!apiKey || !config) {
     return {
@@ -3219,7 +3986,8 @@ async function analyzeAnnualReportTaxWithPrimaryAiV1(input: {
         extractionArtifactId: input.extractionArtifactId,
         fallbackReason: !apiKey
           ? "Gemini API key is not configured."
-          : (configFailureMessage ?? "Annual-report tax-analysis config failed."),
+          : (configFailureMessage ??
+            "Annual-report tax-analysis config failed."),
         modelName: fallbackModelName,
         policyVersion: input.policyVersion,
       }),
@@ -3227,17 +3995,19 @@ async function analyzeAnnualReportTaxWithPrimaryAiV1(input: {
   }
 
   const result = await withAnnualReportAiRetryV1({
-    maxAttempts: 2,
+    maxAttempts: 3,
     execute: async () => {
       const analysisResult = await executeAnnualReportTaxAnalysisV1({
         apiKey,
         config,
+        document: preparedSourceDocument,
         extraction: input.extraction,
         extractionArtifactId: input.extractionArtifactId,
         generateId: () => crypto.randomUUID(),
         generatedAt: new Date().toISOString(),
         modelConfig,
         policyVersion: input.policyVersion,
+        sourceDiagnostics,
       });
       if (!analysisResult.ok) {
         return analysisResult;
@@ -3256,7 +4026,9 @@ async function analyzeAnnualReportTaxWithPrimaryAiV1(input: {
         config,
         extraction: input.extraction,
         extractionArtifactId: input.extractionArtifactId,
-        fallbackReason: result.error.message,
+        fallbackReason: sourcePreparationWarning
+          ? `${result.error.message} Source document preparation warning: ${sourcePreparationWarning}`
+          : result.error.message,
         modelName: fallbackModelName,
         policyVersion: input.policyVersion,
       }),
@@ -3270,7 +4042,7 @@ async function analyzeAnnualReportTaxWithPrimaryAiV1(input: {
 }
 
 async function generateMappingDecisionsWithPrimaryAiV1(input: {
-  annualReportContext?: import("../../shared/contracts/annual-report-tax-context.v1").AnnualReportMappingContextV1;
+  annualReportContext?: AnnualReportMappingContextV1;
   env: Env;
   policyVersion: string;
   trialBalance: TrialBalanceNormalizedV1;
@@ -3319,7 +4091,7 @@ async function generateMappingDecisionsWithPrimaryAiV1(input: {
 }
 
 async function generateTaxAdjustmentsWithPrimaryAiV1(input: {
-  annualReportTaxContext?: import("../../shared/contracts/annual-report-tax-context.v1").AnnualReportDownstreamTaxContextV1;
+  annualReportTaxContext?: AnnualReportDownstreamTaxContextV1;
   env: Env;
   annualReportExtraction: GenerateTaxAdjustmentsInputV1["annualReportExtraction"];
   annualReportExtractionArtifactId: string;
@@ -3360,13 +4132,15 @@ async function generateTaxAdjustmentsWithPrimaryAiV1(input: {
     },
     {
       moduleCode: "representation_entertainment" as const,
-      configResult: loadTaxAdjustmentsRepresentationEntertainmentModuleConfigV1(),
+      configResult:
+        loadTaxAdjustmentsRepresentationEntertainmentModuleConfigV1(),
       systemPrompt: TAX_ADJUSTMENTS_REPRESENTATION_SYSTEM_PROMPT_V1,
       userPrompt: TAX_ADJUSTMENTS_REPRESENTATION_USER_PROMPT_V1,
     },
     {
       moduleCode: "depreciation_differences_basic" as const,
-      configResult: loadTaxAdjustmentsDepreciationDifferencesBasicModuleConfigV1(),
+      configResult:
+        loadTaxAdjustmentsDepreciationDifferencesBasicModuleConfigV1(),
       systemPrompt: TAX_ADJUSTMENTS_DEPRECIATION_SYSTEM_PROMPT_V1,
       userPrompt: TAX_ADJUSTMENTS_DEPRECIATION_USER_PROMPT_V1,
     },
@@ -3444,7 +4218,10 @@ async function generateTaxAdjustmentsWithPrimaryAiV1(input: {
       }
     }
 
-    if (moduleResult.telemetry.splitCount > 0 || moduleResult.failedCandidates.length > 0) {
+    if (
+      moduleResult.telemetry.splitCount > 0 ||
+      moduleResult.failedCandidates.length > 0
+    ) {
       console.warn("tax-adjustments.ai.degraded", {
         moduleCode: moduleLoader.moduleCode,
         failedCandidates: moduleResult.failedCandidates.length,
@@ -3622,6 +4399,7 @@ export function createAnnualReportExtractionDepsV1(
     processingRunRepository: createD1AnnualReportProcessingRunRepositoryV1(
       env.DB,
     ),
+    sourceStore: env.ANNUAL_REPORT_FILES,
     extractAnnualReport: (input) =>
       extractAnnualReportWithPrimaryAiV1({
         env,

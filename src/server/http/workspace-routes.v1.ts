@@ -7,9 +7,8 @@ import {
   type AnnualReportFileTypeV1,
   RunAnnualReportExtractionRequestV1Schema,
 } from "../../shared/contracts/annual-report-extraction.v1";
-import {
-  CreateAnnualReportProcessingRunRequestV1Schema,
-} from "../../shared/contracts/annual-report-processing-run.v1";
+import { RunAnnualReportTaxAnalysisRequestV1Schema } from "../../shared/contracts/annual-report-tax-analysis.v1";
+import { CreateAnnualReportProcessingRunRequestV1Schema } from "../../shared/contracts/annual-report-processing-run.v1";
 import { CreateAnnualReportUploadSessionRequestV1Schema } from "../../shared/contracts/annual-report-upload-session.v1";
 import {
   CompleteTaskRequestV1Schema,
@@ -55,6 +54,7 @@ import {
   confirmAnnualReportExtractionV1,
   getActiveAnnualReportExtractionV1,
   getActiveAnnualReportTaxAnalysisV1,
+  runAnnualReportTaxAnalysisV1,
 } from "../workflow/annual-report-extraction.v1";
 import { resolveSessionPrincipalByTokenV1 } from "../workflow/auth-magic-link.v1";
 import {
@@ -210,6 +210,12 @@ const AnnualReportClearHttpRequestBodyV1Schema =
   ClearAnnualReportDataRequestV1Schema.omit({
     workspaceId: true,
     clearedByUserId: true,
+  });
+
+const AnnualReportTaxAnalysisRunHttpRequestBodyV1Schema =
+  RunAnnualReportTaxAnalysisRequestV1Schema.omit({
+    workspaceId: true,
+    requestedByUserId: true,
   });
 
 const TaxAdjustmentRunHttpRequestBodyV1Schema =
@@ -522,6 +528,13 @@ function mapAnnualReportFailureToResponseV1(
   if (input.error.code === "STATE_CONFLICT") {
     return createWorkflowFailureResponseV1({
       status: 409,
+      failure: input,
+    });
+  }
+
+  if (input.error.code === "PROCESSING_RUN_UNAVAILABLE") {
+    return createWorkflowFailureResponseV1({
+      status: 503,
       failure: input,
     });
   }
@@ -1431,6 +1444,58 @@ async function handleGetActiveAnnualReportTaxAnalysisRouteV1(
     headers: {
       "Cache-Control": "no-store",
     },
+  });
+}
+
+async function handleRunAnnualReportTaxAnalysisRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Annual report tax analysis run",
+    schema: AnnualReportTaxAnalysisRunHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
+  }
+  const parsedBody = bodyParseResult.data;
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await runAnnualReportTaxAnalysisV1(
+    {
+      ...parsedBody,
+      workspaceId,
+      requestedByUserId: sessionGuardResult.principal.userId,
+    },
+    createAnnualReportExtractionDepsV1(env),
+  );
+  if (!result.ok) {
+    return mapAnnualReportFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: createAnnualReportRuntimeHeadersV1(env),
   });
 }
 
@@ -2596,6 +2661,24 @@ export async function handleWorkspaceRoutesV1(
     return handleGetActiveAnnualReportTaxAnalysisRouteV1(
       request,
       env,
+      routeSegments[0],
+    );
+  }
+
+  if (
+    routeSegments.length === 3 &&
+    routeSegments[0] &&
+    routeSegments[1] === "annual-report-tax-analysis" &&
+    routeSegments[2] === "run"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+
+    return handleRunAnnualReportTaxAnalysisRouteV1(
+      request,
+      env,
+      appBaseUrl,
       routeSegments[0],
     );
   }

@@ -11,4 +11,4 @@ Rules:
 
 export const MAPPING_DECISIONS_USER_PROMPT_V1 = `Classify each trial-balance row into the best matching provided category code.
 
-Use annual-report context when relevant for ambiguous tax-sensitive areas such as pensions, leasing, provisions/reserves, group contributions, shareholdings/dividends, and finance/net-interest context. Keep rationale concise and operational.`;
+Use annual-report context when relevant for ambiguous tax-sensitive areas such as statement anchors, depreciation and asset movements, pensions, leasing, provisions/reserves, current or deferred tax, group contributions, shareholdings/dividends, and finance/net-interest context. Keep rationale concise and operational.`;

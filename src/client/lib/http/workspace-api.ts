@@ -12,7 +12,9 @@ import {
 } from "../../../shared/contracts/annual-report-extraction.v1";
 import {
   type GetActiveAnnualReportTaxAnalysisResultV1,
+  type RunAnnualReportTaxAnalysisResultV1,
   parseGetActiveAnnualReportTaxAnalysisResultV1,
+  parseRunAnnualReportTaxAnalysisResultV1,
 } from "../../../shared/contracts/annual-report-tax-analysis.v1";
 import {
   type CreateAnnualReportProcessingRunResultV1,
@@ -221,7 +223,10 @@ export type CreateAnnualReportUploadSessionResponseV1 = Extract<
 
 export type UploadAnnualReportAndStartProcessingInputV1 =
   CreateAnnualReportUploadSessionInputV1 & {
-    onUploadProgress?: (progress: { loadedBytes: number; totalBytes: number }) => void;
+    onUploadProgress?: (progress: {
+      loadedBytes: number;
+      totalBytes: number;
+    }) => void;
   };
 
 export type GetActiveAnnualReportExtractionResponseV1 = Extract<
@@ -231,6 +236,20 @@ export type GetActiveAnnualReportExtractionResponseV1 = Extract<
 
 export type GetActiveAnnualReportTaxAnalysisResponseV1 = Extract<
   GetActiveAnnualReportTaxAnalysisResultV1,
+  { ok: true }
+>;
+
+export type RunAnnualReportTaxAnalysisInputV1 = {
+  expectedActiveExtraction?: {
+    artifactId: string;
+    version: number;
+  };
+  tenantId: string;
+  workspaceId: string;
+};
+
+export type RunAnnualReportTaxAnalysisResponseV1 = Extract<
+  RunAnnualReportTaxAnalysisResultV1,
   { ok: true }
 >;
 
@@ -552,6 +571,14 @@ function parseGetActiveAnnualReportTaxAnalysisHttpResponseV1(
   );
 }
 
+function parseRunAnnualReportTaxAnalysisHttpResponseV1(
+  payload: unknown,
+): RunAnnualReportTaxAnalysisResponseV1 {
+  return expectSuccessResultV1(
+    parseRunAnnualReportTaxAnalysisResultV1(payload),
+  );
+}
+
 function parseApplyAnnualReportOverridesHttpResponseV1(
   payload: unknown,
 ): ApplyAnnualReportOverridesResponseV1 {
@@ -630,7 +657,8 @@ function parseApiErrorPayloadFromTextV1(responseText: string): {
         error !== null &&
         typeof (error as { code?: unknown }).code === "string" &&
         typeof (error as { message?: unknown }).message === "string" &&
-        typeof (error as { user_message?: unknown }).user_message === "string" &&
+        typeof (error as { user_message?: unknown }).user_message ===
+          "string" &&
         typeof (error as { context?: unknown }).context === "object" &&
         (error as { context?: unknown }).context !== null
       ) {
@@ -937,7 +965,8 @@ export async function createAnnualReportUploadSessionV1(
       code: "UPLOAD_TOO_LARGE",
       status: 413,
       message: "Annual-report upload exceeds the configured size limit.",
-      userMessage: "The annual report file is too large. Upload a file smaller than 25 MB.",
+      userMessage:
+        "The annual report file is too large. Upload a file smaller than 25 MB.",
       context: {
         fileName: input.file.name,
         fileSizeBytes: input.file.size,
@@ -962,171 +991,188 @@ export async function createAnnualReportUploadSessionV1(
 
 export async function uploadAnnualReportSourceV1(input: {
   file: File;
-  onUploadProgress?: (progress: { loadedBytes: number; totalBytes: number }) => void;
+  onUploadProgress?: (progress: {
+    loadedBytes: number;
+    totalBytes: number;
+  }) => void;
   tenantId: string;
   uploadUrl: string;
 }): Promise<CreateAnnualReportProcessingRunResponseV1> {
-  return new Promise<CreateAnnualReportProcessingRunResponseV1>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const uploadPath = `${input.uploadUrl}?${new URLSearchParams({
-      tenantId: input.tenantId,
-    }).toString()}`;
+  return new Promise<CreateAnnualReportProcessingRunResponseV1>(
+    (resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const uploadPath = `${input.uploadUrl}?${new URLSearchParams({
+        tenantId: input.tenantId,
+      }).toString()}`;
 
-    xhr.open("PUT", uploadPath, true);
-    xhr.withCredentials = true;
-    xhr.setRequestHeader("Cache-Control", "no-store");
-    if (input.file.type) {
-      xhr.setRequestHeader("Content-Type", input.file.type);
-    }
-
-    xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable) {
-        return;
+      xhr.open("PUT", uploadPath, true);
+      xhr.withCredentials = true;
+      xhr.setRequestHeader("Cache-Control", "no-store");
+      if (input.file.type) {
+        xhr.setRequestHeader("Content-Type", input.file.type);
       }
 
-      input.onUploadProgress?.({
-        loadedBytes: event.loaded,
-        totalBytes: event.total,
-      });
-    };
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable) {
+          return;
+        }
 
-    xhr.onerror = () => {
-      reject(
-        createAnnualReportUploadClientErrorV1({
-          code: "UPLOAD_TARGET_UNREACHABLE",
-          status: 0,
-          message: "Annual-report upload transport failed.",
-          userMessage:
-            "Could not reach the app service for annual-report upload. Restart the local app and try again.",
-          context: {
-            path: uploadPath,
-          },
-        }),
-      );
-    };
+        input.onUploadProgress?.({
+          loadedBytes: event.loaded,
+          totalBytes: event.total,
+        });
+      };
 
-    xhr.onabort = () => {
-      reject(
-        createAnnualReportUploadClientErrorV1({
-          code: "UPLOAD_TRANSPORT_FAILED",
-          status: 0,
-          message: "Annual-report upload was aborted.",
-          userMessage: "The annual report upload was interrupted. Upload the file again.",
-          context: {
-            path: uploadPath,
-          },
-        }),
-      );
-    };
-
-    xhr.onload = () => {
-      const runtimeFingerprint = xhr.getResponseHeader(
-        "X-Dink-Annual-Report-Runtime",
-      );
-      const responseText = xhr.responseText ?? "";
-      const apiError = parseApiErrorPayloadFromTextV1(responseText);
-
-      if (!runtimeFingerprint) {
+      xhr.onerror = () => {
         reject(
           createAnnualReportUploadClientErrorV1({
-            code: "RUNTIME_MISMATCH",
-            status: xhr.status,
-            message: "Annual-report upload response did not include D.ink runtime headers.",
+            code: "UPLOAD_TARGET_UNREACHABLE",
+            status: 0,
+            message: "Annual-report upload transport failed.",
             userMessage:
-              "The app is not connected to the correct local API service. Restart the local app and try again.",
+              "Could not reach the app service for annual-report upload. Restart the local app and try again.",
             context: {
               path: uploadPath,
-              responseText: responseText.slice(0, 500),
             },
           }),
         );
-        return;
-      }
+      };
 
-      if (xhr.status < 200 || xhr.status >= 300) {
-        if (apiError) {
+      xhr.onabort = () => {
+        reject(
+          createAnnualReportUploadClientErrorV1({
+            code: "UPLOAD_TRANSPORT_FAILED",
+            status: 0,
+            message: "Annual-report upload was aborted.",
+            userMessage:
+              "The annual report upload was interrupted. Upload the file again.",
+            context: {
+              path: uploadPath,
+            },
+          }),
+        );
+      };
+
+      xhr.onload = () => {
+        const runtimeFingerprint = xhr.getResponseHeader(
+          "X-Dink-Annual-Report-Runtime",
+        );
+        const responseText = xhr.responseText ?? "";
+        const apiError = parseApiErrorPayloadFromTextV1(responseText);
+
+        if (!runtimeFingerprint) {
           reject(
-            new ApiClientError({
-              code:
-                apiError.code === "PROCESSING_RUN_UNAVAILABLE"
-                  ? "PROCESSING_RUN_UNAVAILABLE"
-                  : "UPLOAD_SESSION_FAILED",
-              context: {
-                ...apiError.context,
-                path: uploadPath,
-                runtimeFingerprint,
-              },
-              message: apiError.message,
+            createAnnualReportUploadClientErrorV1({
+              code: "RUNTIME_MISMATCH",
               status: xhr.status,
-              userMessage: apiError.user_message,
+              message:
+                "Annual-report upload response did not include D.ink runtime headers.",
+              userMessage:
+                "The app is not connected to the correct local API service. Restart the local app and try again.",
+              context: {
+                path: uploadPath,
+                responseText: responseText.slice(0, 500),
+              },
             }),
           );
           return;
         }
 
-        reject(
-          createAnnualReportUploadClientErrorV1({
-            code: "UPLOAD_SESSION_FAILED",
-            status: xhr.status,
-            message: "Annual-report upload returned a non-JSON error response.",
-            userMessage:
-              "The annual report upload could not be started. Restart the local app and try again.",
-            context: {
-              path: uploadPath,
-              runtimeFingerprint,
-              responseText: responseText.slice(0, 500),
-            },
-          }),
-        );
-        return;
-      }
+        if (xhr.status < 200 || xhr.status >= 300) {
+          if (apiError) {
+            reject(
+              new ApiClientError({
+                code:
+                  apiError.code === "PROCESSING_RUN_UNAVAILABLE"
+                    ? "PROCESSING_RUN_UNAVAILABLE"
+                    : "UPLOAD_SESSION_FAILED",
+                context: {
+                  ...apiError.context,
+                  path: uploadPath,
+                  runtimeFingerprint,
+                },
+                message: apiError.message,
+                status: xhr.status,
+                userMessage: apiError.user_message,
+              }),
+            );
+            return;
+          }
 
-      let parsedPayload: unknown;
-      try {
-        parsedPayload = responseText.trim().length === 0 ? null : JSON.parse(responseText);
-      } catch (error) {
-        reject(
-          createAnnualReportUploadClientErrorV1({
-            code: "RUNTIME_MISMATCH",
-            status: xhr.status,
-            message: "Annual-report upload returned a non-JSON success response.",
-            userMessage:
-              "The app is not connected to the correct local API service. Restart the local app and try again.",
-            context: {
-              path: uploadPath,
-              runtimeFingerprint,
-              reason: error instanceof Error ? error.message : "Unknown parse error.",
-              responseText: responseText.slice(0, 500),
-            },
-          }),
-        );
-        return;
-      }
+          reject(
+            createAnnualReportUploadClientErrorV1({
+              code: "UPLOAD_SESSION_FAILED",
+              status: xhr.status,
+              message:
+                "Annual-report upload returned a non-JSON error response.",
+              userMessage:
+                "The annual report upload could not be started. Restart the local app and try again.",
+              context: {
+                path: uploadPath,
+                runtimeFingerprint,
+                responseText: responseText.slice(0, 500),
+              },
+            }),
+          );
+          return;
+        }
 
-      try {
-        const parsed = parseAnnualReportProcessingRunHttpResponseV1(parsedPayload);
-        resolve(parsed);
-      } catch (error) {
-        reject(
-          createAnnualReportUploadClientErrorV1({
-            code: "PROCESSING_RUN_UNAVAILABLE",
-            status: xhr.status,
-            message: "Annual-report upload response validation failed.",
-            userMessage:
-              "The annual-report upload could not be completed. Restart the local app and try again.",
-            context: {
-              path: uploadPath,
-              runtimeFingerprint,
-              reason: error instanceof Error ? error.message : "Unknown parse error.",
-              responseText: responseText.slice(0, 500),
-            },
-          }),
-        );
-      }
-    };
+        let parsedPayload: unknown;
+        try {
+          parsedPayload =
+            responseText.trim().length === 0 ? null : JSON.parse(responseText);
+        } catch (error) {
+          reject(
+            createAnnualReportUploadClientErrorV1({
+              code: "RUNTIME_MISMATCH",
+              status: xhr.status,
+              message:
+                "Annual-report upload returned a non-JSON success response.",
+              userMessage:
+                "The app is not connected to the correct local API service. Restart the local app and try again.",
+              context: {
+                path: uploadPath,
+                runtimeFingerprint,
+                reason:
+                  error instanceof Error
+                    ? error.message
+                    : "Unknown parse error.",
+                responseText: responseText.slice(0, 500),
+              },
+            }),
+          );
+          return;
+        }
 
-    xhr.send(input.file);
-  });
+        try {
+          const parsed =
+            parseAnnualReportProcessingRunHttpResponseV1(parsedPayload);
+          resolve(parsed);
+        } catch (error) {
+          reject(
+            createAnnualReportUploadClientErrorV1({
+              code: "PROCESSING_RUN_UNAVAILABLE",
+              status: xhr.status,
+              message: "Annual-report upload response validation failed.",
+              userMessage:
+                "The annual-report upload could not be completed. Restart the local app and try again.",
+              context: {
+                path: uploadPath,
+                runtimeFingerprint,
+                reason:
+                  error instanceof Error
+                    ? error.message
+                    : "Unknown parse error.",
+                responseText: responseText.slice(0, 500),
+              },
+            }),
+          );
+        }
+      };
+
+      xhr.send(input.file);
+    },
+  );
 }
 
 export async function uploadAnnualReportAndStartProcessingV1(
@@ -1213,6 +1259,20 @@ export async function getActiveAnnualReportTaxAnalysisV1(input: {
     path: `/v1/workspaces/${input.workspaceId}/annual-report-tax-analysis/active?${search.toString()}`,
     method: "GET",
     parseResponse: parseGetActiveAnnualReportTaxAnalysisHttpResponseV1,
+  });
+}
+
+export async function runAnnualReportTaxAnalysisV1(
+  input: RunAnnualReportTaxAnalysisInputV1,
+): Promise<RunAnnualReportTaxAnalysisResponseV1> {
+  return apiRequest<RunAnnualReportTaxAnalysisResponseV1>({
+    path: `/v1/workspaces/${input.workspaceId}/annual-report-tax-analysis/run`,
+    method: "POST",
+    body: {
+      tenantId: input.tenantId,
+      expectedActiveExtraction: input.expectedActiveExtraction,
+    },
+    parseResponse: parseRunAnnualReportTaxAnalysisHttpResponseV1,
   });
 }
 

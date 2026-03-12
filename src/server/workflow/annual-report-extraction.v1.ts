@@ -1,46 +1,52 @@
 import type { z } from "zod";
 
-import type { AuditRepositoryV1 } from "../../db/repositories/audit.repository.v1";
 import type { AnnualReportProcessingRunRepositoryV1 } from "../../db/repositories/annual-report-processing-run.repository.v1";
+import type { AuditRepositoryV1 } from "../../db/repositories/audit.repository.v1";
 import type {
   WorkspaceArtifactRepositoryV1,
   WorkspaceArtifactVersionRecordV1,
 } from "../../db/repositories/workspace-artifact.repository.v1";
+import type { WorkspaceArtifactTypeV1 } from "../../db/repositories/workspace-artifact.repository.v1";
 import type { WorkspaceRepositoryV1 } from "../../db/repositories/workspace.repository.v1";
 import { AUDIT_EVENT_TYPES_V1 } from "../../shared/audit/audit-event-catalog.v1";
 import {
   type AnnualReportExtractionPayloadV1,
   type AnnualReportRuntimeMetadataV1,
   ApplyAnnualReportExtractionOverridesRequestV1Schema,
+  type ApplyAnnualReportExtractionOverridesResultV1,
   ClearAnnualReportDataRequestV1Schema,
   type ClearAnnualReportDataResultV1,
-  type ApplyAnnualReportExtractionOverridesResultV1,
   ConfirmAnnualReportExtractionRequestV1Schema,
   type ConfirmAnnualReportExtractionResultV1,
   type GetActiveAnnualReportExtractionResultV1,
   GetActiveAnnualReportExtractionResultV1Schema,
   RunAnnualReportExtractionRequestV1Schema,
   type RunAnnualReportExtractionResultV1,
-  parseClearAnnualReportDataResultV1,
   parseApplyAnnualReportExtractionOverridesResultV1,
+  parseClearAnnualReportDataResultV1,
   parseConfirmAnnualReportExtractionResultV1,
   parseRunAnnualReportExtractionResultV1,
 } from "../../shared/contracts/annual-report-extraction.v1";
 import {
+  type AnnualReportTaxAnalysisPayloadV1,
   type GetActiveAnnualReportTaxAnalysisResultV1,
+  RunAnnualReportTaxAnalysisRequestV1Schema,
+  type RunAnnualReportTaxAnalysisResultV1,
   parseGetActiveAnnualReportTaxAnalysisResultV1,
+  parseRunAnnualReportTaxAnalysisResultV1,
 } from "../../shared/contracts/annual-report-tax-analysis.v1";
 import { parseAuditEventV2 } from "../../shared/contracts/audit-event.v2";
+import type { AnnualReportSourceStoreV1 } from "../../shared/types/env";
 import { parseAnnualReportExtractionV1 } from "../parsing/annual-report-extractor.v1";
+import type { ParseAnnualReportExtractionResultV1 } from "../parsing/annual-report-extractor.v1";
 import { validateAnnualReportFileTypeCoherenceV1 } from "../security/file-type-coherence.v1";
 import { MAX_ANNUAL_REPORT_FILE_BYTES_V1 } from "../security/payload-limits.v1";
-import type { ParseAnnualReportExtractionResultV1 } from "../parsing/annual-report-extractor.v1";
-import type { WorkspaceArtifactTypeV1 } from "../../db/repositories/workspace-artifact.repository.v1";
 
 export interface AnnualReportExtractionDepsV1 {
   artifactRepository: WorkspaceArtifactRepositoryV1;
   auditRepository: AuditRepositoryV1;
   processingRunRepository?: AnnualReportProcessingRunRepositoryV1;
+  sourceStore?: AnnualReportSourceStoreV1;
   extractAnnualReport?: (input: {
     fileBytes: Uint8Array;
     fileName: string;
@@ -51,15 +57,23 @@ export interface AnnualReportExtractionDepsV1 {
     extraction: AnnualReportExtractionPayloadV1;
     extractionArtifactId: string;
     policyVersion: string;
+    sourceDocument?: {
+      fileBytes: Uint8Array;
+      fileName: string;
+      fileType: "pdf" | "docx";
+    };
   }) => Promise<
     | {
         ok: true;
-        taxAnalysis: import("../../shared/contracts/annual-report-tax-analysis.v1").AnnualReportTaxAnalysisPayloadV1;
+        taxAnalysis: AnnualReportTaxAnalysisPayloadV1;
       }
     | {
         ok: false;
         error: {
-          code: "MODEL_EXECUTION_FAILED" | "MODEL_RESPONSE_INVALID" | "CONFIG_INVALID";
+          code:
+            | "MODEL_EXECUTION_FAILED"
+            | "MODEL_RESPONSE_INVALID"
+            | "CONFIG_INVALID";
           message: string;
           context: Record<string, unknown>;
         };
@@ -391,8 +405,7 @@ export async function clearActiveAnnualReportDependentsV1(input: {
         workspaceId: input.workspaceId,
         actorType: input.actorType,
         actorUserId: input.actorUserId,
-        eventType:
-          AUDIT_EVENT_TYPES_V1.EXTRACTION_ACTIVE_DEPENDENTS_CLEARED,
+        eventType: AUDIT_EVENT_TYPES_V1.EXTRACTION_ACTIVE_DEPENDENTS_CLEARED,
         targetType: "workspace_active_artifacts",
         targetId: input.workspaceId,
         after: {
@@ -569,7 +582,7 @@ export async function persistAnnualReportTaxAnalysisArtifactV1(input: {
   actorUserId?: string;
   deps: AnnualReportExtractionDepsV1;
   sourceExtractionArtifactId: string;
-  taxAnalysis: import("../../shared/contracts/annual-report-tax-analysis.v1").AnnualReportTaxAnalysisPayloadV1;
+  taxAnalysis: AnnualReportTaxAnalysisPayloadV1;
   tenantId: string;
   workspaceId: string;
 }): Promise<
@@ -631,6 +644,73 @@ export async function persistAnnualReportTaxAnalysisArtifactV1(input: {
     ok: true,
     artifact: persistedTaxAnalysis.artifact,
   };
+}
+
+function doesProcessingRunMatchActiveExtractionV1(input: {
+  activeExtraction: WorkspaceArtifactVersionRecordV1<"annual_report_extraction">;
+  sourceFileName: string;
+  sourceFileType: "pdf" | "docx";
+}): boolean {
+  return (
+    input.activeExtraction.payload.sourceFileName === input.sourceFileName &&
+    input.activeExtraction.payload.sourceFileType === input.sourceFileType
+  );
+}
+
+async function loadSourceDocumentForTaxAnalysisV1(input: {
+  activeExtraction: WorkspaceArtifactVersionRecordV1<"annual_report_extraction">;
+  deps: AnnualReportExtractionDepsV1;
+  tenantId: string;
+  workspaceId: string;
+}): Promise<
+  | {
+      fileBytes: Uint8Array;
+      fileName: string;
+      fileType: "pdf" | "docx";
+    }
+  | undefined
+> {
+  if (!input.deps.processingRunRepository || !input.deps.sourceStore) {
+    return undefined;
+  }
+
+  const latestRun =
+    await input.deps.processingRunRepository.getLatestByWorkspace({
+      tenantId: input.tenantId,
+      workspaceId: input.workspaceId,
+    });
+  if (
+    !latestRun ||
+    !doesProcessingRunMatchActiveExtractionV1({
+      activeExtraction: input.activeExtraction,
+      sourceFileName: latestRun.sourceFileName,
+      sourceFileType: latestRun.sourceFileType,
+    })
+  ) {
+    return undefined;
+  }
+
+  try {
+    const sourceObject = await input.deps.sourceStore.get(
+      latestRun.sourceStorageKey,
+    );
+    if (!sourceObject) {
+      return undefined;
+    }
+
+    const fileBytes = new Uint8Array(await sourceObject.arrayBuffer());
+    if (fileBytes.byteLength === 0) {
+      return undefined;
+    }
+
+    return {
+      fileBytes,
+      fileName: latestRun.sourceFileName,
+      fileType: latestRun.sourceFileType,
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 export async function runAnnualReportExtractionV1(
@@ -810,8 +890,7 @@ export async function runAnnualReportExtractionV1(
       targetType: "annual_report_extraction",
       targetId: request.fileName,
       after: {
-        extractedFieldCount:
-          persistedExtraction.summary.autoDetectedFieldCount,
+        extractedFieldCount: persistedExtraction.summary.autoDetectedFieldCount,
         needsReviewFieldCount:
           persistedExtraction.summary.needsReviewFieldCount,
       },
@@ -920,70 +999,6 @@ export async function runAnnualReportExtractionV1(
       }),
     });
   }
-  if (deps.analyzeAnnualReportTax) {
-    const taxAnalysisResult = await deps.analyzeAnnualReportTax({
-      extraction: writeResult.artifact.payload,
-      extractionArtifactId: writeResult.artifact.id,
-      policyVersion: request.policyVersion,
-    });
-
-    if (taxAnalysisResult.ok) {
-      const persistedTaxAnalysis =
-        await deps.artifactRepository.appendAnnualReportTaxAnalysisAndSetActive({
-          artifactId: deps.generateId(),
-          tenantId: request.tenantId,
-          workspaceId: request.workspaceId,
-          createdAt: deps.nowIsoUtc(),
-          createdByUserId: request.createdByUserId,
-          taxAnalysis: taxAnalysisResult.taxAnalysis,
-        });
-
-      if (persistedTaxAnalysis.ok) {
-        await appendAuditEventBestEffortV1({
-          deps,
-          event: parseAuditEventV2({
-            id: deps.generateId(),
-            tenantId: request.tenantId,
-            workspaceId: request.workspaceId,
-            actorType,
-            actorUserId: request.createdByUserId,
-            eventType: "annual_report.tax_analysis_generated",
-            targetType: "annual_report_tax_analysis_artifact",
-            targetId: persistedTaxAnalysis.artifact.id,
-            after: {
-              artifactId: persistedTaxAnalysis.artifact.id,
-              version: persistedTaxAnalysis.artifact.version,
-              sourceExtractionArtifactId: writeResult.artifact.id,
-            },
-            timestamp: deps.nowIsoUtc(),
-            context: {},
-          }),
-        });
-      }
-    } else {
-      await appendAuditEventBestEffortV1({
-        deps,
-        event: parseAuditEventV2({
-          id: deps.generateId(),
-          tenantId: request.tenantId,
-          workspaceId: request.workspaceId,
-          actorType,
-          actorUserId: request.createdByUserId,
-          eventType: "annual_report.tax_analysis_failed",
-          targetType: "annual_report_tax_analysis",
-          targetId: writeResult.artifact.id,
-          after: {
-            sourceExtractionArtifactId: writeResult.artifact.id,
-            errorCode: taxAnalysisResult.error.code,
-          },
-          timestamp: deps.nowIsoUtc(),
-          context: {
-            message: taxAnalysisResult.error.message,
-          },
-        }),
-      });
-    }
-  }
   if (writeResult.artifact.version > 1) {
     await appendAuditEventBestEffortV1({
       deps,
@@ -1020,6 +1035,269 @@ export async function runAnnualReportExtractionV1(
   });
 }
 
+export async function runAnnualReportTaxAnalysisV1(
+  input: unknown,
+  deps: AnnualReportExtractionDepsV1,
+): Promise<RunAnnualReportTaxAnalysisResultV1> {
+  const parsedRequest =
+    RunAnnualReportTaxAnalysisRequestV1Schema.safeParse(input);
+  if (!parsedRequest.success) {
+    return parseRunAnnualReportTaxAnalysisResultV1(
+      buildFailureV1({
+        code: "INPUT_INVALID",
+        message: "Annual-report tax-analysis request payload is invalid.",
+        userMessage:
+          "The forensic tax-review request is invalid. Refresh and retry.",
+        context: buildErrorContextFromZod(parsedRequest.error),
+      }),
+    );
+  }
+  const request = parsedRequest.data;
+
+  const workspace = await deps.workspaceRepository.getById({
+    tenantId: request.tenantId,
+    workspaceId: request.workspaceId,
+  });
+  if (!workspace) {
+    return parseRunAnnualReportTaxAnalysisResultV1(
+      buildFailureV1({
+        code: "WORKSPACE_NOT_FOUND",
+        message: "Workspace does not exist for tenant and workspace ID.",
+        userMessage: "Workspace could not be found.",
+        context: {
+          tenantId: request.tenantId,
+          workspaceId: request.workspaceId,
+        },
+      }),
+    );
+  }
+
+  if (!deps.analyzeAnnualReportTax) {
+    return parseRunAnnualReportTaxAnalysisResultV1({
+      ok: false,
+      error: {
+        code: "PROCESSING_RUN_UNAVAILABLE",
+        message: "Annual-report tax analysis dependency is not configured.",
+        user_message:
+          "Forensic tax review is temporarily unavailable. Try again shortly.",
+        context: {
+          operation: "annual_report.tax_analysis.run",
+        },
+      },
+    });
+  }
+
+  const resolveActiveExtraction = async () =>
+    deps.artifactRepository.getActiveAnnualReportExtraction({
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+    });
+
+  const activeExtraction = await resolveActiveExtraction();
+  if (!activeExtraction) {
+    return parseRunAnnualReportTaxAnalysisResultV1(
+      buildFailureV1({
+        code: "EXTRACTION_NOT_FOUND",
+        message:
+          "No active annual report extraction exists for this workspace.",
+        userMessage:
+          "Run the annual report extraction before starting forensic review.",
+        context: {
+          tenantId: request.tenantId,
+          workspaceId: request.workspaceId,
+        },
+      }),
+    );
+  }
+
+  if (
+    request.expectedActiveExtraction &&
+    (activeExtraction.id !== request.expectedActiveExtraction.artifactId ||
+      activeExtraction.version !== request.expectedActiveExtraction.version)
+  ) {
+    return parseRunAnnualReportTaxAnalysisResultV1(
+      buildFailureV1({
+        code: "STATE_CONFLICT",
+        message:
+          "Active extraction artifact/version differs from expected compare-and-set values.",
+        userMessage:
+          "The annual report changed before forensic review started. Refresh and retry.",
+        context: {
+          expectedActiveExtraction: request.expectedActiveExtraction,
+          actualActiveExtraction: {
+            artifactId: activeExtraction.id,
+            version: activeExtraction.version,
+          },
+        },
+      }),
+    );
+  }
+
+  const missingRequiredFields = listMissingRequiredExtractionFieldsV1(
+    activeExtraction.payload,
+  );
+  if (
+    missingRequiredFields.length > 0 ||
+    !hasAnnualReportFullExtractionV1(activeExtraction.payload)
+  ) {
+    return parseRunAnnualReportTaxAnalysisResultV1(
+      buildFailureV1({
+        code: "STATE_CONFLICT",
+        message:
+          "Forensic tax analysis requires a usable annual-report extraction with core facts and statements.",
+        userMessage:
+          "Finish the annual report extraction before running forensic review.",
+        context: {
+          missingRequiredFields,
+          hasFullExtraction: hasAnnualReportFullExtractionV1(
+            activeExtraction.payload,
+          ),
+        },
+      }),
+    );
+  }
+
+  const sourceDocument = await loadSourceDocumentForTaxAnalysisV1({
+    activeExtraction,
+    deps,
+    tenantId: request.tenantId,
+    workspaceId: request.workspaceId,
+  });
+  const taxAnalysisResult = await deps.analyzeAnnualReportTax({
+    extraction: activeExtraction.payload,
+    extractionArtifactId: activeExtraction.id,
+    policyVersion: activeExtraction.payload.policyVersion,
+    sourceDocument,
+  });
+  if (!taxAnalysisResult.ok) {
+    await appendAuditEventBestEffortV1({
+      deps,
+      event: parseAuditEventV2({
+        id: deps.generateId(),
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        actorType: request.requestedByUserId ? "user" : "system",
+        actorUserId: request.requestedByUserId,
+        eventType: "annual_report.tax_analysis_failed",
+        targetType: "annual_report_tax_analysis",
+        targetId: activeExtraction.id,
+        after: {
+          sourceExtractionArtifactId: activeExtraction.id,
+          errorCode: taxAnalysisResult.error.code,
+        },
+        timestamp: deps.nowIsoUtc(),
+        context: {
+          message: taxAnalysisResult.error.message,
+        },
+      }),
+    });
+
+    return parseRunAnnualReportTaxAnalysisResultV1({
+      ok: false,
+      error: {
+        code: "PROCESSING_RUN_UNAVAILABLE",
+        message: taxAnalysisResult.error.message,
+        user_message:
+          "Forensic tax review could not be completed right now. Try again shortly.",
+        context: {
+          aiErrorCode: taxAnalysisResult.error.code,
+          ...taxAnalysisResult.error.context,
+        },
+      },
+    });
+  }
+
+  const activeExtractionBeforePersist = await resolveActiveExtraction();
+  if (
+    !activeExtractionBeforePersist ||
+    activeExtractionBeforePersist.id !== activeExtraction.id ||
+    activeExtractionBeforePersist.version !== activeExtraction.version
+  ) {
+    return parseRunAnnualReportTaxAnalysisResultV1(
+      buildFailureV1({
+        code: "STATE_CONFLICT",
+        message:
+          "Active extraction changed before forensic tax analysis could be persisted.",
+        userMessage:
+          "The annual report changed while the review was running. Refresh and retry.",
+        context: {
+          expectedActiveExtraction: {
+            artifactId: activeExtraction.id,
+            version: activeExtraction.version,
+          },
+          actualActiveExtraction: activeExtractionBeforePersist
+            ? {
+                artifactId: activeExtractionBeforePersist.id,
+                version: activeExtractionBeforePersist.version,
+              }
+            : null,
+        },
+      }),
+    );
+  }
+
+  const persistedTaxAnalysis = await persistAnnualReportTaxAnalysisArtifactV1({
+    actorType: request.requestedByUserId ? "user" : "system",
+    actorUserId: request.requestedByUserId,
+    deps,
+    sourceExtractionArtifactId: activeExtraction.id,
+    taxAnalysis: taxAnalysisResult.taxAnalysis,
+    tenantId: request.tenantId,
+    workspaceId: request.workspaceId,
+  });
+  if (!persistedTaxAnalysis.ok) {
+    return parseRunAnnualReportTaxAnalysisResultV1(
+      buildFailureV1({
+        code:
+          persistedTaxAnalysis.code === "WORKSPACE_NOT_FOUND"
+            ? "WORKSPACE_NOT_FOUND"
+            : "PERSISTENCE_ERROR",
+        message: persistedTaxAnalysis.message,
+        userMessage:
+          "Forensic tax review completed, but the result could not be saved.",
+        context: {
+          operation: "annual_report.tax_analysis.persist",
+        },
+      }),
+    );
+  }
+
+  if (persistedTaxAnalysis.artifact.version > 1) {
+    await appendAuditEventBestEffortV1({
+      deps,
+      event: parseAuditEventV2({
+        id: deps.generateId(),
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        actorType: request.requestedByUserId ? "user" : "system",
+        actorUserId: request.requestedByUserId,
+        eventType: AUDIT_EVENT_TYPES_V1.MODULE_RERUN,
+        targetType: "pipeline_module",
+        targetId: "annual_report_tax_analysis",
+        before: {
+          taxAnalysisVersion: persistedTaxAnalysis.artifact.version - 1,
+        },
+        after: {
+          taxAnalysisVersion: persistedTaxAnalysis.artifact.version,
+          sourceExtractionArtifactId: activeExtraction.id,
+        },
+        timestamp: deps.nowIsoUtc(),
+        context: {},
+      }),
+    });
+  }
+
+  return parseRunAnnualReportTaxAnalysisResultV1({
+    ok: true,
+    active: {
+      artifactId: persistedTaxAnalysis.artifact.id,
+      version: persistedTaxAnalysis.artifact.version,
+      schemaVersion: persistedTaxAnalysis.artifact.schemaVersion,
+    },
+    taxAnalysis: persistedTaxAnalysis.artifact.payload,
+  });
+}
+
 export async function getActiveAnnualReportTaxAnalysisV1(
   input: {
     tenantId: string;
@@ -1027,10 +1305,12 @@ export async function getActiveAnnualReportTaxAnalysisV1(
   },
   deps: AnnualReportExtractionDepsV1,
 ): Promise<GetActiveAnnualReportTaxAnalysisResultV1> {
-  const active = await deps.artifactRepository.getActiveAnnualReportTaxAnalysis({
-    tenantId: input.tenantId,
-    workspaceId: input.workspaceId,
-  });
+  const active = await deps.artifactRepository.getActiveAnnualReportTaxAnalysis(
+    {
+      tenantId: input.tenantId,
+      workspaceId: input.workspaceId,
+    },
+  );
   if (!active) {
     return parseGetActiveAnnualReportTaxAnalysisResultV1({
       ok: false,

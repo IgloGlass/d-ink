@@ -228,13 +228,15 @@ Each ticket should touch **one module** (or one interface) at a time:
 3. Add/update **unit tests** for that module.
 4. Add/update **contract tests** at the boundary.
 5. Run the golden test pack (for AI-related changes).
-6. Only then integrate into the next module.
+6. Run the relevant automated checks for the change before handoff (for example typecheck, unit/contract tests, and UI/browser checks when applicable). If a test fails, improve the change until the relevant checks pass before handing work back.
+7. Only then integrate into the next module.
 
 ### “No cross-module edits” default
 Unless the ticket explicitly says otherwise:
 - do not modify multiple modules in one change set
 - do not refactor unrelated code
 - do not change schemas without a version bump + tests
+- when a task exposes a reusable environment, testing, or workflow fix, codify it in-repo during the same pass instead of leaving it as one-off terminal knowledge
 
 ### When you must touch multiple modules
 If a change requires it (e.g., schema version upgrade):
@@ -295,7 +297,7 @@ Plan-first for larger tasks:
 
 Definition of done:
 - code compiles
-- tests pass
+- relevant tests/checks have been run for the change and pass before handoff
 - schemas validate
 - errors handled
 - audit event added when relevant

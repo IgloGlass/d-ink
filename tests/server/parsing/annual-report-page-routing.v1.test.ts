@@ -5,19 +5,26 @@ import { parseAnnualReportSourceTextV1 } from "../../../src/shared/contracts/ann
 
 describe("annual report page routing v1", () => {
   it("keeps asset and finance note routing focused on numbered note pages for Deloitte-style reports", () => {
-    const pageTexts = Array.from({ length: 32 }, (_, index) => `Page ${index + 1}`);
-    pageTexts[0] = "Deloitte AB\nOrg. nr 556271-5309\nÅrsredovisning för räkenskapsåret 1 juni 2024 – 31 maj 2025";
+    const pageTexts = Array.from(
+      { length: 32 },
+      (_, index) => `Page ${index + 1}`,
+    );
+    pageTexts[0] =
+      "Deloitte AB\nOrg. nr 556271-5309\nÅrsredovisning för räkenskapsåret 1 juni 2024 – 31 maj 2025";
     pageTexts[1] =
       "Innehåll\nResultaträkning 15\nBalansräkning 16-17\nBokslutskommentarer 20-23\nUpplysningar till enskilda poster 24-31";
-    pageTexts[14] = "Resultaträkning\nResultat före skatt 545 286 771 473\nBelopp i KSEK";
+    pageTexts[14] =
+      "Resultaträkning\nResultat före skatt 545 286 771 473\nBelopp i KSEK";
     pageTexts[15] = "Balansräkning\nBelopp i KSEK";
     pageTexts[16] = "Balansräkning, forts.\nBelopp i KSEK";
     pageTexts[19] =
       "Redovisningsprinciper\nBokföringsnämndens allmänna råd BFNAR 2012:1 Årsredovisning och koncernredovisning (K3).";
-    pageTexts[20] = "Fortsatta redovisningsprinciper\nGoodwill behandlas enligt K3.";
+    pageTexts[20] =
+      "Fortsatta redovisningsprinciper\nGoodwill behandlas enligt K3.";
     pageTexts[21] = "Fortsatta redovisningsprinciper";
     pageTexts[22] = "Fortsatta redovisningsprinciper\nUtdelning och räntor.";
-    pageTexts[23] = "Not 3 Leasingavtal\nNot 4 Upplysning om ersättning till revisorn";
+    pageTexts[23] =
+      "Not 3 Leasingavtal\nNot 4 Upplysning om ersättning till revisorn";
     pageTexts[24] =
       "Not 5 Antal anställda, löner, andra ersättningar och sociala kostnader\nNot 6 Övriga ränteintäkter och liknande intäkter\nNot 7 Räntekostnader och liknande kostnader";
     pageTexts[25] =
@@ -29,7 +36,8 @@ describe("annual report page routing v1", () => {
     pageTexts[28] =
       "Not 18 Andelar i koncernföretag\nNot 19 Andelar i intresseföretag\nNot 20 Andra långfristiga värdepappersinnehav";
     pageTexts[29] = "Not 22 Kassa och bank\nNot 24 Övriga långfristiga skulder";
-    pageTexts[30] = "Not 27 Fusion\nNot 28 Ställda säkerheter och eventualförpliktelser";
+    pageTexts[30] =
+      "Not 27 Fusion\nNot 28 Ställda säkerheter och eventualförpliktelser";
 
     const sourceText = parseAnnualReportSourceTextV1({
       schemaVersion: "annual_report_source_text_v1",
@@ -57,8 +65,20 @@ describe("annual report page routing v1", () => {
         "routing.tax_notes_finance.final=pages 24-26, 29-31",
       ]),
     );
-    expect(routing.coreFactsSeed.fields.accountingStandard?.normalizedValue).toBe("K3");
-    expect(routing.coreFactsSeed.fields.fiscalYearStart?.normalizedValue).toBe("2024-06-01");
-    expect(routing.coreFactsSeed.fields.fiscalYearEnd?.normalizedValue).toBe("2025-05-31");
+    expect(routing.sections.incomeStatement).toEqual([
+      expect.objectContaining({ startPage: 15, endPage: 15 }),
+    ]);
+    expect(routing.sections.balanceSheet).toEqual([
+      expect.objectContaining({ startPage: 16, endPage: 17 }),
+    ]);
+    expect(
+      routing.coreFactsSeed.fields.accountingStandard?.normalizedValue,
+    ).toBe("K3");
+    expect(routing.coreFactsSeed.fields.fiscalYearStart?.normalizedValue).toBe(
+      "2024-06-01",
+    );
+    expect(routing.coreFactsSeed.fields.fiscalYearEnd?.normalizedValue).toBe(
+      "2025-05-31",
+    );
   });
 });

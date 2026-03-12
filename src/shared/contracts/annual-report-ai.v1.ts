@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   AnnualReportAccountingStandardV1Schema,
   AnnualReportAmountUnitV1Schema,
+  AnnualReportRelevantNoteCategoryV1Schema,
   AnnualReportTaxDeepExtractionV1Schema,
 } from "./annual-report-extraction.v1";
 
@@ -98,6 +99,75 @@ function normalizeAmountUnitV1(value: unknown): "sek" | "ksek" | "msek" | undefi
   }
 
   return undefined;
+}
+
+function normalizeRelevantNoteCategoryV1(
+  value: unknown,
+):
+  | "fixed_assets_depreciation"
+  | "interest"
+  | "pension"
+  | "tax_expense"
+  | "reserve"
+  | "leasing"
+  | "group_contributions"
+  | "shareholdings_dividends"
+  | "provisions_contingencies"
+  | "related_party_intragroup"
+  | "restructuring_mergers"
+  | "deferred_tax_loss_carryforwards"
+  | "impairments_write_downs"
+  | undefined {
+  const normalized = normalizeOptionalTextV1(value)
+    ?.toLowerCase()
+    .replace(/[^a-z]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (!normalized) {
+    return undefined;
+  }
+
+  const aliases: Record<string, z.infer<typeof AnnualReportRelevantNoteCategoryV1Schema>> = {
+    fixed_assets: "fixed_assets_depreciation",
+    fixed_assets_and_depreciation: "fixed_assets_depreciation",
+    fixed_asset: "fixed_assets_depreciation",
+    depreciation: "fixed_assets_depreciation",
+    fixed_assets_depreciation: "fixed_assets_depreciation",
+    interest: "interest",
+    finance: "interest",
+    finance_interest: "interest",
+    pension: "pension",
+    pensions: "pension",
+    tax: "tax_expense",
+    tax_expense: "tax_expense",
+    current_and_deferred_tax: "tax_expense",
+    reserve: "reserve",
+    reserves: "reserve",
+    leasing: "leasing",
+    leases: "leasing",
+    group_contributions: "group_contributions",
+    group_contribution: "group_contributions",
+    shareholdings: "shareholdings_dividends",
+    shareholdings_dividends: "shareholdings_dividends",
+    dividends: "shareholdings_dividends",
+    shareholding_and_dividends: "shareholdings_dividends",
+    provisions: "provisions_contingencies",
+    contingent_liabilities: "provisions_contingencies",
+    provisions_contingencies: "provisions_contingencies",
+    related_party: "related_party_intragroup",
+    related_party_intragroup: "related_party_intragroup",
+    intragroup: "related_party_intragroup",
+    restructuring: "restructuring_mergers",
+    mergers: "restructuring_mergers",
+    restructuring_mergers: "restructuring_mergers",
+    deferred_tax_loss_carryforwards: "deferred_tax_loss_carryforwards",
+    deferred_tax: "deferred_tax_loss_carryforwards",
+    loss_carryforwards: "deferred_tax_loss_carryforwards",
+    impairments: "impairments_write_downs",
+    impairment: "impairments_write_downs",
+    write_downs: "impairments_write_downs",
+    impairments_write_downs: "impairments_write_downs",
+  };
+  return aliases[normalized];
 }
 
 function createLooseArraySchemaV1<TSchema extends z.ZodTypeAny>(schema: TSchema) {
@@ -664,6 +734,51 @@ const AnnualReportAiShareholdingContextV1Schema = createLooseObjectSchemaV1({
   evidence: createLooseArraySchemaV1(AnnualReportAiEvidenceReferenceV1Schema),
 });
 
+const AnnualReportAiRelevantNoteV1Schema = createLooseObjectSchemaV1({
+  blockId: z.preprocess(
+    normalizeOptionalTextV1,
+    z.string().trim().min(1).optional(),
+  ),
+  category: z.preprocess(
+    normalizeRelevantNoteCategoryV1,
+    AnnualReportRelevantNoteCategoryV1Schema.optional(),
+  ),
+  title: z.preprocess(
+    normalizeOptionalTextV1,
+    z.string().trim().min(1).optional(),
+  ),
+  noteReference: z.preprocess(
+    normalizeOptionalTextV1,
+    z.string().trim().min(1).optional(),
+  ),
+  pages: createLooseArraySchemaV1(
+    z.preprocess(
+      normalizeOptionalPositiveIntegerV1,
+      z.number().int().positive().optional(),
+    ),
+  ).transform((values) =>
+    values.filter((value): value is number => typeof value === "number"),
+  ),
+  notes: createLooseArraySchemaV1(
+    z.preprocess(
+      normalizeOptionalTextV1,
+      z.string().trim().min(1).optional(),
+    ),
+  ).transform((values) =>
+    values.filter((value): value is string => typeof value === "string"),
+  ),
+  evidence: createLooseArraySchemaV1(AnnualReportAiEvidenceReferenceV1Schema),
+})
+  .transform((value) => ({
+    blockId: value.blockId ?? "unknown_note_block",
+    category: value.category ?? "tax_expense",
+    title: value.title,
+    noteReference: value.noteReference,
+    pages: value.pages,
+    notes: value.notes,
+    evidence: value.evidence,
+  }));
+
 export const AnnualReportAiCoreExtractionResultV1Schema = createLooseObjectSchemaV1({
     schemaVersion: createAiSchemaVersionV1(
       "annual_report_ai_core_extraction_v1",
@@ -820,6 +935,30 @@ export const AnnualReportAiTaxNotesFinanceAndOtherResultV1Schema = createLooseOb
   });
 export type AnnualReportAiTaxNotesFinanceAndOtherResultV1 = z.infer<
   typeof AnnualReportAiTaxNotesFinanceAndOtherResultV1Schema
+>;
+
+export const AnnualReportAiTaxExpenseNoteResultV1Schema =
+  createLooseObjectSchemaV1({
+    schemaVersion: createAiSchemaVersionV1(
+      "annual_report_ai_tax_expense_note_v1",
+    ),
+    taxExpenseContext: AnnualReportAiTaxExpenseContextV1Schema.optional(),
+    evidence: createLooseArraySchemaV1(AnnualReportAiEvidenceReferenceV1Schema),
+  });
+export type AnnualReportAiTaxExpenseNoteResultV1 = z.infer<
+  typeof AnnualReportAiTaxExpenseNoteResultV1Schema
+>;
+
+export const AnnualReportAiRelevantNoteLocatorResultV1Schema =
+  createLooseObjectSchemaV1({
+    schemaVersion: createAiSchemaVersionV1(
+      "annual_report_ai_relevant_note_locator_v1",
+    ),
+    relevantNotes: createLooseArraySchemaV1(AnnualReportAiRelevantNoteV1Schema),
+    evidence: createLooseArraySchemaV1(AnnualReportAiEvidenceReferenceV1Schema),
+  });
+export type AnnualReportAiRelevantNoteLocatorResultV1 = z.infer<
+  typeof AnnualReportAiRelevantNoteLocatorResultV1Schema
 >;
 
 export const AnnualReportAiCombinedTextExtractionResultV1Schema =

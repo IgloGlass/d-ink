@@ -1281,6 +1281,191 @@ describe("executeAnnualReportAnalysisV1", () => {
     expect(findMockUserInstructionV1("Stage: financial statements extraction.")).toContain("Analyze ONLY pages 15, 16");
   });
 
+  it("keeps overdrive on targeted stages when extractable routed text would require multiple combined chunks", async () => {
+    generateGeminiStructuredOutputMock.mockReset();
+    generateGeminiStructuredOutputMock.mockImplementation(async (input) => {
+      const userInstruction = String(input?.request?.userInstruction ?? "");
+      if (userInstruction.includes("Stage: section locator.")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-pro",
+          output: {
+            schemaVersion: "annual_report_ai_section_locator_v1",
+            sections: {
+              coreFacts: [{ startPage: 1, endPage: 4, confidence: 0.9 }],
+              incomeStatement: [{ startPage: 15, endPage: 15, confidence: 0.9 }],
+              balanceSheet: [{ startPage: 16, endPage: 17, confidence: 0.9 }],
+              taxExpense: [{ startPage: 24, endPage: 24, confidence: 0.8 }],
+              depreciationAndAssets: [{ startPage: 26, endPage: 28, confidence: 0.8 }],
+              reserves: [{ startPage: 24, endPage: 24, confidence: 0.8 }],
+              financeAndInterest: [{ startPage: 29, endPage: 31, confidence: 0.8 }],
+              pensionsAndLeasing: [{ startPage: 21, endPage: 23, confidence: 0.8 }],
+              groupContributionsAndShareholdings: [],
+            },
+            documentWarnings: [],
+            evidence: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: core facts extraction.")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-pro",
+          output: {
+            schemaVersion: "annual_report_ai_core_facts_v1",
+            fields: {
+              companyName: { status: "extracted", confidence: 0.99, valueText: "Deloitte AB" },
+              organizationNumber: { status: "extracted", confidence: 0.99, valueText: "556271-5309" },
+              fiscalYearStart: { status: "extracted", confidence: 0.99, valueText: "2024-06-01", normalizedValue: "2024-06-01" },
+              fiscalYearEnd: { status: "extracted", confidence: 0.99, valueText: "2025-05-31", normalizedValue: "2025-05-31" },
+              accountingStandard: { status: "needs_review", confidence: 0.4 },
+              profitBeforeTax: { status: "extracted", confidence: 0.99, valueText: "553286", normalizedValue: 553286 },
+            },
+            taxSignals: [],
+            documentWarnings: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: financial statements extraction.")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-pro",
+          output: {
+            schemaVersion: "annual_report_ai_statements_only_v1",
+            ink2rExtracted: {
+              statementUnit: "ksek",
+              incomeStatement: [{ code: "profit_before_tax", label: "Resultat fore skatt", currentYearValue: 553286 }],
+              balanceSheet: [{ code: "cash", label: "Kassa och bank", currentYearValue: 200 }],
+            },
+            priorYearComparatives: [],
+            evidence: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-pro",
+          output: {
+            schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
+            depreciationContext: { assetAreas: [], evidence: [] },
+            assetMovements: { lines: [], evidence: [] },
+            reserveContext: { movements: [], notes: [], evidence: [] },
+            taxExpenseContext: { notes: ["Current tax disclosed"], evidence: [] },
+            evidence: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: tax notes (finance & other).")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-pro",
+          output: {
+            schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
+            netInterestContext: { notes: ["Rantekostnader disclosed"], evidence: [] },
+            pensionContext: { flags: [], notes: [], evidence: [] },
+            leasingContext: { flags: [], notes: [], evidence: [] },
+            groupContributionContext: { flags: [], notes: [], evidence: [] },
+            shareholdingContext: { flags: [], notes: [], evidence: [] },
+            evidence: [],
+          },
+        };
+      }
+      return {
+        ok: false,
+        error: {
+          code: "MODEL_EXECUTION_FAILED",
+          message: `Unexpected stage for test: ${userInstruction.slice(0, 80)}`,
+          context: {},
+        },
+      };
+    });
+
+    const pageTexts = Array.from({ length: 32 }, (_, index) => {
+      const page = index + 1;
+      if (page === 1) return "Deloitte AB\nOrg.nr 556271-5309\nArsredovisning";
+      if (page === 2) return "Rakenskapsar 2024-06-01 - 2025-05-31\nUpprattad enligt regelverk: K2\nInnehall\nResultatrakning 15\nBalansrakning 16-17\nBokslutskommentarer 20-23\nUpplysningar till enskilda poster 24-31";
+      if (page === 15) return "Resultatrakning\nResultat fore skatt 553286";
+      if (page === 16) return "Balansrakning";
+      if (page === 17) return "Balansrakning, forts.";
+      if (page === 20) return `Bokslutskommentarer\n${"Lorem ipsum ".repeat(250)}`;
+      if (page === 21) return `Not 3 Leasingavtal\n${"Lorem ipsum ".repeat(250)}`;
+      if (page === 22) return `Not 5 Pensionskostnader\n${"Lorem ipsum ".repeat(250)}`;
+      if (page === 23) return `Not 6 Ovriga ranteintakter\nNot 7 Rantekostnader\n${"Lorem ipsum ".repeat(250)}`;
+      if (page === 24) return `Not 8 Bokslutsdispositioner\nNot 9 Skatt pa arets resultat\n${"Lorem ipsum ".repeat(250)}`;
+      if (page === 25) return `Not 10 Hyresratter\n${"Lorem ipsum ".repeat(250)}`;
+      if (page === 26) return `Not 11 Goodwill\nNot 12 Programvaror\nNot 14 Byggnader och mark\n${"Lorem ipsum ".repeat(250)}`;
+      if (page === 27) return `Not 15 Inventarier\nNot 16 Datorer\n${"Lorem ipsum ".repeat(250)}`;
+      if (page === 28) return `Not 17 Forbattringsutgifter pa annans fastighet\n${"Lorem ipsum ".repeat(250)}`;
+      if (page === 29) return `Not 18 Andelar i koncernforetag\n${"Lorem ipsum ".repeat(250)}`;
+      if (page === 30) return `Not 19 Andelar i intresseforetag\nNot 20 Andra langfristiga vardepappersinnehav\n${"Lorem ipsum ".repeat(250)}`;
+      if (page === 31) return `Not 22 Kassa och bank\nNot 24 Ovriga langfristiga skulder\n${"Lorem ipsum ".repeat(250)}`;
+      return `Page ${page}`;
+    });
+    const pdfBytes = await createPdfBytesWithPageLabelsV1({
+      1: "Deloitte AB\nOrg.nr 556271-5309\nArsredovisning",
+      2: "Rakenskapsar 2024-06-01 - 2025-05-31\nUpprattad enligt regelverk: K2\nInnehall",
+      15: "Resultatrakning",
+      16: "Balansrakning",
+      17: "Balansrakning, forts.",
+      20: "Bokslutskommentarer",
+      21: "Not 3 Leasingavtal",
+      22: "Not 5 Pensionskostnader",
+      23: "Not 6 Ovriga ranteintakter\nNot 7 Rantekostnader",
+      24: "Not 8 Bokslutsdispositioner\nNot 9 Skatt pa arets resultat",
+      25: "Not 10 Hyresratter",
+      26: "Not 11 Goodwill\nNot 12 Programvaror\nNot 14 Byggnader och mark",
+      27: "Not 15 Inventarier\nNot 16 Datorer",
+      28: "Not 17 Forbattringsutgifter pa annans fastighet",
+      29: "Not 18 Andelar i koncernforetag",
+      30: "Not 19 Andelar i intresseforetag\nNot 20 Andra langfristiga vardepappersinnehav",
+      31: "Not 22 Kassa och bank\nNot 24 Ovriga langfristiga skulder",
+    });
+    const onProgress = vi.fn(async () => {});
+
+    const result = await executeAnnualReportAnalysisV1({
+      apiKey: "test-key",
+      config: getConfigOrThrowV1(),
+      document: createPreparedPdfDocumentV1({
+        pdfBytes,
+        pageCount: 32,
+        pageTexts,
+      }),
+      generateId: () => "run-overdrive-skip-combined",
+      generatedAt: "2026-03-11T09:45:00.000Z",
+      modelConfig: {
+        fastModel: "gemini-2.5-flash",
+        thinkingModel: "gemini-2.5-pro",
+      },
+      runtimeMode: "ai_overdrive",
+      onProgress,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.extraction.documentWarnings).toEqual(
+      expect.arrayContaining([
+        "execution.runtime_mode=ai_overdrive",
+        "combined_extractable.primary_request_timeout_ms=60000",
+        "combined_extractable.retry_request_timeout_ms=90000",
+        "combined_extractable.stage_budget_ms=180000",
+        "combined_extractable.minimum_retry_budget_ms=20000",
+        expect.stringContaining("combined_extractable.skipped reason=chunk_count_exceeded"),
+        expect.stringContaining("combined_extractable.follow_up_required=1"),
+      ]),
+    );
+    expect(findMockUserInstructionV1("Stage: combined extractable-text annual-report extraction.")).toBe("");
+    expect(onProgress).toHaveBeenCalledWith(
+      "extracting_statements",
+      expect.arrayContaining([
+        "progress.stage=extracting_required_financial_data",
+      ]),
+    );
+  });
+
   it("uses overdrive mode to keep the combined stage and broaden core-facts AI context", async () => {
     generateGeminiStructuredOutputMock.mockReset();
     generateGeminiStructuredOutputMock.mockImplementation(async (input) => {
@@ -1451,10 +1636,10 @@ describe("executeAnnualReportAnalysisV1", () => {
       expect.arrayContaining([
         "execution.runtime_mode=ai_overdrive",
         "core_facts.chunking=ai_overdrive_statement_context",
-        "combined_extractable.primary_request_timeout_ms=120000",
-        "combined_extractable.retry_request_timeout_ms=180000",
-        "combined_extractable.stage_budget_ms=360000",
-        "combined_extractable.minimum_retry_budget_ms=45000",
+        "combined_extractable.primary_request_timeout_ms=60000",
+        "combined_extractable.retry_request_timeout_ms=90000",
+        "combined_extractable.stage_budget_ms=180000",
+        "combined_extractable.minimum_retry_budget_ms=20000",
       ]),
     );
     expect(
@@ -1732,11 +1917,11 @@ describe("executeAnnualReportAnalysisV1", () => {
     );
     expect(combinedCalls.length).toBeGreaterThanOrEqual(2);
     expect(combinedCalls[0]?.[0]?.request?.modelTier).toBe("thinking");
-    expect(combinedCalls[0]?.[0]?.request?.timeoutMs).toBe(120000);
+    expect(combinedCalls[0]?.[0]?.request?.timeoutMs).toBe(60000);
     expect(combinedCalls[0]?.[0]?.request?.useResponseJsonSchema).toBe(false);
     for (const retryCall of combinedCalls.slice(1)) {
       expect(retryCall?.[0]?.request?.modelTier).toBe("thinking");
-      expect(retryCall?.[0]?.request?.timeoutMs).toBe(180000);
+      expect(retryCall?.[0]?.request?.timeoutMs).toBe(90000);
       expect(retryCall?.[0]?.request?.useResponseJsonSchema).toBe(false);
     }
   });
@@ -2075,6 +2260,8 @@ describe("executeAnnualReportAnalysisV1", () => {
     expect(result.extraction.documentWarnings).toEqual(
       expect.arrayContaining([
         "combined_extractable.input=text",
+        "tax_notes_assets.input=pdf",
+        "tax_notes_finance.input=pdf",
         "combined_extractable.primary_request_timeout_ms=30000",
         "combined_extractable.retry_request_timeout_ms=45000",
         "combined_extractable.stage_budget_ms=120000",
@@ -2108,6 +2295,956 @@ describe("executeAnnualReportAnalysisV1", () => {
       ),
     );
     expect(combinedCall).toBeUndefined();
+  });
+
+  it("keeps targeted asset-note follow-up for extractable PDFs when combined extraction only returns structured tables", async () => {
+    generateGeminiStructuredOutputMock.mockReset();
+    generateGeminiStructuredOutputMock.mockImplementation(async (input) => {
+      const userInstruction = String(input?.request?.userInstruction ?? "");
+      if (userInstruction.includes("Stage: core facts extraction.")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_core_facts_v1",
+            fields: {
+              companyName: { status: "extracted", confidence: 0.99, valueText: "Acme AB" },
+              organizationNumber: { status: "extracted", confidence: 0.99, valueText: "556677-8899" },
+              fiscalYearStart: { status: "extracted", confidence: 0.99, valueText: "2025-01-01", normalizedValue: "2025-01-01" },
+              fiscalYearEnd: { status: "extracted", confidence: 0.99, valueText: "2025-12-31", normalizedValue: "2025-12-31" },
+              accountingStandard: { status: "extracted", confidence: 0.99, valueText: "K3", normalizedValue: "K3" },
+              profitBeforeTax: { status: "extracted", confidence: 0.99, valueText: "500", normalizedValue: 500 },
+            },
+            taxSignals: [],
+            documentWarnings: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_combined_text_extraction_v1",
+            documentWarnings: [],
+            ink2rExtracted: {
+              statementUnit: "ksek",
+              incomeStatement: [
+                {
+                  code: "profit_before_tax",
+                  label: "Resultat fore skatt",
+                  currentYearValue: 500,
+                },
+              ],
+              balanceSheet: [
+                {
+                  code: "cash",
+                  label: "Kassa och bank",
+                  currentYearValue: 200,
+                },
+              ],
+            },
+            priorYearComparatives: [],
+            depreciationContext: { assetAreas: [], evidence: [] },
+            assetMovements: {
+              lines: [
+                {
+                  assetArea: "Programvaror",
+                  acquisitions: 19492,
+                  depreciationForYear: 3628,
+                  closingCarryingAmount: 49004,
+                  evidence: [{ snippet: "Programvaror 49 004", page: 27 }],
+                },
+              ],
+              evidence: [{ snippet: "Not 12 Programvaror", page: 27 }],
+            },
+            reserveContext: { movements: [], notes: [], evidence: [] },
+            netInterestContext: { notes: [], evidence: [] },
+            pensionContext: { flags: [], notes: [], evidence: [] },
+            leasingContext: { flags: [], notes: [], evidence: [] },
+            groupContributionContext: { flags: [], notes: [], evidence: [] },
+            shareholdingContext: { flags: [], notes: [], evidence: [] },
+            taxExpenseContext: {
+              currentTax: {
+                value: 116885,
+                evidence: [{ snippet: "Aktuell skatt 116 885", page: 26 }],
+              },
+              notes: [],
+              evidence: [],
+            },
+            evidence: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
+            depreciationContext: { assetAreas: [], evidence: [] },
+            assetMovements: { lines: [], evidence: [] },
+            reserveContext: { movements: [], notes: [], evidence: [] },
+            taxExpenseContext: {
+              notes: [
+                "Aktuell skatt, uppskjuten skatt och skatteeffekt av ej avdragsgilla kostnader framgar av not 9.",
+              ],
+              evidence: [{ snippet: "Not 9 Skatt pa arets resultat", page: 26 }],
+            },
+            evidence: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: tax notes (finance & other).")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
+            netInterestContext: { notes: [], evidence: [] },
+            pensionContext: { flags: [], notes: [], evidence: [] },
+            leasingContext: { flags: [], notes: [], evidence: [] },
+            groupContributionContext: { flags: [], notes: [], evidence: [] },
+            shareholdingContext: {
+              flags: [],
+              notes: [
+                "Andelar i koncernforetag och utdelningar ska foljas upp i skatteanalysen.",
+              ],
+              evidence: [{ snippet: "Not 18 Andelar i koncernforetag", page: 29 }],
+            },
+            evidence: [],
+          },
+        };
+      }
+
+      return {
+        ok: false,
+        error: {
+          code: "MODEL_EXECUTION_FAILED",
+          message: `Unexpected stage for test: ${userInstruction.slice(0, 80)}`,
+          context: {},
+        },
+      };
+    });
+
+    const pageTexts = Array.from({ length: 32 }, (_, index) => {
+      const page = index + 1;
+      if (page === 1) return "Acme AB\nOrg.nr 556677-8899\nArsredovisning";
+      if (page === 2) return "Rakenskapsar 2025-01-01 - 2025-12-31\nK3\nInnehall\nResultatrakning 15\nBalansrakning 16-17\nBokslutskommentarer 20-23\nNot 9 Skatt pa arets resultat 26\nNot 12 Programvaror 27\nUpplysningar till enskilda poster 24-31";
+      if (page === 15) return "Resultatrakning\nResultat fore skatt 500";
+      if (page === 16) return "Balansrakning\nProgramvaror 12 49 004 33 174\nKassa och bank 200";
+      if (page === 17) return "Balansrakning, forts.";
+      if (page === 24) return "Not 3 Leasingavtal";
+      if (page === 26) return "Not 8 Bokslutsdispositioner\nNot 9 Skatt pa arets resultat";
+      if (page === 27) return "Not 12 Programvaror\nNot 14 Byggnader och mark";
+      if (page === 28) return "Not 15 Inventarier\nNot 17 Forbattringsutgifter pa annans fastighet";
+      if (page === 29) return "Not 18 Andelar i koncernforetag";
+      return `Page ${page}`;
+    });
+    const pdfBytes = await createPdfBytesWithPageLabelsV1({
+      1: pageTexts[0]!,
+      2: pageTexts[1]!,
+      15: pageTexts[14]!,
+      16: pageTexts[15]!,
+      17: pageTexts[16]!,
+      24: pageTexts[23]!,
+      26: pageTexts[25]!,
+      27: pageTexts[26]!,
+      28: pageTexts[27]!,
+      29: pageTexts[28]!,
+    });
+
+    const result = await executeAnnualReportAnalysisV1({
+      apiKey: "test-key",
+      config: getConfigOrThrowV1(),
+      document: createPreparedPdfDocumentV1({
+        classification: "extractable_text_pdf",
+        pdfBytes,
+        pageCount: 32,
+        pageTexts,
+      }),
+      generateId: () => "run-combined-plus-targeted-notes",
+      generatedAt: "2026-03-12T09:00:00.000Z",
+      modelConfig: {
+        fastModel: "gemini-2.5-flash",
+        thinkingModel: "gemini-2.5-pro",
+      },
+      runtimeMode: "ai_overdrive",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.extraction.taxDeep.assetMovements.lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assetArea: "Programvaror",
+          closingCarryingAmount: 49004,
+        }),
+      ]),
+    );
+    expect(result.extraction.taxDeep.taxExpenseContext?.notes).toEqual(
+      expect.arrayContaining([
+        "Aktuell skatt, uppskjuten skatt och skatteeffekt av ej avdragsgilla kostnader framgar av not 9.",
+      ]),
+    );
+    expect(result.extraction.taxDeep.shareholdingContext.notes).toEqual(
+      expect.arrayContaining([
+        "Andelar i koncernforetag och utdelningar ska foljas upp i skatteanalysen.",
+      ]),
+    );
+    expect(findMockUserInstructionV1("Stage: tax notes (assets & reserves).")).toContain(
+      "Prefer keeping narrative note coverage, not just numeric tables",
+    );
+  });
+
+  it("stores and backfills relevant note summaries when note stages miss narrative text", async () => {
+    generateGeminiStructuredOutputMock.mockReset();
+    generateGeminiStructuredOutputMock.mockImplementation(async (input) => {
+      const userInstruction = String(input?.request?.userInstruction ?? "");
+      if (userInstruction.includes("Stage: core facts extraction.")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_core_facts_v1",
+            fields: {
+              companyName: { status: "extracted", confidence: 0.99, valueText: "Acme AB" },
+              organizationNumber: { status: "extracted", confidence: 0.99, valueText: "556677-8899" },
+              fiscalYearStart: { status: "extracted", confidence: 0.99, valueText: "2025-01-01", normalizedValue: "2025-01-01" },
+              fiscalYearEnd: { status: "extracted", confidence: 0.99, valueText: "2025-12-31", normalizedValue: "2025-12-31" },
+              accountingStandard: { status: "extracted", confidence: 0.99, valueText: "K3", normalizedValue: "K3" },
+              profitBeforeTax: { status: "extracted", confidence: 0.99, valueText: "500", normalizedValue: 500 },
+            },
+            taxSignals: [],
+            documentWarnings: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_combined_text_extraction_v1",
+            documentWarnings: [],
+            ink2rExtracted: {
+              statementUnit: "ksek",
+              incomeStatement: [
+                {
+                  code: "profit_before_tax",
+                  label: "Resultat fore skatt",
+                  currentYearValue: 500,
+                },
+              ],
+              balanceSheet: [
+                {
+                  code: "cash",
+                  label: "Kassa och bank",
+                  currentYearValue: 200,
+                },
+              ],
+            },
+            priorYearComparatives: [],
+            depreciationContext: { assetAreas: [], evidence: [] },
+            assetMovements: {
+              lines: [
+                {
+                  assetArea: "Programvaror",
+                  closingCarryingAmount: 49004,
+                  evidence: [{ snippet: "Programvaror 49 004", page: 27 }],
+                },
+              ],
+              evidence: [{ snippet: "Not 12 Programvaror", page: 27 }],
+            },
+            reserveContext: { movements: [], notes: [], evidence: [] },
+            netInterestContext: { notes: [], evidence: [] },
+            pensionContext: { flags: [], notes: [], evidence: [] },
+            leasingContext: { flags: [], notes: [], evidence: [] },
+            groupContributionContext: { flags: [], notes: [], evidence: [] },
+            shareholdingContext: { flags: [], notes: [], evidence: [] },
+            taxExpenseContext: {
+              currentTax: {
+                value: 116885,
+                evidence: [{ snippet: "Aktuell skatt 116 885", page: 26 }],
+              },
+              notes: [],
+              evidence: [],
+            },
+            evidence: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
+            depreciationContext: { assetAreas: [], evidence: [] },
+            assetMovements: { lines: [], evidence: [] },
+            reserveContext: { movements: [], notes: [], evidence: [] },
+            taxExpenseContext: { notes: [], evidence: [] },
+            evidence: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: tax notes (finance & other).")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
+            netInterestContext: { notes: [], evidence: [] },
+            pensionContext: { flags: [], notes: [], evidence: [] },
+            leasingContext: { flags: [], notes: [], evidence: [] },
+            groupContributionContext: { flags: [], notes: [], evidence: [] },
+            shareholdingContext: { flags: [], notes: [], evidence: [] },
+            evidence: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: relevant tax-note locator.")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_relevant_note_locator_v1",
+            relevantNotes: [
+              {
+                blockId: "not-9-26",
+                category: "tax_expense",
+                noteReference: "Not 9",
+                title: "Skatt pa arets resultat",
+                pages: [26],
+                notes: [
+                  "Aktuell skatt, uppskjuten skatt och skatteeffekt av ej avdragsgilla kostnader framgar av noten.",
+                ],
+                evidence: [{ snippet: "Not 9 Skatt pa arets resultat", page: 26 }],
+              },
+              {
+                blockId: "not-12-26",
+                category: "fixed_assets_depreciation",
+                noteReference: "Not 12",
+                title: "Programvaror",
+                pages: [26],
+                notes: ["Programvaror skrivs av med 10 procent per ar."],
+                evidence: [{ snippet: "Programvaror skrivs av med 10% per ar.", page: 26 }],
+              },
+            ],
+            evidence: [],
+          },
+        };
+      }
+
+      return {
+        ok: false,
+        error: {
+          code: "MODEL_EXECUTION_FAILED",
+          message: `Unexpected stage for test: ${userInstruction.slice(0, 80)}`,
+          context: {},
+        },
+      };
+    });
+
+    const pageTexts = Array.from({ length: 32 }, (_, index) => {
+      const page = index + 1;
+      if (page === 1) return "Acme AB\nOrg.nr 556677-8899\nArsredovisning";
+      if (page === 2) return "Rakenskapsar 2025-01-01 - 2025-12-31\nK3\nInnehall\nResultatrakning 15\nBalansrakning 16-17\nBokslutskommentarer 20-23\nUpplysningar till enskilda poster 24-31";
+      if (page === 15) return "Resultatrakning\nResultat fore skatt 500";
+      if (page === 16) return "Balansrakning\nProgramvaror 12 49 004 33 174\nKassa och bank 200";
+      if (page === 17) return "Balansrakning, forts.";
+      if (page === 26) return "Not 9 Skatt pa arets resultat\nAktuell skatt 116 885\nUppskjuten skatt -\nSkatteeffekt av ej avdragsgilla kostnader 4 667\nNot 12 Programvaror\nProgramvaror skrivs av med 10 procent per ar.";
+      if (page === 27) return "Not 12 Programvaror\nProgramvaror skrivs av med 10 procent per ar.";
+      return `Page ${page}`;
+    });
+    const pdfBytes = await createPdfBytesWithPageLabelsV1({
+      1: pageTexts[0]!,
+      2: pageTexts[1]!,
+      15: pageTexts[14]!,
+      16: pageTexts[15]!,
+      17: pageTexts[16]!,
+      26: pageTexts[25]!,
+      27: pageTexts[26]!,
+    });
+
+    const result = await executeAnnualReportAnalysisV1({
+      apiKey: "test-key",
+      config: getConfigOrThrowV1(),
+      document: createPreparedPdfDocumentV1({
+        classification: "extractable_text_pdf",
+        pdfBytes,
+        pageCount: 32,
+        pageTexts,
+      }),
+      generateId: () => "run-relevant-notes",
+      generatedAt: "2026-03-12T10:30:00.000Z",
+      modelConfig: {
+        fastModel: "gemini-2.5-flash",
+        thinkingModel: "gemini-2.5-pro",
+      },
+      runtimeMode: "ai_overdrive",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.extraction.taxDeep.relevantNotes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          category: "tax_expense",
+          noteReference: "Not 9",
+        }),
+        expect.objectContaining({
+          category: "fixed_assets_depreciation",
+          noteReference: "Not 12",
+        }),
+      ]),
+    );
+    expect(result.extraction.taxDeep.taxExpenseContext?.notes).toEqual(
+      expect.arrayContaining([
+        "Aktuell skatt, uppskjuten skatt och skatteeffekt av ej avdragsgilla kostnader framgar av noten.",
+      ]),
+    );
+    expect(result.extraction.taxDeep.depreciationContext.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          snippet: "Programvaror skrivs av med 10% per ar.",
+          page: 26,
+        }),
+      ]),
+    );
+    expect(findMockUserInstructionV1("Stage: relevant tax-note locator.")).toContain(
+      "[BlockId not-9-26]",
+    );
+  });
+
+  it("uses the dedicated tax-expense note pass to recover current and deferred tax context", async () => {
+    generateGeminiStructuredOutputMock.mockReset();
+    generateGeminiStructuredOutputMock.mockImplementation(async (input) => {
+      const userInstruction = String(input?.request?.userInstruction ?? "");
+      if (userInstruction.includes("Stage: core facts extraction.")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_core_facts_v1",
+            fields: {
+              companyName: { status: "extracted", confidence: 0.99, valueText: "Acme AB" },
+              organizationNumber: { status: "extracted", confidence: 0.99, valueText: "556677-8899" },
+              fiscalYearStart: { status: "extracted", confidence: 0.99, valueText: "2025-01-01", normalizedValue: "2025-01-01" },
+              fiscalYearEnd: { status: "extracted", confidence: 0.99, valueText: "2025-12-31", normalizedValue: "2025-12-31" },
+              accountingStandard: { status: "extracted", confidence: 0.99, valueText: "K3", normalizedValue: "K3" },
+              profitBeforeTax: { status: "extracted", confidence: 0.99, valueText: "500", normalizedValue: 500 },
+            },
+            taxSignals: [],
+            documentWarnings: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: createCombinedExtractionOutputV1(),
+        };
+      }
+      if (userInstruction.includes("Stage: tax expense note extraction.")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_tax_expense_note_v1",
+            taxExpenseContext: {
+              currentTax: {
+                value: 116885,
+                evidence: [{ snippet: "Aktuell skatt 116 885", page: 26 }],
+              },
+              deferredTax: {
+                value: 0,
+                evidence: [{ snippet: "Uppskjuten skatt -", page: 26 }],
+              },
+              notes: [
+                "Skatteeffekter av ej avdragsgilla kostnader och tidigare ars justeringar framgar av skattenoten.",
+              ],
+              evidence: [{ snippet: "Not 9 Skatt pa arets resultat", page: 26 }],
+            },
+            evidence: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: relevant tax-note locator.")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_relevant_note_locator_v1",
+            relevantNotes: [],
+            evidence: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
+            depreciationContext: { assetAreas: [], evidence: [] },
+            assetMovements: { lines: [], evidence: [] },
+            reserveContext: { movements: [], notes: [], evidence: [] },
+            taxExpenseContext: { notes: [], evidence: [] },
+            evidence: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: tax notes (finance & other).")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
+            netInterestContext: { notes: [], evidence: [] },
+            pensionContext: { flags: [], notes: [], evidence: [] },
+            leasingContext: { flags: [], notes: [], evidence: [] },
+            groupContributionContext: { flags: [], notes: [], evidence: [] },
+            shareholdingContext: { flags: [], notes: [], evidence: [] },
+            evidence: [],
+          },
+        };
+      }
+
+      return {
+        ok: false,
+        error: {
+          code: "MODEL_EXECUTION_FAILED",
+          message: `Unexpected stage for test: ${userInstruction.slice(0, 80)}`,
+          context: {},
+        },
+      };
+    });
+
+    const pageTexts = Array.from({ length: 32 }, (_, index) => {
+      const page = index + 1;
+      if (page === 1) return "Acme AB\nOrg.nr 556677-8899\nArsredovisning";
+      if (page === 2) return "Rakenskapsar 2025-01-01 - 2025-12-31\nK3\nInnehall\nResultatrakning 15\nBalansrakning 16-17\nNot 9 Skatt pa arets resultat 26\nNot 12 Programvaror 27\nUpplysningar till enskilda poster 24-31";
+      if (page === 15) return "Resultatrakning\nResultat fore skatt 500";
+      if (page === 16) return "Balansrakning\nProgramvaror 12 49 004 33 174\nKassa och bank 200";
+      if (page === 17) return "Balansrakning, forts.";
+      if (page === 26) return "Not 9 Skatt pa arets resultat\nAktuell skatt 116 885\nUppskjuten skatt -\nSkatteeffekt av ej avdragsgilla kostnader 4 667";
+      return `Page ${page}`;
+    });
+    const pdfBytes = await createPdfBytesWithPageLabelsV1({
+      1: pageTexts[0]!,
+      2: pageTexts[1]!,
+      15: pageTexts[14]!,
+      16: pageTexts[15]!,
+      17: pageTexts[16]!,
+      26: pageTexts[25]!,
+    });
+
+    const result = await executeAnnualReportAnalysisV1({
+      apiKey: "test-key",
+      config: getConfigOrThrowV1(),
+      document: createPreparedPdfDocumentV1({
+        classification: "extractable_text_pdf",
+        pdfBytes,
+        pageCount: 32,
+        pageTexts,
+      }),
+      generateId: () => "run-tax-expense-note",
+      generatedAt: "2026-03-12T11:00:00.000Z",
+      modelConfig: {
+        fastModel: "gemini-2.5-flash",
+        thinkingModel: "gemini-2.5-pro",
+      },
+      runtimeMode: "ai_overdrive",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.extraction.taxDeep.taxExpenseContext).toMatchObject({
+      currentTax: { value: 116885 },
+      deferredTax: { value: 0 },
+    });
+    expect(result.extraction.taxDeep.taxExpenseContext?.notes).toEqual(
+      expect.arrayContaining([
+        "Skatteeffekter av ej avdragsgilla kostnader och tidigare ars justeringar framgar av skattenoten.",
+      ]),
+    );
+    expect(findMockUserInstructionV1("Stage: tax expense note extraction.")).toContain(
+      "[BlockId not-9-26]",
+    );
+  });
+
+  it("keeps tax-note and fixed-asset note coverage when AI note enrichment times out", async () => {
+    generateGeminiStructuredOutputMock.mockReset();
+    generateGeminiStructuredOutputMock.mockImplementation(async (input) => {
+      const userInstruction = String(input?.request?.userInstruction ?? "");
+      if (userInstruction.includes("Stage: core facts extraction.")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_core_facts_v1",
+            fields: {
+              companyName: { status: "extracted", confidence: 0.99, valueText: "Acme AB" },
+              organizationNumber: { status: "extracted", confidence: 0.99, valueText: "556677-8899" },
+              fiscalYearStart: { status: "extracted", confidence: 0.99, valueText: "2025-01-01", normalizedValue: "2025-01-01" },
+              fiscalYearEnd: { status: "extracted", confidence: 0.99, valueText: "2025-12-31", normalizedValue: "2025-12-31" },
+              accountingStandard: { status: "extracted", confidence: 0.99, valueText: "K3", normalizedValue: "K3" },
+              profitBeforeTax: { status: "extracted", confidence: 0.99, valueText: "500", normalizedValue: 500 },
+            },
+            taxSignals: [],
+            documentWarnings: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: createCombinedExtractionOutputV1(),
+        };
+      }
+      if (
+        userInstruction.includes("Stage: tax expense note extraction.") ||
+        userInstruction.includes("Stage: relevant tax-note locator.")
+      ) {
+        return {
+          ok: false,
+          error: {
+            code: "MODEL_EXECUTION_FAILED",
+            message: "Gemini request timed out after 15000ms.",
+            context: {},
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
+            depreciationContext: { assetAreas: [], evidence: [] },
+            assetMovements: { lines: [], evidence: [] },
+            reserveContext: { movements: [], notes: [], evidence: [] },
+            taxExpenseContext: { notes: [], evidence: [] },
+            evidence: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: tax notes (finance & other).")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
+            netInterestContext: { notes: [], evidence: [] },
+            pensionContext: { flags: [], notes: [], evidence: [] },
+            leasingContext: { flags: [], notes: [], evidence: [] },
+            groupContributionContext: { flags: [], notes: [], evidence: [] },
+            shareholdingContext: { flags: [], notes: [], evidence: [] },
+            evidence: [],
+          },
+        };
+      }
+
+      return {
+        ok: false,
+        error: {
+          code: "MODEL_EXECUTION_FAILED",
+          message: `Unexpected stage for test: ${userInstruction.slice(0, 80)}`,
+          context: {},
+        },
+      };
+    });
+
+    const pageTexts = Array.from({ length: 32 }, (_, index) => {
+      const page = index + 1;
+      if (page === 1) return "Acme AB\nOrg.nr 556677-8899\nArsredovisning";
+      if (page === 2) return "Rakenskapsar 2025-01-01 - 2025-12-31\nK3\nInnehall\nResultatrakning 15\nBalansrakning 16-17\nBokslutskommentarer 20-23\nNot 9 Skatt pa arets resultat 26\nNot 12 Programvaror 27\nUpplysningar till enskilda poster 24-31";
+      if (page === 15) return "Resultatrakning\nResultat fore skatt 500";
+      if (page === 16) return "Balansrakning\nKassa och bank 200";
+      if (page === 17) return "Balansrakning, forts.";
+      if (page === 26) return "Not 9 Skatt pa arets resultat\nAktuell skatt 116 885\nUppskjuten skatt -\nSkatteeffekt av ej avdragsgilla kostnader 4 667\nArets redovisade skattekostnad 116 839\nNot 12 Programvaror\nProgramvaror skrivs av med 10 procent per ar.\nUtgaende planenligt restvarde 49 004";
+      if (page === 27) return "Not 12 Programvaror\nProgramvaror skrivs av med 10 procent per ar.\nUtgaende planenligt restvarde 49 004";
+      return `Page ${page}`;
+    });
+    const pdfBytes = await createPdfBytesWithPageLabelsV1({
+      1: pageTexts[0]!,
+      2: pageTexts[1]!,
+      15: pageTexts[14]!,
+      16: pageTexts[15]!,
+      17: pageTexts[16]!,
+      26: pageTexts[25]!,
+      27: pageTexts[26]!,
+    });
+
+    const result = await executeAnnualReportAnalysisV1({
+      apiKey: "test-key",
+      config: getConfigOrThrowV1(),
+      document: createPreparedPdfDocumentV1({
+        classification: "extractable_text_pdf",
+        pdfBytes,
+        pageCount: 32,
+        pageTexts,
+      }),
+      generateId: () => "run-deterministic-note-fallback",
+      generatedAt: "2026-03-12T15:45:00.000Z",
+      modelConfig: {
+        fastModel: "gemini-2.5-flash",
+        thinkingModel: "gemini-2.5-pro",
+      },
+      runtimeMode: "ai_overdrive",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.extraction.taxDeep.taxExpenseContext).toMatchObject({
+      currentTax: { value: 116885 },
+      deferredTax: { value: 0 },
+      totalTaxExpense: { value: 116839 },
+    });
+    expect(result.extraction.taxDeep.taxExpenseContext?.notes).toEqual(
+      expect.arrayContaining([
+        "Aktuell skatt 116 885",
+        "Uppskjuten skatt -",
+      ]),
+    );
+    expect(result.extraction.taxDeep.relevantNotes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          category: "tax_expense",
+          noteReference: "Not 9",
+        }),
+        expect.objectContaining({
+          category: "fixed_assets_depreciation",
+          noteReference: "Not 12",
+        }),
+      ]),
+    );
+    expect(result.extraction.taxDeep.depreciationContext.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          snippet: "Programvaror skrivs av med 10 procent per ar.",
+          page: 26,
+        }),
+      ]),
+    );
+    expect(result.extraction.documentWarnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("degraded.tax_expense_note.unavailable"),
+        expect.stringContaining("degraded.relevant_notes.unavailable"),
+      ]),
+    );
+  });
+
+  it("skips statement AI follow-up in overdrive when deterministic extractable-PDF statements are already strong", async () => {
+    generateGeminiStructuredOutputMock.mockReset();
+    generateGeminiStructuredOutputMock.mockImplementation(async (input) => {
+      const userInstruction = String(input?.request?.userInstruction ?? "");
+      if (userInstruction.includes("Stage: core facts extraction.")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_core_facts_v1",
+            fields: {
+              companyName: { status: "extracted", confidence: 0.99, valueText: "Deloitte AB" },
+              organizationNumber: { status: "extracted", confidence: 0.99, valueText: "556271-5309" },
+              fiscalYearStart: { status: "extracted", confidence: 0.99, valueText: "2024-06-01", normalizedValue: "2024-06-01" },
+              fiscalYearEnd: { status: "extracted", confidence: 0.99, valueText: "2025-05-31", normalizedValue: "2025-05-31" },
+              accountingStandard: { status: "extracted", confidence: 0.99, valueText: "K3", normalizedValue: "K3" },
+              profitBeforeTax: { status: "extracted", confidence: 0.99, valueText: "545286", normalizedValue: 545286 },
+            },
+            taxSignals: [],
+            documentWarnings: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: financial statements extraction.")) {
+        return {
+          ok: false,
+          error: {
+            code: "MODEL_EXECUTION_FAILED",
+            message: "statement stage should have been skipped by deterministic rebuild",
+            context: {},
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
+        return {
+          ok: false,
+          error: {
+            code: "MODEL_EXECUTION_FAILED",
+            message: "force targeted statements path",
+            context: {},
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
+            depreciationContext: { assetAreas: [], evidence: [] },
+            assetMovements: { lines: [], evidence: [] },
+            reserveContext: { movements: [], notes: [], evidence: [] },
+            taxExpenseContext: { notes: [], evidence: [] },
+            evidence: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: tax notes (finance & other).")) {
+        return {
+          ok: true,
+          model: "gemini-2.5-flash",
+          output: {
+            schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
+            netInterestContext: { notes: [], evidence: [] },
+            pensionContext: { flags: [], notes: [], evidence: [] },
+            leasingContext: { flags: [], notes: [], evidence: [] },
+            groupContributionContext: { flags: [], notes: [], evidence: [] },
+            shareholdingContext: { flags: [], notes: [], evidence: [] },
+            evidence: [],
+          },
+        };
+      }
+
+      return {
+        ok: false,
+        error: {
+          code: "MODEL_EXECUTION_FAILED",
+          message: `Unexpected stage for test: ${userInstruction.slice(0, 80)}`,
+          context: {},
+        },
+      };
+    });
+
+    const page15 = [
+      "Resultaträkning",
+      "Belopp i KSEK",
+      "Nettoomsättning 3 989 355 4 381 698",
+      "Övriga rörelseintäkter 101 234 60 363",
+      "Övriga externa kostnader -1 794 747 -2 112 102",
+      "Personalkostnader -1 736 302 -1 678 844",
+      "Resultat från andelar i koncernföretag - 137 828",
+      "Övriga ränteintäkter och liknande resultatposter 12 924 9 873",
+      "Räntekostnader och liknande resultatposter -2 477 -2 704",
+      "Skatt på årets resultat -116 839 -137 161",
+      "Årets resultat 428 447 634 313",
+    ].join("\n");
+    const page16 = [
+      "Balansräkning",
+      "Tillgångar",
+      "Programvaror 49 004 33 174",
+      "Byggnader och mark 115 117",
+      "Inventarier 11 669 12 229",
+      "Datorer 15 572 22 132",
+      "Förbättringsutgifter på annans fastighet 21 212 -",
+      "Andelar i koncernföretag 1 004 120",
+      "Andelar i intresseföretag 126 126",
+      "Andra långfristiga värdepappersinnehav 1 353 1 353",
+      "Fordringar hos koncernföretag 53 742 51 265",
+      "Kundfordringar 616 185 623 808",
+      "Övriga fordringar 878 216",
+      "Kassa och bank 301 521 504 292",
+    ].join("\n");
+    const page17 = [
+      "Eget kapital och skulder",
+      "Aktiekapital 3 387 3 387",
+      "Reservfond 3 523 3 523",
+      "Balanserat resultat 236 5",
+      "Årets resultat 428 447 634 313",
+      "Obeskattade reserver 8 000 -",
+      "Övriga långfristiga skulder 37 429 -",
+      "Leverantörsskulder 86 969 53 712",
+      "Skulder till koncernföretag 159 102 202 329",
+      "Övriga kortfristiga skulder 142 664 121 112",
+      "Upplupna kostnader och förutbetalda intäkter 412 711 406 990",
+    ].join("\n");
+
+    const pageTexts = Array.from({ length: 32 }, (_, index) => {
+      const page = index + 1;
+      if (page === 1) return "Deloitte AB\nOrg.nr 556271-5309\nÅrsredovisning";
+      if (page === 2) {
+        return "Räkenskapsår 2024-06-01 - 2025-05-31\nUpprättad enligt regelverk: K3\nInnehåll\nResultaträkning 15\nBalansräkning 16-17\nNoter 20-31";
+      }
+      if (page === 15) return page15;
+      if (page === 16) return page16;
+      if (page === 17) return page17;
+      if (page >= 20 && page <= 31) {
+        return `Not ${page - 11}\n${"Lorem ipsum ".repeat(250)}`;
+      }
+      return `Page ${page}`;
+    });
+
+    const pdfBytes = await createPdfBytesWithPageLabelsV1({
+      1: "Deloitte AB\nOrg.nr 556271-5309\nÅrsredovisning",
+      2: "Räkenskapsår 2024-06-01 - 2025-05-31\nUpprättad enligt regelverk: K3\nInnehåll",
+      15: page15,
+      16: page16,
+      17: page17,
+      20: "Not 9 Skatt på årets resultat",
+      21: "Not 10 Programvaror",
+      22: "Not 11 Byggnader och mark",
+      23: "Not 12 Inventarier",
+      24: "Not 13 Datorer",
+      25: "Not 14 Förbättringsutgifter på annans fastighet",
+      26: "Not 15 Andelar i koncernföretag",
+      27: "Not 16 Andelar i intresseföretag",
+      28: "Not 17 Andra långfristiga värdepappersinnehav",
+      29: "Not 18 Fordringar",
+      30: "Not 19 Kassa och bank",
+      31: "Not 20 Övriga långfristiga skulder",
+    });
+
+    const result = await executeAnnualReportAnalysisV1({
+      apiKey: "test-key",
+      config: getConfigOrThrowV1(),
+      document: createPreparedPdfDocumentV1({
+        classification: "extractable_text_pdf",
+        pdfBytes,
+        pageCount: 32,
+        pageTexts,
+      }),
+      generateId: () => "run-deterministic-statement-skip",
+      generatedAt: "2026-03-12T10:00:00.000Z",
+      modelConfig: {
+        fastModel: "gemini-2.5-flash",
+        thinkingModel: "gemini-2.5-pro",
+      },
+      runtimeMode: "ai_overdrive",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(findMockUserInstructionV1("Stage: financial statements extraction.")).toBe("");
+    expect(result.extraction.documentWarnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "statements.skipped=deterministic_extractable_pdf_rebuild",
+        ),
+      ]),
+    );
+    expect(result.extraction.taxDeep.ink2rExtracted.statementUnit).toBe("ksek");
+    expect(result.extraction.taxDeep.ink2rExtracted.incomeStatement.length).toBeGreaterThanOrEqual(8);
+    expect(result.extraction.taxDeep.ink2rExtracted.balanceSheet.length).toBeGreaterThanOrEqual(12);
   });
 
   it("keeps scanned PDFs on PDF-first stages with longer request budgets", async () => {

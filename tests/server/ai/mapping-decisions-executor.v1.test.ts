@@ -21,6 +21,22 @@ type ProjectionRow = {
   accountName: string;
 };
 
+function parseAnnualReportContextFromInstruction(userInstruction: string): Record<string, unknown> | null {
+  const startMarker = "Annual report mapping context:";
+  const endMarker = "Rows to classify:";
+  const startIndex = userInstruction.indexOf(startMarker);
+  const endIndex = userInstruction.indexOf(endMarker);
+  if (startIndex < 0 || endIndex < 0 || endIndex <= startIndex) {
+    return null;
+  }
+
+  const contextJson = userInstruction
+    .slice(startIndex + startMarker.length, endIndex)
+    .trim();
+
+  return JSON.parse(contextJson) as Record<string, unknown>;
+}
+
 function parseRowsFromInstruction(userInstruction: string): ProjectionRow[] {
   const marker = "Rows to classify:";
   const markerIndex = userInstruction.indexOf(marker);
@@ -303,5 +319,205 @@ describe("mapping decisions executor reliability v1", () => {
     );
     expect(fallbackRows.length).toBeGreaterThan(0);
     expect(result.mapping.summary.fallbackDecisions).toBeGreaterThan(0);
+  });
+
+  it("passes the expanded structured annual-report mapping context into the mapping prompt", async () => {
+    const configResult = loadMappingDecisionsModuleConfigV1();
+    expect(configResult.ok).toBe(true);
+    if (!configResult.ok) {
+      return;
+    }
+
+    vi.mocked(generateGeminiStructuredOutputV1).mockResolvedValue({
+      ok: true,
+      model: "gemini-test",
+      output: {
+        schemaVersion: "mapping_ai_proposal_v1",
+        decisions: [
+          {
+            rowId: "tb-row-1",
+            selectedCategoryCode: "123200",
+            confidence: 0.91,
+            reviewFlag: false,
+            policyRuleReference: "mapping.ai.rule.test.v1",
+            rationale: "Used annual-report context.",
+          },
+          {
+            rowId: "tb-row-2",
+            selectedCategoryCode: "698200",
+            confidence: 0.91,
+            reviewFlag: false,
+            policyRuleReference: "mapping.ai.rule.test.v1",
+            rationale: "Used annual-report context.",
+          },
+          {
+            rowId: "tb-row-3",
+            selectedCategoryCode: "607200",
+            confidence: 0.91,
+            reviewFlag: false,
+            policyRuleReference: "mapping.ai.rule.test.v1",
+            rationale: "Used annual-report context.",
+          },
+          {
+            rowId: "tb-row-4",
+            selectedCategoryCode: "397000",
+            confidence: 0.91,
+            reviewFlag: false,
+            policyRuleReference: "mapping.ai.rule.test.v1",
+            rationale: "Used annual-report context.",
+          },
+        ],
+      },
+    });
+
+    const annualReportContext = {
+      schemaVersion: "annual_report_mapping_context_v1" as const,
+      incomeStatementAnchors: [
+        {
+          code: "profit_before_tax",
+          label: "Resultat fore skatt",
+          currentYearValue: 500000,
+          evidence: [],
+        },
+      ],
+      balanceSheetAnchors: [
+        {
+          code: "leasehold_improvements",
+          label: "Forbattringsutgifter pa annans fastighet",
+          currentYearValue: 125000,
+          evidence: [],
+        },
+      ],
+      depreciationContext: {
+        assetAreas: [
+          {
+            assetArea: "Leasehold improvements",
+            openingCarryingAmount: 100000,
+            acquisitions: 50000,
+            depreciationForYear: 25000,
+            closingCarryingAmount: 125000,
+            evidence: [],
+          },
+        ],
+        evidence: [],
+      },
+      assetMovements: {
+        lines: [
+          {
+            assetArea: "Machinery and equipment",
+            openingCarryingAmount: 200000,
+            depreciationForYear: 40000,
+            closingCarryingAmount: 160000,
+            evidence: [],
+          },
+        ],
+        evidence: [],
+      },
+      netInterestContext: {
+        interestExpense: {
+          value: 12000,
+          evidence: [],
+        },
+        notes: ["Interest expense disclosed in finance note."],
+        evidence: [],
+      },
+      reserveContext: {
+        movements: [],
+        notes: ["Untaxed reserves disclosed."],
+        evidence: [],
+      },
+      pensionContext: {
+        flags: [],
+        notes: [],
+        evidence: [],
+      },
+      taxExpenseContext: {
+        currentTax: {
+          value: 11000,
+          evidence: [],
+        },
+        deferredTax: {
+          value: 3000,
+          evidence: [],
+        },
+        notes: ["Deferred tax note captured from annual report."],
+        evidence: [],
+      },
+      leasingContext: {
+        flags: [],
+        notes: ["Lease commitments disclosed."],
+        evidence: [],
+      },
+      groupContributionContext: {
+        flags: [],
+        notes: [],
+        evidence: [],
+      },
+      shareholdingContext: {
+        flags: [],
+        notes: ["Group-company shares disclosed."],
+        evidence: [],
+      },
+      priorYearComparatives: [],
+      selectedRiskFindings: [
+        {
+          area: "depreciation_differences",
+          title: "Depreciation note present",
+          severity: "medium" as const,
+          rationale: "Annual report includes fixed-asset note disclosures.",
+          policyRuleReference: "mapping.test.risk.v1",
+          evidence: [],
+        },
+      ],
+      missingInformation: ["No building note was found in the annual report."],
+    };
+
+    const result = await executeMappingDecisionsModelV1({
+      apiKey: "test-key",
+      annualReportContext,
+      config: configResult.config,
+      generateId: () => "run-context",
+      generatedAt: "2026-03-12T10:00:00.000Z",
+      modelConfig: { fastModel: "fast", thinkingModel: "thinking" },
+      policyVersion: "mapping-ai.v1",
+      trialBalance: buildTrialBalance(),
+    });
+
+    expect(result.ok).toBe(true);
+    const instruction = String(
+      vi.mocked(generateGeminiStructuredOutputV1).mock.calls[0]?.[0]?.request
+        ?.userInstruction ?? "",
+    );
+    const serializedContext = parseAnnualReportContextFromInstruction(instruction);
+    expect(serializedContext).toMatchObject({
+      schemaVersion: "annual_report_mapping_context_v1",
+      depreciationContext: {
+        assetAreas: [
+          expect.objectContaining({
+            assetArea: "Leasehold improvements",
+          }),
+        ],
+      },
+      assetMovements: {
+        lines: [
+          expect.objectContaining({
+            assetArea: "Machinery and equipment",
+          }),
+        ],
+      },
+      taxExpenseContext: {
+        deferredTax: {
+          value: 3000,
+        },
+      },
+      balanceSheetAnchors: [
+        expect.objectContaining({
+          code: "leasehold_improvements",
+        }),
+      ],
+      missingInformation: [
+        "No building note was found in the annual report.",
+      ],
+    });
   });
 });

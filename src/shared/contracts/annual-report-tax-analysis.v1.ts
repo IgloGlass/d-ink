@@ -67,6 +67,25 @@ export type ActiveAnnualReportTaxAnalysisRefV1 = z.infer<
   typeof ActiveAnnualReportTaxAnalysisRefV1Schema
 >;
 
+export const RunAnnualReportTaxAnalysisRequestV1Schema = z
+  .object({
+    tenantId: UuidV4Schema,
+    workspaceId: UuidV4Schema,
+    expectedActiveExtraction: z
+      .object({
+        artifactId: UuidV4Schema,
+        version: z.number().int().positive(),
+        schemaVersion: z.literal("annual_report_extraction_v1").optional(),
+      })
+      .strict()
+      .optional(),
+    requestedByUserId: UuidV4Schema.optional(),
+  })
+  .strict();
+export type RunAnnualReportTaxAnalysisRequestV1 = z.infer<
+  typeof RunAnnualReportTaxAnalysisRequestV1Schema
+>;
+
 export const AnnualReportTaxAnalysisFailureV1Schema = z
   .object({
     ok: z.literal(false),
@@ -75,7 +94,10 @@ export const AnnualReportTaxAnalysisFailureV1Schema = z
         code: z.enum([
           "INPUT_INVALID",
           "WORKSPACE_NOT_FOUND",
+          "EXTRACTION_NOT_FOUND",
+          "STATE_CONFLICT",
           "TAX_ANALYSIS_NOT_FOUND",
+          "PROCESSING_RUN_UNAVAILABLE",
           "PERSISTENCE_ERROR",
         ]),
         message: z.string().trim().min(1),
@@ -87,6 +109,28 @@ export const AnnualReportTaxAnalysisFailureV1Schema = z
   .strict();
 export type AnnualReportTaxAnalysisFailureV1 = z.infer<
   typeof AnnualReportTaxAnalysisFailureV1Schema
+>;
+
+export const RunAnnualReportTaxAnalysisSuccessV1Schema = z
+  .object({
+    ok: z.literal(true),
+    active: ActiveAnnualReportTaxAnalysisRefV1Schema,
+    taxAnalysis: AnnualReportTaxAnalysisPayloadV1Schema,
+  })
+  .strict();
+export type RunAnnualReportTaxAnalysisSuccessV1 = z.infer<
+  typeof RunAnnualReportTaxAnalysisSuccessV1Schema
+>;
+
+export const RunAnnualReportTaxAnalysisResultV1Schema = z.discriminatedUnion(
+  "ok",
+  [
+    RunAnnualReportTaxAnalysisSuccessV1Schema,
+    AnnualReportTaxAnalysisFailureV1Schema,
+  ],
+);
+export type RunAnnualReportTaxAnalysisResultV1 = z.infer<
+  typeof RunAnnualReportTaxAnalysisResultV1Schema
 >;
 
 export const GetActiveAnnualReportTaxAnalysisResultV1Schema =
@@ -114,4 +158,10 @@ export function parseGetActiveAnnualReportTaxAnalysisResultV1(
   input: unknown,
 ): GetActiveAnnualReportTaxAnalysisResultV1 {
   return GetActiveAnnualReportTaxAnalysisResultV1Schema.parse(input);
+}
+
+export function parseRunAnnualReportTaxAnalysisResultV1(
+  input: unknown,
+): RunAnnualReportTaxAnalysisResultV1 {
+  return RunAnnualReportTaxAnalysisResultV1Schema.parse(input);
 }

@@ -71,6 +71,39 @@ export type AnnualReportEvidenceReferenceV1 = z.infer<
   typeof AnnualReportEvidenceReferenceV1Schema
 >;
 
+export const AnnualReportRelevantNoteCategoryV1Schema = z.enum([
+  "fixed_assets_depreciation",
+  "interest",
+  "pension",
+  "tax_expense",
+  "reserve",
+  "leasing",
+  "group_contributions",
+  "shareholdings_dividends",
+  "provisions_contingencies",
+  "related_party_intragroup",
+  "restructuring_mergers",
+  "deferred_tax_loss_carryforwards",
+  "impairments_write_downs",
+]);
+export type AnnualReportRelevantNoteCategoryV1 = z.infer<
+  typeof AnnualReportRelevantNoteCategoryV1Schema
+>;
+
+export const AnnualReportRelevantNoteV1Schema = z
+  .object({
+    category: AnnualReportRelevantNoteCategoryV1Schema,
+    title: z.string().trim().min(1).optional(),
+    noteReference: z.string().trim().min(1).optional(),
+    pages: z.array(z.number().int().positive()).default([]),
+    notes: z.array(z.string().trim().min(1)).default([]),
+    evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
+  })
+  .strict();
+export type AnnualReportRelevantNoteV1 = z.infer<
+  typeof AnnualReportRelevantNoteV1Schema
+>;
+
 export const AnnualReportStatementLineV1Schema = z
   .object({
     code: z.string().trim().min(1),
@@ -238,6 +271,7 @@ export const AnnualReportTaxDeepExtractionV1Schema = z
         evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
       })
       .strict(),
+    relevantNotes: z.array(AnnualReportRelevantNoteV1Schema).optional(),
     priorYearComparatives: z
       .array(AnnualReportPriorYearComparativeV1Schema)
       .default([]),
