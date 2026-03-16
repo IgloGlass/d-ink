@@ -18,6 +18,7 @@ describe("tax adjustment routing contracts v1", () => {
           rowNumber: 2,
         },
       },
+      rowResolutionStatus: "matched",
       sourceAccountNumber: "6072",
       accountNumber: "6072",
       accountName: "Representation",

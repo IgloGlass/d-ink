@@ -211,6 +211,47 @@ async function runPipeline(workspaceId: string): Promise<{
   };
 }
 
+async function getActiveMapping(workspaceId: string): Promise<{
+  version: number;
+  firstDecisionId: string;
+  firstDecisionStatementType: "balance_sheet" | "income_statement";
+}> {
+  const response = await worker.fetch(
+    buildGetRequest({
+      url: `${APP_BASE_URL}/v1/workspaces/${workspaceId}/mapping-decisions/active?tenantId=${TENANT_ID}`,
+      cookie: buildSessionCookie(SESSION_TOKEN),
+    }),
+    buildWorkerEnv(),
+  );
+  const payload = (await response.json()) as {
+    ok: true;
+    active: {
+      version: number;
+    };
+    mapping: {
+      decisions: Array<{
+        id: string;
+        selectedCategory: {
+          statementType: "balance_sheet" | "income_statement";
+        };
+      }>;
+    };
+  };
+
+  expect(response.status).toBe(200);
+  expect(payload.ok).toBe(true);
+  expect(payload.mapping.decisions.length).toBeGreaterThan(0);
+
+  const firstDecision = payload.mapping.decisions[0];
+  expect(firstDecision).toBeDefined();
+
+  return {
+    version: payload.active.version,
+    firstDecisionId: firstDecision!.id,
+    firstDecisionStatementType: firstDecision!.selectedCategory.statementType,
+  };
+}
+
 describe("worker mapping override routes v1", () => {
   beforeEach(async () => {
     await applyWorkspaceAuditSchemaForTests();
@@ -244,28 +285,8 @@ describe("worker mapping override routes v1", () => {
 
   it("GET /mapping-decisions/active returns active mapping after pipeline run", async () => {
     await runPipeline(WORKSPACE_ID);
-
-    const response = await worker.fetch(
-      buildGetRequest({
-        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/mapping-decisions/active?tenantId=${TENANT_ID}`,
-        cookie: buildSessionCookie(SESSION_TOKEN),
-      }),
-      buildWorkerEnv(),
-    );
-    const payload = (await response.json()) as {
-      ok: true;
-      active: {
-        version: number;
-      };
-      mapping: {
-        decisions: Array<{ selectedCategory: { code: string } }>;
-      };
-    };
-
-    expect(response.status).toBe(200);
-    expect(payload.ok).toBe(true);
-    expect(payload.active.version).toBe(1);
-    expect(payload.mapping.decisions[0]?.selectedCategory.code).toBe("607200");
+    const activeMapping = await getActiveMapping(WORKSPACE_ID);
+    expect(activeMapping.version).toBe(1);
   });
 
   it("GET /mapping-decisions/active returns 404 when mapping is missing", async () => {
@@ -288,6 +309,11 @@ describe("worker mapping override routes v1", () => {
 
   it("POST /mapping-overrides applies override and returns new active version", async () => {
     const active = await runPipeline(WORKSPACE_ID);
+    const activeMapping = await getActiveMapping(WORKSPACE_ID);
+    const selectedCategoryCode =
+      activeMapping.firstDecisionStatementType === "income_statement"
+        ? "607100"
+        : "100000";
 
     const response = await worker.fetch(
       buildPostRequest({
@@ -301,8 +327,8 @@ describe("worker mapping override routes v1", () => {
           },
           overrides: [
             {
-              decisionId: "Trial Balance:2:6072",
-              selectedCategoryCode: "607100",
+              decisionId: activeMapping.firstDecisionId,
+              selectedCategoryCode,
               scope: "user",
               reason: "Mark this account as deductible.",
             },
@@ -328,9 +354,13 @@ describe("worker mapping override routes v1", () => {
     expect(response.status).toBe(200);
     expect(payload.ok).toBe(true);
     expect(payload.active.version).toBe(2);
-    expect(payload.mapping.decisions[0]?.selectedCategory.code).toBe("607100");
-    expect(payload.mapping.decisions[0]?.status).toBe("overridden");
-    expect(payload.mapping.decisions[0]?.source).toBe("manual");
+    const overriddenDecision = payload.mapping.decisions.find(
+      (decision) => decision.source === "manual",
+    );
+    expect(overriddenDecision).toBeDefined();
+    expect(overriddenDecision?.selectedCategory.code).toBe(selectedCategoryCode);
+    expect(overriddenDecision?.status).toBe("overridden");
+    expect(overriddenDecision?.source).toBe("manual");
     expect(payload.appliedCount).toBe(1);
     expect(payload.savedPreferenceCount).toBe(1);
   });

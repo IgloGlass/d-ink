@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
 import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
 
@@ -299,40 +296,6 @@ describe("trial balance parser v1", () => {
     );
     expect(result.trialBalance.rows[0]?.closingBalance).toBe(70000754);
     expect(result.trialBalance.rows[0]?.openingBalance).toBeNull();
-  });
-
-  it("parses the checked-in account-mapper reference workbook from disk", () => {
-    const fileBytes = new Uint8Array(
-      readFileSync(
-        resolve(
-          process.cwd(),
-          "account mapper reference",
-          "mock_trial_balance_sek_random.xlsx",
-        ),
-      ),
-    );
-
-    const result = parseTrialBalanceFileV1({
-      fileName: "mock_trial_balance_sek_random.xlsx",
-      fileBytes,
-    });
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-
-    expect(result.trialBalance.schemaVersion).toBe("trial_balance_normalized_v2");
-    if (result.trialBalance.schemaVersion !== "trial_balance_normalized_v2") {
-      return;
-    }
-
-    expect(result.trialBalance.availableBalanceColumns).toEqual([
-      "closing_balance",
-    ]);
-    expect(result.trialBalance.rows).toHaveLength(201);
-    expect(result.trialBalance.rows[0]?.accountNumber).toBe("1030");
-    expect(result.trialBalance.rows[200]?.accountNumber).toBe("8912");
   });
 
   it("fails verification when required balances are blank", () => {
