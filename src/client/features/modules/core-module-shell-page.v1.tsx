@@ -36,6 +36,7 @@ import { EmptyStateV1 } from "../../components/empty-state-v1";
 import { SkeletonV1 } from "../../components/skeleton-v1";
 import { UploadDropZoneV1 } from "../../components/upload-drop-zone.v1";
 import { WorkspaceReviewPanelV1 } from "../../components/workspace-review-panel.v1";
+import { ConfirmModalV1 } from "../../components/confirm-modal-v1";
 import {
   ApiClientError,
   toUserFacingErrorMessage,
@@ -342,13 +343,7 @@ function AnnualReportValueListV1({
   );
 }
 
-function confirmActiveDataOverrideV1(message: string): boolean {
-  if (typeof window === "undefined" || typeof window.confirm !== "function") {
-    return true;
-  }
-
-  return window.confirm(message);
-}
+// confirmActiveDataOverrideV1 replaced by useConfirmModalV1 hook inside component
 
 type AnnualReportStatementDisplayEntryV1 =
   | {
@@ -1904,6 +1899,14 @@ export function CoreModuleShellPageV1() {
       tone: "info" | "success";
     }>(null);
   const annualReportForensicRailRef = useRef<HTMLElement | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const requestConfirm = (message: string, onConfirm: () => void) => {
+    setConfirmModal({ message, onConfirm });
+  };
 
   const resolvedWorkspaceId = workspaceId ?? "";
   const normalizedCoreModule =
@@ -2693,12 +2696,16 @@ export function CoreModuleShellPageV1() {
     !mappingAiEnrichmentMutation.isSuccess;
 
   const handleTrialBalanceRunV1 = () => {
-    if (
-      hasActiveMappingDecisions &&
-      !confirmActiveDataOverrideV1(
+    if (hasActiveMappingDecisions) {
+      requestConfirm(
         "Import trial balance again? This will replace the active account mapping data and current mapping review state for this workspace.",
-      )
-    ) {
+        () => {
+          mappingAiEnrichmentMutation.reset();
+          setMappingAiEnrichmentMonitor(null);
+          setMappingAiEnrichmentFeedback(null);
+          trialBalanceMutation.mutate();
+        },
+      );
       return;
     }
 
@@ -2714,12 +2721,19 @@ export function CoreModuleShellPageV1() {
       return;
     }
 
-    if (
-      activeMappingExecutionMetadata?.actualStrategy === "ai" &&
-      !confirmActiveDataOverrideV1(
+    if (activeMappingExecutionMetadata?.actualStrategy === "ai") {
+      requestConfirm(
         "Run AI account mapping again? This will replace the current AI mapping result for this workspace.",
-      )
-    ) {
+        () => {
+          setMappingAiEnrichmentFeedback(null);
+          mappingAiEnrichmentMutation.mutate({
+            expectedActiveMapping: {
+              artifactId: activeMapping.artifactId,
+              version: activeMapping.version,
+            },
+          });
+        },
+      );
       return;
     }
 
@@ -2733,16 +2747,16 @@ export function CoreModuleShellPageV1() {
   };
 
   const handleClearTrialBalanceDataV1 = () => {
-    if (
-      !hasActiveMappingDecisions ||
-      !confirmActiveDataOverrideV1(
-        "Clear account-mapping data? This will remove the active trial balance, reconciliation, mapping, and downstream tax outputs for this workspace.",
-      )
-    ) {
+    if (!hasActiveMappingDecisions) {
       return;
     }
 
-    clearTrialBalanceDataMutation.mutate();
+    requestConfirm(
+      "Clear account-mapping data? This will remove the active trial balance, reconciliation, mapping, and downstream tax outputs for this workspace.",
+      () => {
+        clearTrialBalanceDataMutation.mutate();
+      },
+    );
   };
 
   const workflowSnapshot = buildWorkflowSnapshotV1({
@@ -3161,6 +3175,9 @@ export function CoreModuleShellPageV1() {
         isSyncing={ink2Query.isPending || ink2Mutation.isPending}
         onDownloadPdf={() => downloadInk2PdfMutation.mutate()}
         onSaveOverride={(input) => ink2OverrideMutation.mutate(input)}
+        tenantId={principal.tenantId}
+        workspaceId={resolvedWorkspaceId}
+        workspaceStatus={workspace?.status}
       />
     );
   }
@@ -3232,6 +3249,17 @@ export function CoreModuleShellPageV1() {
         <div className="module-shell__main">{moduleBody}</div>
         {sidebar}
       </div>
+
+      <ConfirmModalV1
+        isOpen={confirmModal !== null}
+        title="Confirm action"
+        message={confirmModal?.message ?? ""}
+        onConfirm={() => {
+          confirmModal?.onConfirm();
+          setConfirmModal(null);
+        }}
+        onCancel={() => setConfirmModal(null)}
+      />
     </div>
   );
 }

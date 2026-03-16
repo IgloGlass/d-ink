@@ -83,4 +83,16 @@
   /* Z-Index */
   --z-header: 50;
   --z-overlay: 100;
+
+  /* V4 Semantic Surface Tokens */
+  --color-brand-deep: #046A38;
+  --color-surface-app: #F5F7FA;
+  --color-surface-panel: #FFFFFF;
+  --color-text-heading: #111827;
+  --color-text-body: #374151;
+  --color-border-subtle: #E5E7EB;
+  --color-border-input: #D1D5DB;
+  --color-ai-highlight: rgba(134, 188, 37, 0.08);
+  --shadow-float: 0 10px 30px -5px rgba(17, 24, 39, 0.08);
+  --focus-ring: 0 0 0 2px #FFFFFF, 0 0 0 4px #86BC25;
 }

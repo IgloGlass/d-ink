@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   type MouseEvent as ReactMouseEvent,
+  useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
@@ -19,8 +20,13 @@ import { SkeletonV1 } from "../../components/skeleton-v1";
 import { toUserFacingErrorMessage } from "../../lib/http/api-client";
 import type { GetActiveMappingResponseV1 } from "../../lib/http/workspace-api";
 import { applyMappingOverridesV1 } from "../../lib/http/workspace-api";
+import {
+  inlineAiCommandAdapterV1,
+  type InlineAiCommandPreviewResultV1,
+} from "../../lib/adapters/inline-ai-command-adapter.v1";
+import { useI18nV1 } from "../../lib/i18n/use-i18n.v1";
 
-const mappingGridRowHeightV1 = 68;
+const mappingGridRowHeightV1 = 40;
 const mappingGridViewportHeightV1 = 620;
 const mappingGridOverscanV1 = 8;
 
@@ -240,6 +246,126 @@ function formatCategoryOptionLabelV1(code: string, name: string): string {
   return `${code} - ${name}`;
 }
 
+type CategoryOptionV1 = { code: SilverfinTaxCategoryCodeV1; name: string };
+
+function CategoryComboboxV1({
+  categories,
+  value,
+  onChange,
+  ariaLabel,
+  className,
+}: {
+  ariaLabel: string;
+  categories: CategoryOptionV1[];
+  className?: string;
+  onChange: (code: SilverfinTaxCategoryCodeV1) => void;
+  value: SilverfinTaxCategoryCodeV1;
+}) {
+  const selected = categories.find((c) => c.code === value) ?? null;
+  const [searchText, setSearchText] = useState(
+    selected ? formatCategoryOptionLabelV1(selected.code, selected.name) : "",
+  );
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Keep display text in sync when value changes from outside
+  useEffect(() => {
+    const match = categories.find((c) => c.code === value);
+    if (match) {
+      setSearchText(formatCategoryOptionLabelV1(match.code, match.name));
+    }
+  }, [value, categories]);
+
+  // Click-outside to close
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (event: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+        // Reset display text to current value
+        const match = categories.find((c) => c.code === value);
+        if (match) {
+          setSearchText(formatCategoryOptionLabelV1(match.code, match.name));
+        }
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [isOpen, value, categories]);
+
+  const filteredCategories = useMemo(() => {
+    const normalized = searchText.trim().toLowerCase();
+    if (!normalized) return categories;
+    return categories.filter(
+      (c) =>
+        c.code.toLowerCase().includes(normalized) ||
+        c.name.toLowerCase().includes(normalized),
+    );
+  }, [categories, searchText]);
+
+  const handleSelect = useCallback(
+    (category: CategoryOptionV1) => {
+      onChange(category.code);
+      setSearchText(formatCategoryOptionLabelV1(category.code, category.name));
+      setIsOpen(false);
+    },
+    [onChange],
+  );
+
+  return (
+    <div ref={containerRef} className={`category-combobox${className ? ` ${className}` : ""}`}>
+      <input
+        type="text"
+        role="combobox"
+        aria-label={ariaLabel}
+        aria-expanded={isOpen}
+        aria-autocomplete="list"
+        className="category-combobox__input"
+        value={searchText}
+        onFocus={() => setIsOpen(true)}
+        onChange={(event) => {
+          setSearchText(event.target.value);
+          setIsOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            setIsOpen(false);
+            const match = categories.find((c) => c.code === value);
+            if (match) {
+              setSearchText(
+                formatCategoryOptionLabelV1(match.code, match.name),
+              );
+            }
+          } else if (event.key === "Enter" && filteredCategories.length > 0) {
+            handleSelect(filteredCategories[0]);
+          }
+        }}
+      />
+      {isOpen && filteredCategories.length > 0 ? (
+        <ul className="category-combobox__list" role="listbox">
+          {filteredCategories.slice(0, 12).map((category) => (
+            <li
+              key={category.code}
+              role="option"
+              aria-selected={category.code === value}
+              className={`category-combobox__option${category.code === value ? " category-combobox__option--selected" : ""}`}
+              onMouseDown={(event) => {
+                event.preventDefault(); // prevent blur before click
+                handleSelect(category);
+              }}
+            >
+              {formatCategoryOptionLabelV1(category.code, category.name)}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 export function AccountMappingGridV1({
   tenantId,
   workspaceId,
@@ -253,11 +379,15 @@ export function AccountMappingGridV1({
   };
 }) {
   const queryClient = useQueryClient();
+  const { t } = useI18nV1();
   const [mappingViewMode, setMappingViewMode] =
     useState<MappingViewModeV1>("all");
   const [searchValue, setSearchValue] = useState("");
   const [isDetailPanelOpen, setIsDetailPanelOpen] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, MappingGridDraftV1>>({});
+  const [commandBarValue, setCommandBarValue] = useState("");
+  const [commandBarPreview, setCommandBarPreview] =
+    useState<InlineAiCommandPreviewResultV1 | null>(null);
   const [mappingScrollTop, setMappingScrollTop] = useState(0);
   const [tableViewportWidth, setTableViewportWidth] = useState(0);
   const [selectedDecisionId, setSelectedDecisionId] = useState<string | null>(
@@ -700,6 +830,61 @@ export function AccountMappingGridV1({
         </section>
       ) : null}
 
+      <section className="account-mapper__command-bar">
+        <label className="sr-only" htmlFor="mapping-ai-command">
+          {t("mapping.inlineCommandPlaceholder")}
+        </label>
+        <input
+          id="mapping-ai-command"
+          type="text"
+          className="account-mapper__command-input"
+          placeholder={t("mapping.inlineCommandPlaceholder")}
+          value={commandBarValue}
+          onChange={(event) => {
+            const value = event.target.value;
+            setCommandBarValue(value);
+            if (value.trim().length === 0) {
+              setCommandBarPreview(null);
+              return;
+            }
+            const result = inlineAiCommandAdapterV1.preview({
+              command: value,
+              selectedRowIds: selectedDecisionId ? [selectedDecisionId] : [],
+            });
+            setCommandBarPreview(result);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setCommandBarValue("");
+              setCommandBarPreview(null);
+            }
+          }}
+        />
+        {commandBarPreview !== null ? (
+          <div className="account-mapper__command-preview" role="status">
+            <span className="account-mapper__command-preview-message">
+              {commandBarPreview.previewMessage}
+            </span>
+            <span className="account-mapper__command-preview-rows">
+              {commandBarPreview.impactedRows > 0
+                ? `${commandBarPreview.impactedRows} row${commandBarPreview.impactedRows === 1 ? "" : "s"}`
+                : "All visible rows"}
+            </span>
+            <ButtonV1
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                // Adapter is a stub — reset command bar after "apply"
+                setCommandBarValue("");
+                setCommandBarPreview(null);
+              }}
+            >
+              {t("mapping.applyCommand")}
+            </ButtonV1>
+          </div>
+        ) : null}
+      </section>
+
       <section
         className={`account-mapper__layout${
           isDetailPanelVisible ? " account-mapper__layout--detail-open" : ""
@@ -833,36 +1018,20 @@ export function AccountMappingGridV1({
                         style={{ width: effectiveColumnWidths.category }}
                         className="account-mapper__cell"
                       >
-                        <label
-                          className="sr-only"
-                          htmlFor={`mapping-category-${row.id}`}
+                        <button
+                          type="button"
+                          aria-label={`Edit category for ${row.sourceAccountNumber} — currently ${draft.selectedCategoryCode}`}
+                          className={`account-mapper__category-chip${draftDirty ? " account-mapper__category-chip--dirty" : ""}${isSelected && isDetailPanelVisible ? " account-mapper__category-chip--active" : ""}`}
+                          onClick={() => handleShowDetailsV1(row.id)}
                         >
-                          Category for {row.sourceAccountNumber}
-                        </label>
-                        <select
-                          id={`mapping-category-${row.id}`}
-                          aria-label={`Category for ${row.sourceAccountNumber}`}
-                          className={`account-mapper__select${
-                            draftDirty ? " account-mapper__select--dirty" : ""
-                          }`}
-                          value={draft.selectedCategoryCode}
-                          onChange={(event) => {
-                            updateDraftV1(row, {
-                              selectedCategoryCode: event.target
-                                .value as SilverfinTaxCategoryCodeV1,
-                            });
-                            setSelectedDecisionId(row.id);
-                          }}
-                        >
-                          {allowedCategories.map((category) => (
-                            <option key={category.code} value={category.code}>
-                              {formatCategoryOptionLabelV1(
-                                category.code,
-                                category.name,
-                              )}
-                            </option>
-                          ))}
-                        </select>
+                          <span className="account-mapper__category-chip-code">
+                            {draft.selectedCategoryCode}
+                          </span>
+                          <span className="account-mapper__category-chip-name">
+                            {allowedCategories.find((c) => c.code === draft.selectedCategoryCode)?.name ?? ""}
+                          </span>
+                          <span className="account-mapper__category-chip-caret" aria-hidden="true">✎</span>
+                        </button>
                       </div>
 
                       <div
@@ -1053,32 +1222,23 @@ export function AccountMappingGridV1({
 
               <label className="account-mapper__field">
                 <span>Target category</span>
-                <select
-                  aria-label={`Override category for ${selectedDecision.sourceAccountNumber}`}
-                  className={`account-mapper__select${
-                    isDraftDirtyV1(selectedDecision, selectedDraft)
-                      ? " account-mapper__select--dirty"
-                      : ""
-                  }`}
+                <CategoryComboboxV1
+                  ariaLabel={`Override category for ${selectedDecision.sourceAccountNumber}`}
+                  categories={getStatementTypeCategoriesV1(
+                    selectedDecision.selectedCategory.statementType,
+                  )}
                   value={selectedDraft.selectedCategoryCode}
-                  onChange={(event) =>
+                  onChange={(code) =>
                     updateDraftV1(selectedDecision, {
-                      selectedCategoryCode: event.target
-                        .value as SilverfinTaxCategoryCodeV1,
+                      selectedCategoryCode: code,
                     })
                   }
-                >
-                  {getStatementTypeCategoriesV1(
-                    selectedDecision.selectedCategory.statementType,
-                  ).map((category) => (
-                    <option key={category.code} value={category.code}>
-                      {formatCategoryOptionLabelV1(
-                        category.code,
-                        category.name,
-                      )}
-                    </option>
-                  ))}
-                </select>
+                  className={
+                    isDraftDirtyV1(selectedDecision, selectedDraft)
+                      ? "category-combobox--dirty"
+                      : undefined
+                  }
+                />
               </label>
 
               <label className="account-mapper__field">

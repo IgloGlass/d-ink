@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 
 import {
@@ -54,6 +54,8 @@ export function AppShell({
   const queryClient = useQueryClient();
   const { activeFiscalYear, setActiveContext } = useGlobalAppContextV1();
   const [launcherOpen, setLauncherOpen] = useState(false);
+  const [fyDropdownOpen, setFyDropdownOpen] = useState(false);
+  const fyDropdownRef = useRef<HTMLDivElement>(null);
 
   const companiesQuery = useQuery({
     queryKey: ["companies", principal.tenantId],
@@ -112,6 +114,19 @@ export function AppShell({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [closeLauncher, launcherOpen, openLauncher]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (fyDropdownRef.current && !fyDropdownRef.current.contains(event.target as Node)) {
+        setFyDropdownOpen(false);
+      }
+    };
+
+    if (fyDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [fyDropdownOpen]);
 
   const allCompanies = companiesQuery.data?.companies ?? [];
   const allWorkspaces = workspacesQuery.data?.workspaces ?? [];
@@ -212,20 +227,31 @@ export function AppShell({
         </div>
 
         <div className="app-header-right">
-          <label className="app-header-select">
-            <span>Fiscal year</span>
-            <select
-              value={activeFiscalYear ?? ""}
-              onChange={(event) => handleFiscalYearChange(event.target.value)}
-              disabled={fiscalYearOptions.length === 0}
-            >
-              {fiscalYearOptions.map((fiscalYearOption) => (
-                <option key={fiscalYearOption} value={fiscalYearOption}>
-                  FY {fiscalYearOption}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="app-fy-badge" ref={fyDropdownRef}>
+            <button type="button" className="app-fy-badge__trigger" onClick={() => setFyDropdownOpen((v) => !v)}>
+              <span className="app-fy-badge__label">FY</span>
+              <span className="app-fy-badge__year">{activeFiscalYear ?? "—"}</span>
+              <span className="app-fy-badge__chevron">▾</span>
+            </button>
+            {fyDropdownOpen && fiscalYearOptions.length > 0 && (
+              <div className="app-fy-dropdown">
+                {fiscalYearOptions.map((year) => (
+                  <button
+                    key={year}
+                    type="button"
+                    className={`app-fy-dropdown__item${activeFiscalYear === year ? " app-fy-dropdown__item--active" : ""}`}
+                    onClick={() => { handleFiscalYearChange(year); setFyDropdownOpen(false); }}
+                  >
+                    FY {year}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <select className="app-language-select" value="en" onChange={() => {}}>
+            <option value="en">EN</option>
+          </select>
 
           {currentWorkspace ? <StatusPill status={currentWorkspace.status} /> : null}
 
@@ -289,6 +315,7 @@ export function AppShell({
         isOpen={launcherOpen}
         onClose={closeLauncher}
         tenantId={principal.tenantId}
+        companies={allCompanies}
       />
     </div>
   );

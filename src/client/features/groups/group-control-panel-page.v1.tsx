@@ -164,12 +164,6 @@ export function GroupControlPanelPageV1() {
                     {overview.profile.organizationNumber}
                   </p>
                 </div>
-                <div>
-                  <p className="micro-label">Registered address</p>
-                  <p className="group-profile-value">
-                    {overview.profile.registeredAddress}
-                  </p>
-                </div>
               </div>
             </CardV1>
 
