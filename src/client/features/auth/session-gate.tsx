@@ -45,6 +45,30 @@ function isLocalDevHostV1(): boolean {
   );
 }
 
+const ONLINE_DEMO_AUTO_SIGNIN_PARAM_V1 = "demo";
+const ONLINE_DEMO_AUTO_SIGNIN_STORAGE_KEY_V1 = "dink_demo_auto_signin_v1";
+
+function shouldEnableOnlineDemoAutoSigninV1(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get(ONLINE_DEMO_AUTO_SIGNIN_PARAM_V1) === "1") {
+      window.sessionStorage.setItem(ONLINE_DEMO_AUTO_SIGNIN_STORAGE_KEY_V1, "1");
+      return true;
+    }
+
+    return (
+      window.sessionStorage.getItem(ONLINE_DEMO_AUTO_SIGNIN_STORAGE_KEY_V1) ===
+      "1"
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function SessionGate() {
   const queryClient = useQueryClient();
   const location = useLocation();
@@ -64,7 +88,8 @@ export function SessionGate() {
     queryFn: fetchCurrentSessionV1,
   });
 
-  const shouldAutoDevLogin = isLocalDevHostV1();
+  const shouldAutoDevLogin =
+    isLocalDevHostV1() || shouldEnableOnlineDemoAutoSigninV1();
   const isSessionApiError =
     sessionQuery.isError && sessionQuery.error instanceof ApiClientError;
   const sessionApiError = isSessionApiError
@@ -182,7 +207,7 @@ export function SessionGate() {
         />
       ) : null}
       {!shouldAutoDevLogin ? (
-        <p>Demo auto sign-in is available only on localhost.</p>
+        <p>Demo auto sign-in is available on localhost or with `?demo=1`.</p>
       ) : null}
     </CardV1>
   );

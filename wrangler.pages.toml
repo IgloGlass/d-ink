@@ -1,0 +1,9 @@
+name = "d-ink-demo"
+compatibility_date = "2026-03-16"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "d-ink-demo"
+database_id = "ef085ed7-e620-4590-a6d1-72e7edfce068"
+migrations_dir = "src/db/migrations"

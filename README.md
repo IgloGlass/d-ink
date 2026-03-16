@@ -204,6 +204,49 @@ DEV_AUTH_DEFAULT_ROLE=Admin
 
 When enabled, the `/` route on `localhost` now auto-creates an Admin demo session (no magic-link step).
 
+## Cloudflare Pages demo deploy (same-origin API + auto demo sign-in)
+
+This repo supports a Pages deploy where static UI and `/v1/*` API run on the same origin via `functions/v1/[[route]].ts`.
+
+Production demo flow:
+
+1. Build the frontend:
+
+```bash
+pnpm run build:web
+```
+
+2. Create a Pages project once (pick your own name):
+
+```bash
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-local-node-tool.ps1 .\node_modules\wrangler\bin\wrangler.js --config wrangler.pages.toml pages project create d-ink-demo --production-branch main
+```
+
+3. Configure Pages bindings/secrets (Dashboard):
+- D1 binding: `DB`
+- R2 binding: `ANNUAL_REPORT_FILES`
+- Queue binding: `ANNUAL_REPORT_QUEUE`
+- Vars:
+  - `APP_BASE_URL=https://<your-pages-domain>`
+  - `DEV_AUTH_BYPASS_ENABLED=true`
+  - `DEV_AUTH_DEFAULT_TENANT_ID=<tenant-uuid-or-short-id>`
+  - `DEV_AUTH_DEFAULT_EMAIL=<demo-admin-email>`
+  - `DEV_AUTH_DEFAULT_ROLE=Admin`
+
+4. Deploy:
+
+```bash
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-local-node-tool.ps1 .\node_modules\wrangler\bin\wrangler.js --config wrangler.pages.toml pages deploy dist --project-name d-ink-demo --branch main
+```
+
+5. Open the demo with auto sign-in enabled:
+
+```text
+https://<your-pages-domain>/?demo=1
+```
+
+`?demo=1` enables the same auto admin-session behavior used locally for the current browser session.
+
 ## Trial balance template
 
 - Static download path: `/templates/trial-balance-template-v1.xlsx`
