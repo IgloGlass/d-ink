@@ -17,7 +17,6 @@ export type GroupControlPanelDataV1 = {
   profile: {
     legalName: string;
     organizationNumber: string;
-    registeredAddress: string;
   };
   stageSummary: Array<{
     label: string;
@@ -54,9 +53,8 @@ export const groupControlPanelAdapterV1: GroupControlPanelAdapterV1 = {
     return {
       groupId,
       profile: {
-        legalName: "Nordic Group AB",
-        organizationNumber: "556000-0000",
-        registeredAddress: "Sveavagen 10, 111 57 Stockholm",
+        legalName: companyRows.length === 1 ? companyRows[0].companyName : `Group (${companyRows.length} companies)`,
+        organizationNumber: companyRows.length === 1 ? companyRows[0].organizationNumber : "Multiple",
       },
       companies: companyRows,
       stageSummary: [

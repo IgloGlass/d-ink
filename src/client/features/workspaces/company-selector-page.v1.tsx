@@ -8,6 +8,7 @@ import { CardV1 } from "../../components/card-v1";
 import { StatusPill } from "../../components/status-pill";
 import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
 import { SkeletonV1 } from "../../components/skeleton-v1";
+import { useI18nV1 } from "../../lib/i18n/use-i18n.v1";
 import {
   buildFiscalYearOptionsV1,
   deriveFiscalYearRangeForSelectionV1,
@@ -75,6 +76,7 @@ export function CompanySelectorPageV1() {
   const principal = useRequiredSessionPrincipalV1();
   const tenantId = principal.tenantId;
   const { activeFiscalYear, setActiveContext } = useGlobalAppContextV1();
+  const { t } = useI18nV1();
   const fiscalYearResolution = resolveFiscalYearKeyV1(activeFiscalYear);
   const createCompanyFiscalYearKey = fiscalYearResolution.fiscalYearKey;
 
@@ -292,13 +294,12 @@ export function CompanySelectorPageV1() {
     <div className="workspace-landing">
       <section className="workspace-landing__hero">
         <div>
-          <div className="workspace-landing__eyebrow">Company landing</div>
+          <div className="workspace-landing__eyebrow">{t("module.annualReport")}</div>
           <h1 className="workspace-landing__title">
-            Search companies and open the workspace for the selected fiscal year.
+            {t("workspace.selector.title")}
           </h1>
           <p className="workspace-landing__copy">
-            Start with the client list. After you open a company, you will see
-            the four core modules and begin with Annual Report Analysis.
+            {t("workspace.selector.subtitle")}
           </p>
         </div>
         <ButtonV1
@@ -321,7 +322,7 @@ export function CompanySelectorPageV1() {
           type="text"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search by legal name or organization number"
+          placeholder={t("workspace.selector.search")}
           className="workspace-search-input"
         />
       </section>
@@ -388,101 +389,92 @@ export function CompanySelectorPageV1() {
           </div>
         </div>
 
-        <div className="workspace-list">
-          {companyQuery.isLoading || workspaceQuery.isLoading ? (
-            <div className="workspace-list__loading">
-              <SkeletonV1 height={88} />
-              <SkeletonV1 height={88} />
-              <SkeletonV1 height={88} />
-            </div>
-          ) : filteredCompanies.length === 0 ? (
-            <div className="workspace-empty-state">
-              {seedLocalDemoMutation.isPending && isLocalDevHostV1()
-                ? "Preparing local test company..."
-                : "No companies matched the current search."}
-            </div>
-          ) : (
-            filteredCompanies.map((company) => {
-              const workspace = resolveWorkspaceForCompanyAndFiscalYearV1({
-                companyId: company.id,
-                fiscalYearKey: activeFiscalYear,
-                workspaces: workspaceQuery.data?.workspaces ?? [],
-              });
-              const openExistingWorkspace = () => {
-                if (!workspace) {
-                  return;
-                }
-                openWorkspaceV1({
-                  fiscalYear: workspace.fiscalYearEnd.slice(0, 4),
-                  workspaceId: workspace.id,
+        {companyQuery.isLoading || workspaceQuery.isLoading ? (
+          <div className="workspace-list__loading">
+            <SkeletonV1 height={88} />
+            <SkeletonV1 height={88} />
+            <SkeletonV1 height={88} />
+          </div>
+        ) : filteredCompanies.length === 0 ? (
+          <div className="workspace-empty-state">
+            {seedLocalDemoMutation.isPending && isLocalDevHostV1()
+              ? "Preparing local test company..."
+              : "No companies matched the current search."}
+          </div>
+        ) : (
+          <table className="company-table">
+            <thead>
+              <tr>
+                <th>Company</th>
+                <th>Org. number</th>
+                <th>Fiscal year</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredCompanies.map((company) => {
+                const workspace = resolveWorkspaceForCompanyAndFiscalYearV1({
+                  companyId: company.id,
+                  fiscalYearKey: activeFiscalYear,
+                  workspaces: workspaceQuery.data?.workspaces ?? [],
                 });
-              };
+                const openExistingWorkspace = () => {
+                  if (!workspace) {
+                    return;
+                  }
+                  openWorkspaceV1({
+                    fiscalYear: workspace.fiscalYearEnd.slice(0, 4),
+                    workspaceId: workspace.id,
+                  });
+                };
 
-              return (
-                <div key={company.id} className="workspace-company-card">
-                  {workspace ? (
-                    <button
-                      type="button"
-                      className="workspace-company-card__body-button"
-                      onClick={openExistingWorkspace}
-                    >
-                      <div className="workspace-company-card__title">
+                return (
+                  <tr key={company.id} className="company-table__row">
+                    <td className="company-table__cell company-table__cell--name">
+                      <button type="button" onClick={openExistingWorkspace}>
                         {company.legalName}
-                      </div>
-                      <div className="workspace-company-card__meta">
-                        {formatOrganizationNumberV1(company.organizationNumber)}
-                      </div>
-                      <div className="workspace-company-card__meta">
-                        Default fiscal year:{" "}
-                        {formatFiscalYearLabelV1({
-                          fiscalYearStart: company.defaultFiscalYearStart,
-                          fiscalYearEnd: company.defaultFiscalYearEnd,
-                        })}
-                      </div>
-                    </button>
-                  ) : (
-                    <div className="workspace-company-card__body">
-                      <div className="workspace-company-card__title">
-                        {company.legalName}
-                      </div>
-                      <div className="workspace-company-card__meta">
-                        {formatOrganizationNumberV1(company.organizationNumber)}
-                      </div>
-                      <div className="workspace-company-card__meta">
-                        Default fiscal year:{" "}
-                        {formatFiscalYearLabelV1({
-                          fiscalYearStart: company.defaultFiscalYearStart,
-                          fiscalYearEnd: company.defaultFiscalYearEnd,
-                        })}
-                      </div>
-                    </div>
-                  )}
-                  <div className="workspace-company-card__actions">
-                    {workspace ? (
-                      <>
+                      </button>
+                    </td>
+                    <td className="company-table__cell company-table__cell--mono">
+                      {formatOrganizationNumberV1(company.organizationNumber)}
+                    </td>
+                    <td className="company-table__cell company-table__cell--mono">
+                      {formatFiscalYearLabelV1({
+                        fiscalYearStart: company.defaultFiscalYearStart,
+                        fiscalYearEnd: company.defaultFiscalYearEnd,
+                      })}
+                    </td>
+                    <td className="company-table__cell">
+                      {workspace ? (
                         <StatusPill status={workspace.status} />
-                        <ButtonV1
-                          variant="black"
-                          onClick={openExistingWorkspace}
-                        >
-                          Open company
+                      ) : (
+                        <span className="company-table__no-workspace">
+                          No workspace
+                        </span>
+                      )}
+                    </td>
+                    <td className="company-table__cell company-table__cell--actions">
+                      {workspace ? (
+                        <ButtonV1 variant="black" onClick={openExistingWorkspace}>
+                          Open
                         </ButtonV1>
-                      </>
-                    ) : (
-                      <ButtonV1
-                        variant="primary"
-                        onClick={() => createWorkspaceMutation.mutate(company.id)}
-                        disabled={createWorkspaceMutation.isPending}
-                      >
-                        Create {activeFiscalYear ?? "selected"} workspace
-                      </ButtonV1>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
+                      ) : (
+                        <ButtonV1
+                          variant="primary"
+                          onClick={() => createWorkspaceMutation.mutate(company.id)}
+                          disabled={createWorkspaceMutation.isPending}
+                        >
+                          Create workspace
+                        </ButtonV1>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
         {createWorkspaceMutation.isError ? (
           <div className="workspace-inline-error" role="alert">
             {toUserFacingErrorMessage(createWorkspaceMutation.error)}
