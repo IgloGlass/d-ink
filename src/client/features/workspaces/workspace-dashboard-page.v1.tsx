@@ -8,6 +8,7 @@ import {
 import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
 import { CardV1 } from "../../components/card-v1";
 import { EmptyStateV1 } from "../../components/empty-state-v1";
+import { GuidanceBannerV1 } from "../../components/guidance-banner-v1";
 import { StatusPill } from "../../components/status-pill";
 import { listCompaniesByTenantV1 } from "../../lib/http/company-api";
 import {
@@ -24,6 +25,17 @@ import {
   getRecommendedNextModuleV1,
 } from "../../lib/workflow-v1";
 import { formatFiscalYearLabelV1 } from "../../lib/fiscal-year.v1";
+
+function formatVersionTimestampV1(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
 
 export function WorkspaceDashboardPageV1() {
   const navigate = useNavigate();
@@ -145,14 +157,45 @@ export function WorkspaceDashboardPageV1() {
           </p>
         </div>
         <div className="workspace-dashboard__meta">
-          <StatusPill status={workspace.status} />
-          <div className="workspace-dashboard__recommendation">
-            Recommended next module:{" "}
-            {
-              coreModuleDefinitionsV1.find(
-                (moduleDefinition) => moduleDefinition.slug === recommendedModule,
-              )?.longLabel
-            }
+          <div className="workspace-dashboard__status-row">
+            <StatusPill status={workspace.status} />
+            <button
+              type="button"
+              className="workspace-dashboard__continue-btn"
+              onClick={() =>
+                navigate(buildCoreModulePathV1(workspace.id, recommendedModule))
+              }
+            >
+              Continue:{" "}
+              {coreModuleDefinitionsV1.find(
+                (m) => m.slug === recommendedModule,
+              )?.shortLabel}{" "}
+              →
+            </button>
+          </div>
+
+          <div className="workspace-dashboard__progress-rail">
+            {coreModuleDefinitionsV1.map((mod) => {
+              const modState = getModuleWorkflowStateV1({
+                definition: mod,
+                snapshot: workflowSnapshot,
+              });
+              const isActive = mod.slug === recommendedModule;
+              const stateSlug = modState.statusLabel
+                .toLowerCase()
+                .replace(" ", "-");
+              return (
+                <div
+                  key={mod.slug}
+                  className={`workspace-dashboard__progress-step workspace-dashboard__progress-step--${stateSlug}${isActive ? " workspace-dashboard__progress-step--active" : ""}`}
+                >
+                  <div className="workspace-dashboard__progress-dot" />
+                  <span className="workspace-dashboard__progress-label">
+                    {mod.shortLabel}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </header>
@@ -163,43 +206,82 @@ export function WorkspaceDashboardPageV1() {
             definition: moduleDefinition,
             snapshot: workflowSnapshot,
           });
+          const isRecommended = recommendedModule === moduleDefinition.slug;
+          const isBlocked = moduleState.statusLabel === "Waiting";
+          const isDone = moduleState.statusLabel === "Ready";
+
+          // Build per-module "last updated" timestamp
+          let lastUpdated: string | null = null;
+          if (moduleDefinition.slug === "annual-report-analysis" && annualReportQuery.data?.active) {
+            const ar = annualReportQuery.data;
+            lastUpdated =
+              formatVersionTimestampV1(ar.extraction.confirmation.confirmedAt ?? undefined) ??
+              formatVersionTimestampV1(ar.extraction.aiRun?.generatedAt ?? undefined);
+          } else if (moduleDefinition.slug === "account-mapping" && mappingQuery.data?.active) {
+            const mp = mappingQuery.data;
+            const aiGen = (mp.mapping as { aiRun?: { generatedAt?: string } }).aiRun?.generatedAt;
+            lastUpdated = formatVersionTimestampV1(aiGen);
+          } else if (moduleDefinition.slug === "tax-adjustments" && taxAdjustmentsQuery.data?.active) {
+            const ta = taxAdjustmentsQuery.data;
+            const runs = (ta.adjustments as { aiRuns?: Array<{ generatedAt?: string }> }).aiRuns ?? [];
+            lastUpdated = formatVersionTimestampV1(runs[runs.length - 1]?.generatedAt);
+          }
+
+          let cardClass = "workspace-dashboard-card";
+          if (isBlocked) cardClass += " workspace-dashboard-card--blocked";
+          else if (isRecommended) cardClass += " workspace-dashboard-card--recommended";
+          else if (isDone) cardClass += " workspace-dashboard-card--done";
 
           return (
             <CardV1
               key={moduleDefinition.slug}
-              className={`workspace-dashboard-card${
-                recommendedModule === moduleDefinition.slug
-                  ? " workspace-dashboard-card--recommended"
-                  : ""
-              }`}
+              className={cardClass}
             >
-              <div className="workspace-dashboard-card__step">
-                {moduleDefinition.step}
+              <div className="workspace-dashboard-card__header">
+                <div className="workspace-dashboard-card__step">
+                  {moduleDefinition.step}
+                </div>
+                <div
+                  className={`workspace-dashboard-card__status-badge workspace-dashboard-card__status-badge--${moduleState.statusLabel.toLowerCase().replace(" ", "-")}`}
+                >
+                  {moduleState.statusLabel}
+                </div>
               </div>
+
               <h2>{moduleDefinition.longLabel}</h2>
               <p>{moduleDefinition.description}</p>
-              <div className="workspace-dashboard-card__status">
-                {moduleState.statusLabel}
-              </div>
-              <div className="workspace-dashboard-card__action">
-                {moduleState.nextActionLabel}
-              </div>
+
+              {lastUpdated ? (
+                <div className="workspace-dashboard-card__last-updated">
+                  Last updated {lastUpdated}
+                </div>
+              ) : null}
+
               {moduleState.warning ? (
-                <div className="workspace-dashboard-card__warning">
+                <div className="workspace-dashboard-card__blocker" role="note">
                   {moduleState.warning}
                 </div>
               ) : null}
-              <button
-                type="button"
-                className="workspace-dashboard-card__button"
-                onClick={() =>
-                  navigate(
-                    buildCoreModulePathV1(workspace.id, moduleDefinition.slug),
-                  )
-                }
-              >
-                Open module
-              </button>
+
+              <div className="workspace-dashboard-card__footer">
+                {isBlocked ? (
+                  <span className="workspace-dashboard-card__blocked-hint">
+                    Complete the previous step to unlock
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className={`workspace-dashboard-card__button${isDone ? " workspace-dashboard-card__button--revisit" : ""}`}
+                    onClick={() =>
+                      navigate(
+                        buildCoreModulePathV1(workspace.id, moduleDefinition.slug),
+                      )
+                    }
+                  >
+                    {moduleState.nextActionLabel}
+                  </button>
+                )}
+              </div>
             </CardV1>
           );
         })}

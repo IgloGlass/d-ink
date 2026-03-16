@@ -12,18 +12,27 @@ import { listWorkspacesByTenantV1 } from "../lib/http/workspace-api";
 
 const workspaceListKeyV1 = (tenantId: string) => ["workspaces", tenantId];
 
+function formatOrgNumberV1(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 10) return `${digits.slice(0, 6)}-${digits.slice(6)}`;
+  return raw;
+}
+
 export function LauncherV1({
   isOpen,
   onClose,
   tenantId,
+  companies,
 }: {
   isOpen: boolean;
   onClose: () => void;
   tenantId: string;
+  companies: Array<{ id: string; legalName: string; organizationNumber: string }>;
 }) {
   const navigate = useNavigate();
   const { setActiveContext } = useGlobalAppContextV1();
   const [launcherQuery, setLauncherQuery] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(-1);
   const launcherInputRef = useRef<HTMLInputElement | null>(null);
 
   const workspaceListQuery = useQuery({
@@ -33,24 +42,37 @@ export function LauncherV1({
 
   useEffect(() => {
     if (isOpen) {
+      setLauncherQuery("");
+      setSelectedIndex(-1);
       setTimeout(() => launcherInputRef.current?.focus(), 10);
     }
   }, [isOpen]);
 
+  // Close on Escape
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [isOpen, onClose]);
+
   const filteredWorkspaces = useMemo(() => {
     const workspaces = workspaceListQuery.data?.workspaces ?? [];
     const query = launcherQuery.trim().toLowerCase();
-    if (!query) return workspaces.slice(0, 5);
-    return workspaces.filter((w) => 
-      w.companyId.toLowerCase().includes(query) || 
-      w.id.toLowerCase().includes(query)
-    ).slice(0, 5);
-  }, [launcherQuery, workspaceListQuery.data]);
+    if (!query) return workspaces.slice(0, 6);
+    return workspaces.filter((w) => {
+      const company = companies.find((c) => c.id === w.companyId);
+      return (
+        company?.legalName.toLowerCase().includes(query) ||
+        company?.organizationNumber.toLowerCase().includes(query) ||
+        w.id.toLowerCase().includes(query)
+      );
+    }).slice(0, 6);
+  }, [launcherQuery, workspaceListQuery.data, companies]);
 
-  const switchWorkspace = (workspace: {
-    fiscalYearEnd: string;
-    id: string;
-  }) => {
+  const switchWorkspace = (workspace: { fiscalYearEnd: string; id: string }) => {
     setActiveContext({
       activeWorkspaceId: workspace.id,
       activeFiscalYear: workspace.fiscalYearEnd.slice(0, 4),
@@ -62,58 +84,101 @@ export function LauncherV1({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-24 bg-black/60 backdrop-blur-sm animate-fade-in" onMouseDown={onClose}>
-      <div 
-        className="w-full max-w-2xl bg-white shadow-2xl overflow-hidden animate-fade-in"
+    <div className="launcher-backdrop" onMouseDown={onClose} aria-modal="true" role="dialog">
+      <div
+        className="launcher-panel"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="relative">
-          <i className="fas fa-search absolute left-6 top-1/2 -translate-y-1/2 text-zinc-400"></i>
+        {/* Search input */}
+        <div className="launcher-search">
+          <span className="launcher-search__icon" aria-hidden="true">⌕</span>
           <input
             ref={launcherInputRef}
             type="text"
             value={launcherQuery}
-            onChange={(e) => setLauncherQuery(e.target.value)}
-            placeholder="Search workspaces, clients, or modules..."
-            className="w-full h-20 pl-14 pr-6 bg-white border-b border-zinc-100 text-xl focus:outline-none text-black font-medium"
+            onChange={(e) => {
+              setLauncherQuery(e.target.value);
+              setSelectedIndex(-1);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setSelectedIndex((prev) =>
+                  prev < filteredWorkspaces.length - 1 ? prev + 1 : prev
+                );
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setSelectedIndex((prev) => (prev > 0 ? prev - 1 : 0));
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                const target = selectedIndex >= 0
+                  ? filteredWorkspaces[selectedIndex]
+                  : filteredWorkspaces[0];
+                if (target) switchWorkspace(target);
+              }
+            }}
+            placeholder="Search companies or workspaces…"
+            className="launcher-search__input"
+            aria-label="Search companies or workspaces"
+            autoComplete="off"
+            spellCheck={false}
           />
         </div>
 
-        <div className="p-2 max-h-[400px] overflow-y-auto">
+        {/* Results */}
+        <div className="launcher-results" role="listbox">
           {filteredWorkspaces.length === 0 ? (
-            <div className="p-8 text-center text-zinc-400 text-sm italic">
-              No matching results found.
+            <div className="launcher-empty">
+              No results for <strong>"{launcherQuery}"</strong>
             </div>
           ) : (
-            filteredWorkspaces.map((w) => (
-              <button
-                key={w.id}
-                onClick={() => switchWorkspace(w)}
-                className="w-full p-4 flex items-center justify-between hover:bg-zinc-50 transition-colors group"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-zinc-100 rounded flex items-center justify-center text-zinc-400 group-hover:bg-[#86BC25]/10 group-hover:text-[#86BC25]">
-                    <i className="fas fa-building"></i>
+            filteredWorkspaces.map((w, index) => {
+              const company = companies.find((c) => c.id === w.companyId);
+              const isSelected = index === selectedIndex;
+              return (
+                <button
+                  key={w.id}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  className={`launcher-result${isSelected ? " launcher-result--active" : ""}`}
+                  onClick={() => switchWorkspace(w)}
+                  onMouseEnter={() => setSelectedIndex(index)}
+                >
+                  <div className="launcher-result__avatar" aria-hidden="true">
+                    {(company?.legalName ?? "?")[0].toUpperCase()}
                   </div>
-                  <div className="text-left">
-                    <div className="font-bold text-black group-hover:text-[#86BC25]">{w.companyId}</div>
-                    <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
-                      ID: {w.id.slice(0, 8)} · {w.fiscalYearStart}
-                    </div>
+                  <div className="launcher-result__body">
+                    <span className="launcher-result__name">
+                      {company?.legalName ?? w.companyId}
+                    </span>
+                    <span className="launcher-result__meta">
+                      {company ? formatOrgNumberV1(company.organizationNumber) : "N/A"} · FY {w.fiscalYearEnd.slice(0, 4)}
+                    </span>
                   </div>
-                </div>
-                <div className="text-[10px] font-bold text-zinc-300 uppercase group-hover:text-zinc-500">Jump to Workspace →</div>
-              </button>
-            ))
+                  <span className="launcher-result__cta" aria-hidden="true">
+                    Open →
+                  </span>
+                </button>
+              );
+            })
           )}
         </div>
 
-        <div className="p-4 bg-zinc-50 border-t border-zinc-100 flex justify-between items-center">
-           <div className="flex gap-4">
-              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest"><kbd className="bg-white border border-zinc-200 px-1 rounded mr-1">↑↓</kbd> Navigate</span>
-              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest"><kbd className="bg-white border border-zinc-200 px-1 rounded mr-1">↵</kbd> Select</span>
-           </div>
-           <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Esc to Close</span>
+        {/* Footer */}
+        <div className="launcher-footer">
+          <div className="launcher-footer__hints">
+            <span className="launcher-hint">
+              <kbd className="launcher-kbd">↑↓</kbd>Navigate
+            </span>
+            <span className="launcher-hint">
+              <kbd className="launcher-kbd">↵</kbd>Open
+            </span>
+            <span className="launcher-hint">
+              <kbd className="launcher-kbd">Esc</kbd>Close
+            </span>
+          </div>
+          <span className="launcher-footer__label">Quick Search</span>
         </div>
       </div>
     </div>

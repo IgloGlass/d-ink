@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import type { AnnualReportExtractionPayloadV1 } from "../../../shared/contracts/annual-report-extraction.v1";
 import type {
@@ -15,6 +16,10 @@ import { ButtonV1 } from "../../components/button-v1";
 import { CardV1 } from "../../components/card-v1";
 import { EmptyStateV1 } from "../../components/empty-state-v1";
 import { SkeletonV1 } from "../../components/skeleton-v1";
+import {
+  applyWorkspaceTransitionV1,
+  type WorkspaceStatusV1,
+} from "../../lib/http/workspace-api";
 
 type Ink2ReplicaPageV1 = {
   description: string;
@@ -551,6 +556,9 @@ export function Ink2FormReplicaV1({
   isSyncing,
   onDownloadPdf,
   onSaveOverride,
+  tenantId,
+  workspaceId,
+  workspaceStatus,
 }: {
   extraction?: AnnualReportExtractionPayloadV1;
   form?: Ink2FormDraftPayloadV1;
@@ -559,7 +567,28 @@ export function Ink2FormReplicaV1({
   isSyncing: boolean;
   onDownloadPdf: () => void;
   onSaveOverride: (input: { amount: number; fieldId: string }) => void;
+  tenantId?: string;
+  workspaceId?: string;
+  workspaceStatus?: WorkspaceStatusV1;
 }) {
+  const queryClient = useQueryClient();
+
+  const approveMutation = useMutation({
+    mutationFn: () =>
+      applyWorkspaceTransitionV1({
+        tenantId: tenantId ?? "",
+        workspaceId: workspaceId ?? "",
+        toStatus: workspaceStatus === "in_review" ? "approved_for_export" : "in_review",
+        reason: "",
+      }),
+    onSuccess: () => {
+      if (tenantId && workspaceId) {
+        queryClient.invalidateQueries({
+          queryKey: ["workspace", tenantId, workspaceId],
+        });
+      }
+    },
+  });
   const [activePageId, setActivePageId] = useState<Ink2FieldSectionV1>("ink2s");
   const [draftInputs, setDraftInputs] = useState<
     Record<string, Ink2EditableSlotsV1>
@@ -694,6 +723,19 @@ export function Ink2FormReplicaV1({
               >
                 Generate INK2 return PDF
               </ButtonV1>
+
+              {workspaceStatus === "approved_for_export" ? (
+                <div className="ink2-approved-badge">✓ Approved for export</div>
+              ) : workspaceStatus === "draft" || workspaceStatus === "in_review" ? (
+                <button
+                  type="button"
+                  className="ink2-approve-btn"
+                  onClick={() => approveMutation.mutate()}
+                  disabled={approveMutation.isPending || !tenantId || !workspaceId}
+                >
+                  {workspaceStatus === "in_review" ? "Approve for export" : "Submit for review"}
+                </button>
+              ) : null}
 
               <div className="ink2-identity">
                 <div className="ink2-identity__header">
