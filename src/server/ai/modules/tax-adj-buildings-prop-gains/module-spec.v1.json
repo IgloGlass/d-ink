@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "tax-adjustments-buildings-improvements-property-gains",
+  "moduleVersion": "v1",
+  "promptVersion": "tax-adjustments-buildings-improvements-property-gains.prompts.v1",
+  "runtime": {
+    "provider": "gemini",
+    "modelTier": "thinking"
+  },
+  "policy": {
+    "basePolicyVersion": "tax-adjustments-buildings-improvements-property-gains.v1",
+    "activePatchVersions": []
+  }
+}

@@ -1,9 +1,14 @@
 import { z } from "zod";
 
 import { AiRunMetadataV1Schema } from "./ai-run.v1";
+import {
+  AnnualReportMappingContextV1Schema,
+  type AnnualReportMappingContextV1,
+} from "./annual-report-tax-context.v1";
 import { ReconciliationResultPayloadV1Schema } from "./reconciliation.v1";
 import {
-  TrialBalanceNormalizedV1Schema,
+  TrialBalanceNormalizedArtifactV1Schema,
+  TrialBalanceRowIdentityV1Schema,
   TrialBalanceSourceLocationV1Schema,
 } from "./trial-balance.v1";
 
@@ -448,6 +453,7 @@ export function getSilverfinTaxCategoryByCodeV1(
  */
 export const MappingEvidenceTypeV1Schema = z.enum([
   "tb_row",
+  "annual_report_context",
   "account_number_exact",
   "account_number_prefix",
   "account_name_keyword",
@@ -516,6 +522,56 @@ export type MappingDecisionOverrideV1 = z.infer<
   typeof MappingDecisionOverrideV1Schema
 >;
 
+export const MappingAnnualReportContextAreaV1Schema = z.enum([
+  "income_statement_anchors",
+  "balance_sheet_anchors",
+  "depreciation_context",
+  "asset_movements",
+  "tax_expense_context",
+  "pension_context",
+  "leasing_context",
+  "reserve_context",
+  "net_interest_context",
+  "group_contribution_context",
+  "shareholding_context",
+  "relevant_notes",
+  "selected_risk_findings",
+]);
+export type MappingAnnualReportContextAreaV1 = z.infer<
+  typeof MappingAnnualReportContextAreaV1Schema
+>;
+
+/**
+ * Compact row-level references to the annual-report signals the AI cited while
+ * mapping an account.
+ */
+export const MappingAnnualReportContextReferenceV1Schema = z
+  .object({
+    area: MappingAnnualReportContextAreaV1Schema,
+    reference: z.string().trim().min(1),
+  })
+  .strict();
+export type MappingAnnualReportContextReferenceV1 = z.infer<
+  typeof MappingAnnualReportContextReferenceV1Schema
+>;
+
+/**
+ * Persisted AI trace for audit/replay of AI-backed mapping decisions.
+ */
+export const MappingDecisionAiTraceV1Schema = z
+  .object({
+    rationale: z.string().trim().min(1),
+    annualReportContextReferences: z
+      .array(MappingAnnualReportContextReferenceV1Schema)
+      .default([]),
+    sourceExtractionArtifactId: z.string().trim().min(1).optional(),
+    sourceTaxAnalysisArtifactId: z.string().trim().min(1).optional(),
+  })
+  .strict();
+export type MappingDecisionAiTraceV1 = z.infer<
+  typeof MappingDecisionAiTraceV1Schema
+>;
+
 /**
  * Mapping decision lifecycle status.
  */
@@ -566,6 +622,7 @@ export const MappingDecisionV1Schema = z
     status: MappingDecisionStatusV1Schema,
     source: MappingDecisionSourceV1Schema,
     override: MappingDecisionOverrideV1Schema.optional(),
+    aiTrace: MappingDecisionAiTraceV1Schema.optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -609,11 +666,86 @@ export const MappingDecisionV1Schema = z
 export type MappingDecisionV1 = z.infer<typeof MappingDecisionV1Schema>;
 
 /**
+ * Mapping decision contract with stable trial-balance row identity for
+ * downstream routing and replay.
+ */
+export const MappingDecisionV2Schema = z
+  .object({
+    id: z.string().trim().min(1),
+    trialBalanceRowIdentity: TrialBalanceRowIdentityV1Schema,
+    accountNumber: z.string().trim().min(1),
+    sourceAccountNumber: z.string().trim().min(1),
+    accountName: z.string().trim().min(1),
+    proposedCategory: SilverfinTaxCategoryReferenceV1Schema,
+    selectedCategory: SilverfinTaxCategoryReferenceV1Schema,
+    confidence: z.number().min(0).max(1),
+    evidence: z.array(MappingDecisionEvidenceV1Schema).min(1),
+    policyRuleReference: z.string().trim().min(1),
+    reviewFlag: z.boolean(),
+    status: MappingDecisionStatusV1Schema,
+    source: MappingDecisionSourceV1Schema,
+    override: MappingDecisionOverrideV1Schema.optional(),
+    aiTrace: MappingDecisionAiTraceV1Schema.optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const selectedMatchesProposed =
+      value.selectedCategory.code === value.proposedCategory.code;
+    const selectedStatementTypeMatchesProposed =
+      value.selectedCategory.statementType ===
+      value.proposedCategory.statementType;
+
+    if (!selectedStatementTypeMatchesProposed) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Selected category statement type must match proposed category statement type.",
+        path: ["selectedCategory", "statementType"],
+      });
+    }
+
+    if (value.status === "overridden" && !value.override) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Overridden mapping decisions must include override scope and reason.",
+        path: ["override"],
+      });
+    }
+
+    if (value.status !== "overridden" && !selectedMatchesProposed) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Selected category can differ from proposed category only when status is overridden.",
+        path: ["selectedCategory"],
+      });
+    }
+  });
+
+/**
+ * Inferred TypeScript type for V2 mapping decisions.
+ */
+export type MappingDecisionV2 = z.infer<typeof MappingDecisionV2Schema>;
+
+/**
+ * Backwards-compatible mapping decision record accepted by workflows during the
+ * V1 -> V2 migration.
+ */
+export const MappingDecisionRecordV1Schema = z.union([
+  MappingDecisionV1Schema,
+  MappingDecisionV2Schema,
+]);
+export type MappingDecisionRecordV1 = z.infer<
+  typeof MappingDecisionRecordV1Schema
+>;
+
+/**
  * Request payload for deterministic mapping generation.
  */
 export const GenerateMappingDecisionsRequestV1Schema = z
   .object({
-    trialBalance: TrialBalanceNormalizedV1Schema,
+    trialBalance: TrialBalanceNormalizedArtifactV1Schema,
     reconciliation: ReconciliationResultPayloadV1Schema,
     policyVersion: z.string().trim().min(1),
   })
@@ -624,6 +756,215 @@ export const GenerateMappingDecisionsRequestV1Schema = z
  */
 export type GenerateMappingDecisionsRequestV1 = z.infer<
   typeof GenerateMappingDecisionsRequestV1Schema
+>;
+
+export const MappingAnnualReportInputStatusV1Schema = z.enum([
+  "confirmed",
+  "unconfirmed_omitted",
+  "unavailable",
+]);
+export type MappingAnnualReportInputStatusV1 = z.infer<
+  typeof MappingAnnualReportInputStatusV1Schema
+>;
+
+/**
+ * Explicit annual-report context envelope for mapping requests so the
+ * annual-report -> mapper boundary is replayable and confirmation-aware.
+ */
+export const GenerateMappingDecisionsAnnualReportInputV1Schema = z
+  .object({
+    status: MappingAnnualReportInputStatusV1Schema,
+    extractionArtifactId: z.string().trim().min(1).optional(),
+    extractionSchemaVersion: z
+      .literal("annual_report_extraction_v1")
+      .optional(),
+    extractionConfirmed: z.boolean(),
+    taxAnalysisArtifactId: z.string().trim().min(1).optional(),
+    taxAnalysisSchemaVersion: z
+      .literal("annual_report_tax_analysis_v1")
+      .optional(),
+    degraded: z.boolean().default(false),
+    degradedReasons: z.array(z.string().trim().min(1)).default([]),
+    mappingContext: AnnualReportMappingContextV1Schema.optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const hasExtractionArtifact =
+      value.extractionArtifactId !== undefined &&
+      value.extractionSchemaVersion !== undefined;
+    const hasTaxAnalysisArtifact =
+      value.taxAnalysisArtifactId !== undefined &&
+      value.taxAnalysisSchemaVersion !== undefined;
+
+    if (
+      (value.extractionArtifactId !== undefined) !==
+      (value.extractionSchemaVersion !== undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Extraction artifact ID and schema version must be provided together.",
+        path: ["extractionArtifactId"],
+      });
+    }
+
+    if (
+      (value.taxAnalysisArtifactId !== undefined) !==
+      (value.taxAnalysisSchemaVersion !== undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Tax-analysis artifact ID and schema version must be provided together.",
+        path: ["taxAnalysisArtifactId"],
+      });
+    }
+
+    if (!value.degraded && value.degradedReasons.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Degraded reasons may be present only when annual-report input is marked degraded.",
+        path: ["degradedReasons"],
+      });
+    }
+
+    if (value.status === "confirmed") {
+      if (!hasExtractionArtifact) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "Confirmed annual-report input must include extraction artifact lineage.",
+          path: ["extractionArtifactId"],
+        });
+      }
+
+      if (!value.extractionConfirmed) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "Confirmed annual-report input must record extractionConfirmed as true.",
+          path: ["extractionConfirmed"],
+        });
+      }
+
+      if (!value.mappingContext) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "Confirmed annual-report input must include projected mapping context.",
+          path: ["mappingContext"],
+        });
+      }
+    }
+
+    if (value.status === "unconfirmed_omitted") {
+      if (!hasExtractionArtifact) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "Unconfirmed annual-report input must identify the omitted extraction artifact.",
+          path: ["extractionArtifactId"],
+        });
+      }
+
+      if (value.extractionConfirmed) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "Unconfirmed annual-report input cannot record extractionConfirmed as true.",
+          path: ["extractionConfirmed"],
+        });
+      }
+
+      if (!value.degraded) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "Omitting annual-report context because extraction is unconfirmed must be marked degraded.",
+          path: ["degraded"],
+        });
+      }
+
+      if (value.degradedReasons.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "Unconfirmed annual-report input must explain why context was omitted.",
+          path: ["degradedReasons"],
+        });
+      }
+
+      if (value.mappingContext) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "Unconfirmed annual-report input must not pass projected mapping context downstream.",
+          path: ["mappingContext"],
+        });
+      }
+    }
+
+    if (value.status === "unavailable") {
+      if (value.extractionConfirmed) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "Unavailable annual-report input cannot record extractionConfirmed as true.",
+          path: ["extractionConfirmed"],
+        });
+      }
+
+      if (value.mappingContext) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "Unavailable annual-report input must not include projected mapping context.",
+          path: ["mappingContext"],
+        });
+      }
+    }
+
+    if (value.status !== "confirmed" && hasTaxAnalysisArtifact && !hasExtractionArtifact) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Tax-analysis lineage cannot be recorded without matching extraction lineage.",
+        path: ["taxAnalysisArtifactId"],
+      });
+    }
+  });
+export type GenerateMappingDecisionsAnnualReportInputV1 = z.infer<
+  typeof GenerateMappingDecisionsAnnualReportInputV1Schema
+>;
+
+/**
+ * V2 mapping request with explicit annual-report context lineage and
+ * confirmation state.
+ */
+export const GenerateMappingDecisionsRequestV2Schema = z
+  .object({
+    schemaVersion: z.literal("generate_mapping_decisions_request_v2"),
+    trialBalance: TrialBalanceNormalizedArtifactV1Schema,
+    reconciliation: ReconciliationResultPayloadV1Schema,
+    policyVersion: z.string().trim().min(1),
+    annualReportInput: GenerateMappingDecisionsAnnualReportInputV1Schema,
+  })
+  .strict();
+export type GenerateMappingDecisionsRequestV2 = z.infer<
+  typeof GenerateMappingDecisionsRequestV2Schema
+>;
+
+/**
+ * Version-tolerant mapping request accepted while V1 callers migrate to the
+ * explicit annual-report input envelope.
+ */
+export const GenerateMappingDecisionsRequestArtifactV1Schema = z.union([
+  GenerateMappingDecisionsRequestV1Schema,
+  GenerateMappingDecisionsRequestV2Schema,
+]);
+export type GenerateMappingDecisionsRequestArtifactV1 = z.infer<
+  typeof GenerateMappingDecisionsRequestArtifactV1Schema
 >;
 
 /**
@@ -648,6 +989,92 @@ export type MappingDecisionSummaryV1 = z.infer<
   typeof MappingDecisionSummaryV1Schema
 >;
 
+export const MappingRequestedStrategyV1Schema = z.enum([
+  "deterministic_only",
+  "ai_primary",
+]);
+export type MappingRequestedStrategyV1 = z.infer<
+  typeof MappingRequestedStrategyV1Schema
+>;
+
+export const MappingActualStrategyV1Schema = z.enum(["deterministic", "ai"]);
+export type MappingActualStrategyV1 = z.infer<
+  typeof MappingActualStrategyV1Schema
+>;
+
+export const MappingDegradationReasonCodeV1Schema = z.enum([
+  "missing_api_key",
+  "config_invalid",
+  "model_execution_failed",
+  "ai_chunk_fallback",
+]);
+export type MappingDegradationReasonCodeV1 = z.infer<
+  typeof MappingDegradationReasonCodeV1Schema
+>;
+
+/**
+ * Durable execution metadata so AI-primary degradation is reviewable in the
+ * persisted mapping artifact and audit trail.
+ */
+export const MappingExecutionMetadataV1Schema = z
+  .object({
+    requestedStrategy: MappingRequestedStrategyV1Schema,
+    actualStrategy: MappingActualStrategyV1Schema,
+    degraded: z.boolean(),
+    degradedReasonCode: MappingDegradationReasonCodeV1Schema.optional(),
+    degradedReason: z.string().trim().min(1).optional(),
+    annualReportContextAvailable: z.boolean(),
+    usedAiRunFallback: z.boolean().default(false),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (!value.degraded && value.degradedReasonCode) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Degradation reason codes may be present only when degraded is true.",
+        path: ["degradedReasonCode"],
+      });
+    }
+
+    if (!value.degraded && value.degradedReason) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Degradation reason text may be present only when degraded is true.",
+        path: ["degradedReason"],
+      });
+    }
+
+    if (
+      value.requestedStrategy === "ai_primary" &&
+      value.actualStrategy === "deterministic" &&
+      !value.degraded
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "AI-primary requests that resolve to deterministic mapping must be marked degraded.",
+        path: ["degraded"],
+      });
+    }
+
+    if (
+      value.usedAiRunFallback &&
+      value.actualStrategy !== "ai"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "AI run fallback telemetry can only be true for AI-backed mapping runs.",
+        path: ["usedAiRunFallback"],
+      });
+    }
+  });
+export type MappingExecutionMetadataV1 = z.infer<
+  typeof MappingExecutionMetadataV1Schema
+>;
+
 /**
  * Deterministic mapping decision payload.
  */
@@ -656,6 +1083,7 @@ export const MappingDecisionSetPayloadV1Schema = z
     schemaVersion: z.literal("mapping_decisions_v1"),
     policyVersion: z.string().trim().min(1),
     aiRun: AiRunMetadataV1Schema.optional(),
+    executionMetadata: MappingExecutionMetadataV1Schema.optional(),
     summary: MappingDecisionSummaryV1Schema,
     decisions: z.array(MappingDecisionV1Schema),
   })
@@ -666,6 +1094,35 @@ export const MappingDecisionSetPayloadV1Schema = z
  */
 export type MappingDecisionSetPayloadV1 = z.infer<
   typeof MappingDecisionSetPayloadV1Schema
+>;
+
+/**
+ * Mapping artifact with stable row identity preserved for downstream routing.
+ */
+export const MappingDecisionSetPayloadV2Schema = z
+  .object({
+    schemaVersion: z.literal("mapping_decisions_v2"),
+    policyVersion: z.string().trim().min(1),
+    aiRun: AiRunMetadataV1Schema.optional(),
+    executionMetadata: MappingExecutionMetadataV1Schema,
+    summary: MappingDecisionSummaryV1Schema,
+    decisions: z.array(MappingDecisionV2Schema),
+  })
+  .strict();
+export type MappingDecisionSetPayloadV2 = z.infer<
+  typeof MappingDecisionSetPayloadV2Schema
+>;
+
+/**
+ * Version-tolerant mapping artifact contract for workflows that must support
+ * both historical V1 and active V2 payloads.
+ */
+export const MappingDecisionSetArtifactV1Schema = z.union([
+  MappingDecisionSetPayloadV1Schema,
+  MappingDecisionSetPayloadV2Schema,
+]);
+export type MappingDecisionSetArtifactV1 = z.infer<
+  typeof MappingDecisionSetArtifactV1Schema
 >;
 
 /**
@@ -713,7 +1170,7 @@ export type GenerateMappingDecisionsFailureV1 = z.infer<
 export const GenerateMappingDecisionsSuccessV1Schema = z
   .object({
     ok: z.literal(true),
-    mapping: MappingDecisionSetPayloadV1Schema,
+    mapping: MappingDecisionSetArtifactV1Schema,
   })
   .strict();
 
@@ -764,7 +1221,7 @@ export function safeParseSilverfinTaxCategoryReferenceV1(
  * Parses unknown input into mapping decisions.
  */
 export function parseMappingDecisionV1(input: unknown): MappingDecisionV1 {
-  return MappingDecisionV1Schema.parse(input);
+  return MappingDecisionRecordV1Schema.parse(input) as MappingDecisionV1;
 }
 
 /**
@@ -773,7 +1230,68 @@ export function parseMappingDecisionV1(input: unknown): MappingDecisionV1 {
 export function safeParseMappingDecisionV1(
   input: unknown,
 ): z.SafeParseReturnType<unknown, MappingDecisionV1> {
-  return MappingDecisionV1Schema.safeParse(input);
+  return MappingDecisionRecordV1Schema.safeParse(
+    input,
+  ) as z.SafeParseReturnType<unknown, MappingDecisionV1>;
+}
+
+/**
+ * Parses unknown input into a version-tolerant mapping decision record.
+ */
+export function parseMappingDecisionRecordV1(
+  input: unknown,
+): MappingDecisionRecordV1 {
+  return MappingDecisionRecordV1Schema.parse(input);
+}
+
+/**
+ * Parses unknown input into a version-tolerant mapping decision artifact.
+ */
+export function parseMappingDecisionSetArtifactV1(
+  input: unknown,
+): MappingDecisionSetArtifactV1 {
+  return MappingDecisionSetArtifactV1Schema.parse(input);
+}
+
+/**
+ * Safely validates unknown input as a version-tolerant mapping decision artifact.
+ */
+export function safeParseMappingDecisionSetArtifactV1(
+  input: unknown,
+): z.SafeParseReturnType<unknown, MappingDecisionSetArtifactV1> {
+  return MappingDecisionSetArtifactV1Schema.safeParse(input);
+}
+
+/**
+ * Parses unknown input into durable mapping execution metadata.
+ */
+export function parseMappingExecutionMetadataV1(
+  input: unknown,
+): MappingExecutionMetadataV1 {
+  return MappingExecutionMetadataV1Schema.parse(input);
+}
+
+/**
+ * Stamps execution metadata onto a mapping artifact while preserving its
+ * versioned contract shape.
+ */
+export function stampMappingExecutionMetadataV1(
+  input: {
+    executionMetadata: MappingExecutionMetadataV1;
+    mapping: MappingDecisionSetArtifactV1;
+  },
+): MappingDecisionSetArtifactV1 {
+  if (input.mapping.schemaVersion === "mapping_decisions_v2") {
+    return MappingDecisionSetPayloadV2Schema.parse({
+      ...input.mapping,
+      executionMetadata: input.executionMetadata,
+    });
+  }
+
+  return MappingDecisionSetPayloadV1Schema.parse({
+    ...input.mapping,
+    executionMetadata: input.executionMetadata,
+  });
 }
 
 /**
@@ -786,12 +1304,57 @@ export function parseGenerateMappingDecisionsRequestV1(
 }
 
 /**
+ * Parses unknown input into an explicit V2 mapping generation request.
+ */
+export function parseGenerateMappingDecisionsRequestV2(
+  input: unknown,
+): GenerateMappingDecisionsRequestV2 {
+  return GenerateMappingDecisionsRequestV2Schema.parse(input);
+}
+
+/**
+ * Parses unknown input into a version-tolerant mapping generation request.
+ */
+export function parseGenerateMappingDecisionsRequestArtifactV1(
+  input: unknown,
+): GenerateMappingDecisionsRequestArtifactV1 {
+  return GenerateMappingDecisionsRequestArtifactV1Schema.parse(input);
+}
+
+/**
+ * Resolves confirmed annual-report mapping context from a version-tolerant
+ * mapping request.
+ */
+export function resolveConfirmedAnnualReportMappingContextForRequestV1(
+  input: GenerateMappingDecisionsRequestArtifactV1,
+): AnnualReportMappingContextV1 | undefined {
+  if (
+    "schemaVersion" in input &&
+    input.schemaVersion === "generate_mapping_decisions_request_v2" &&
+    input.annualReportInput.status === "confirmed"
+  ) {
+    return input.annualReportInput.mappingContext;
+  }
+
+  return undefined;
+}
+
+/**
  * Safely validates unknown input as deterministic mapping generation requests.
  */
 export function safeParseGenerateMappingDecisionsRequestV1(
   input: unknown,
 ): z.SafeParseReturnType<unknown, GenerateMappingDecisionsRequestV1> {
   return GenerateMappingDecisionsRequestV1Schema.safeParse(input);
+}
+
+/**
+ * Safely validates unknown input as a version-tolerant mapping generation request.
+ */
+export function safeParseGenerateMappingDecisionsRequestArtifactV1(
+  input: unknown,
+): z.SafeParseReturnType<unknown, GenerateMappingDecisionsRequestArtifactV1> {
+  return GenerateMappingDecisionsRequestArtifactV1Schema.safeParse(input);
 }
 
 /**

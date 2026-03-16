@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { generateTaxAdjustmentsV1 } from "../../../src/server/adjustments/tax-adjustments-engine.v1";
 import { parseAnnualReportExtractionPayloadV1 } from "../../../src/shared/contracts/annual-report-extraction.v1";
-import { MappingDecisionSetPayloadV1Schema } from "../../../src/shared/contracts/mapping.v1";
+import {
+  MappingDecisionSetPayloadV1Schema,
+  parseMappingDecisionSetArtifactV1,
+} from "../../../src/shared/contracts/mapping.v1";
 import { parseTrialBalanceNormalizedV1 } from "../../../src/shared/contracts/trial-balance.v1";
 
 function confirmedExtraction() {
@@ -256,17 +259,21 @@ describe("tax adjustments engine v1", () => {
     expect(result.adjustments.decisions).toHaveLength(3);
     expect(
       result.adjustments.decisions.some(
-        (decision) => decision.module === "non_deductible_expenses",
+        (decision) => decision.module === "disallowed_expenses",
       ),
     ).toBe(true);
     expect(
       result.adjustments.decisions.some(
-        (decision) => decision.module === "representation_entertainment",
+        (decision) =>
+          decision.module === "disallowed_expenses" &&
+          decision.targetField === "INK2S.representation_non_deductible",
       ),
     ).toBe(true);
     expect(
       result.adjustments.decisions.some(
-        (decision) => decision.module === "depreciation_differences_basic",
+        (decision) =>
+          decision.module ===
+          "depreciation_tangible_and_acquired_intangible_assets",
       ),
     ).toBe(true);
   });
@@ -291,5 +298,77 @@ describe("tax adjustments engine v1", () => {
     if (!result.ok) {
       expect(result.error.code).toBe("INPUT_INVALID");
     }
+  });
+
+  it("fails closed to manual review when a v2 mapping row identity no longer resolves", () => {
+    const result = generateTaxAdjustmentsV1({
+      policyVersion: "tax-adjustments.v1",
+      mappingArtifactId: "a0000000-0000-4000-8000-000000000001",
+      annualReportExtractionArtifactId: "a0000000-0000-4000-8000-000000000002",
+      annualReportExtraction: confirmedExtraction(),
+      mapping: parseMappingDecisionSetArtifactV1({
+        schemaVersion: "mapping_decisions_v2",
+        policyVersion: "mapping-ai.v1",
+        executionMetadata: {
+          requestedStrategy: "ai_primary",
+          actualStrategy: "ai",
+          degraded: false,
+          annualReportContextAvailable: false,
+          usedAiRunFallback: false,
+        },
+        summary: {
+          totalRows: 1,
+          deterministicDecisions: 0,
+          manualReviewRequired: 0,
+          fallbackDecisions: 0,
+          matchedByAccountNumber: 0,
+          matchedByAccountName: 1,
+          unmatchedRows: 0,
+        },
+        decisions: [
+          {
+            id: "row-6072",
+            trialBalanceRowIdentity: {
+              rowKey: "Trial Balance:99",
+              source: { sheetName: "Trial Balance", rowNumber: 99 },
+            },
+            accountNumber: "6072",
+            sourceAccountNumber: "6072",
+            accountName: "Representation",
+            proposedCategory: {
+              code: "607200",
+              name: "Entertainment - internal and external - presumed non-deductible",
+              statementType: "income_statement",
+            },
+            selectedCategory: {
+              code: "607200",
+              name: "Entertainment - internal and external - presumed non-deductible",
+              statementType: "income_statement",
+            },
+            confidence: 0.9,
+            evidence: [{ type: "tb_row", reference: "r1" }],
+            policyRuleReference: "mapping.ai.representation.v1",
+            reviewFlag: false,
+            status: "proposed",
+            source: "ai",
+          },
+        ],
+      }),
+      trialBalance: trialBalance(),
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.adjustments.decisions).toMatchObject([
+      {
+        module: "disallowed_expenses",
+        amount: 0,
+        status: "manual_review_required",
+        reviewFlag: true,
+      },
+    ]);
   });
 });

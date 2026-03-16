@@ -169,7 +169,9 @@ function createWorkbookBase64V1(): string {
   return btoa(binary);
 }
 
-async function seedConfirmedAnnualReportExtractionV1(): Promise<void> {
+async function seedAnnualReportExtractionV1(input: {
+  confirmed: boolean;
+}): Promise<void> {
   const repository = createD1WorkspaceArtifactRepositoryV1(env.DB);
   const extraction = parseAnnualReportExtractionPayloadV1({
     schemaVersion: "annual_report_extraction_v1",
@@ -237,9 +239,9 @@ async function seedConfirmedAnnualReportExtractionV1(): Promise<void> {
       priorYearComparatives: [],
     },
     confirmation: {
-      isConfirmed: true,
-      confirmedAt: "2026-03-03T18:05:00.000Z",
-      confirmedByUserId: USER_ID,
+      isConfirmed: input.confirmed,
+      confirmedAt: input.confirmed ? "2026-03-03T18:05:00.000Z" : undefined,
+      confirmedByUserId: input.confirmed ? USER_ID : undefined,
     },
   });
 
@@ -260,10 +262,10 @@ describe("worker tax core routes v1", () => {
   beforeEach(async () => {
     await applyWorkspaceAuditSchemaForTests();
     await seedSessionAndWorkspace();
-    await seedConfirmedAnnualReportExtractionV1();
   });
 
   it("runs deterministic tax-core chain and collaboration endpoints", async () => {
+    await seedAnnualReportExtractionV1({ confirmed: true });
     const cookie = buildSessionCookie(SESSION_TOKEN);
     const workerEnv = buildWorkerEnv();
 
@@ -306,9 +308,26 @@ describe("worker tax core routes v1", () => {
       ok: true;
       pipeline: {
         artifacts: { mapping: { artifactId: string; version: number } };
+        mapping: {
+          executionMetadata: {
+            requestedStrategy: string;
+            actualStrategy: string;
+            degraded: boolean;
+            degradedReasonCode?: string;
+            annualReportContextAvailable: boolean;
+          };
+        };
       };
     };
     expect(tbRunPayload.ok).toBe(true);
+    expect(tbRunPayload.pipeline.mapping.executionMetadata).toMatchObject({
+      requestedStrategy: "ai_primary",
+      actualStrategy: "ai",
+      degraded: true,
+      degradedReasonCode: "missing_api_key",
+      annualReportContextAvailable: true,
+      usedAiRunFallback: true,
+    });
 
     const adjustmentsRun = await worker.fetch(
       buildJsonRequest({
@@ -491,5 +510,65 @@ describe("worker tax core routes v1", () => {
     );
     expect(completedTaskAudit?.before_json).not.toBeNull();
     expect(completedTaskAudit?.after_json).not.toBeNull();
+
+    const mappingGeneratedAudit = (auditRows.results ?? []).find(
+      (row) => row.event_type === AUDIT_EVENT_TYPES_V1.MAPPING_GENERATED,
+    );
+    expect(mappingGeneratedAudit?.after_json).not.toBeNull();
+    expect(
+      JSON.parse(String(mappingGeneratedAudit?.after_json)),
+    ).toMatchObject({
+      executionMetadata: {
+        requestedStrategy: "ai_primary",
+        actualStrategy: "ai",
+        degraded: true,
+        degradedReasonCode: "missing_api_key",
+        annualReportContextAvailable: true,
+        usedAiRunFallback: true,
+      },
+      aiRun: {
+        provider: "gemini",
+        usedFallback: true,
+      },
+    });
+  });
+
+  it("omits annual-report mapper context when the active extraction is still unconfirmed", async () => {
+    await seedAnnualReportExtractionV1({ confirmed: false });
+    const cookie = buildSessionCookie(SESSION_TOKEN);
+
+    const tbRun = await worker.fetch(
+      buildJsonRequest({
+        method: "POST",
+        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/tb-pipeline-runs`,
+        cookie,
+        body: {
+          tenantId: TENANT_ID,
+          fileName: "tb.xlsx",
+          fileBytesBase64: createWorkbookBase64V1(),
+          policyVersion: "deterministic-bas.v1",
+        },
+      }),
+      buildWorkerEnv(),
+    );
+    await assertStatusV1({ expected: 200, label: "tbRun", response: tbRun });
+    const tbRunPayload = (await tbRun.json()) as {
+      ok: true;
+      pipeline: {
+        mapping: {
+          executionMetadata: {
+            annualReportContextAvailable: boolean;
+            degraded: boolean;
+            degradedReasonCode?: string;
+          };
+        };
+      };
+    };
+
+    expect(tbRunPayload.pipeline.mapping.executionMetadata).toMatchObject({
+      annualReportContextAvailable: false,
+      degraded: true,
+      degradedReasonCode: "missing_api_key",
+    });
   });
 });

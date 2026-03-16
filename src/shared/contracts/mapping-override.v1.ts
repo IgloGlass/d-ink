@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { UuidV4Schema } from "./common.v1";
 import {
-  MappingDecisionSetPayloadV1Schema,
+  MappingDecisionSetArtifactV1Schema,
   SilverfinTaxCategoryCodeV1Schema,
 } from "./mapping.v1";
 
@@ -172,7 +172,7 @@ export const GetActiveMappingDecisionsSuccessV1Schema = z
   .object({
     ok: z.literal(true),
     active: ActiveMappingArtifactRefV1Schema,
-    mapping: MappingDecisionSetPayloadV1Schema,
+    mapping: MappingDecisionSetArtifactV1Schema,
   })
   .strict();
 
@@ -205,7 +205,7 @@ export const ApplyMappingOverridesSuccessV1Schema = z
   .object({
     ok: z.literal(true),
     active: ActiveMappingArtifactRefV1Schema,
-    mapping: MappingDecisionSetPayloadV1Schema,
+    mapping: MappingDecisionSetArtifactV1Schema,
     appliedCount: z.number().int().nonnegative(),
     savedPreferenceCount: z.number().int().nonnegative(),
   })

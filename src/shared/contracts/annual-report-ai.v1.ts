@@ -771,7 +771,7 @@ const AnnualReportAiRelevantNoteV1Schema = createLooseObjectSchemaV1({
 })
   .transform((value) => ({
     blockId: value.blockId ?? "unknown_note_block",
-    category: value.category ?? "tax_expense",
+    category: value.category,
     title: value.title,
     noteReference: value.noteReference,
     pages: value.pages,

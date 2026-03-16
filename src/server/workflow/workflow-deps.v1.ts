@@ -8,6 +8,7 @@ import { createD1MappingPreferenceRepositoryV1 } from "../../db/repositories/map
 import { createD1TasksRepositoryV1 } from "../../db/repositories/tasks.repository.v1";
 import { createD1TbPipelineArtifactRepositoryV1 } from "../../db/repositories/tb-pipeline-artifact.repository.v1";
 import { createD1WorkspaceArtifactRepositoryV1 } from "../../db/repositories/workspace-artifact.repository.v1";
+import type { WorkspaceArtifactRepositoryV1 } from "../../db/repositories/workspace-artifact.repository.v1";
 import { createD1WorkspaceRepositoryV1 } from "../../db/repositories/workspace.repository.v1";
 import type { Env } from "../../shared/types/env";
 import type { AnnualReportProcessingRunStatusV1 } from "../../shared/contracts/annual-report-processing-run.v1";
@@ -28,17 +29,30 @@ import {
 import type { AnnualReportTaxAnalysisPayloadV1 } from "../../shared/contracts/annual-report-tax-analysis.v1";
 import type {
   AnnualReportDownstreamTaxContextV1,
-  AnnualReportMappingContextV1,
 } from "../../shared/contracts/annual-report-tax-context.v1";
 import type { AnnualReportSourceTextV1 } from "../../shared/contracts/annual-report-source-text.v1";
 import type { AiRunMetadataV1 } from "../../shared/contracts/ai-run.v1";
+import {
+  getSilverfinTaxCategoryByCodeV1,
+  parseGenerateMappingDecisionsRequestV2,
+  type MappingDegradationReasonCodeV1,
+  type SilverfinTaxCategoryCodeV1,
+  parseMappingDecisionSetArtifactV1,
+  parseMappingExecutionMetadataV1,
+  resolveConfirmedAnnualReportMappingContextForRequestV1,
+} from "../../shared/contracts/mapping.v1";
 import type { ReconciliationResultPayloadV1 } from "../../shared/contracts/reconciliation.v1";
 import type { TaxAdjustmentAiProposalDecisionV1 } from "../../shared/contracts/tax-adjustment-ai.v1";
-import type { TrialBalanceNormalizedV1 } from "../../shared/contracts/trial-balance.v1";
+import {
+  buildTrialBalanceRowIdentityV1,
+  buildTrialBalanceRowKeyV1,
+  type TrialBalanceNormalizedArtifactV1,
+} from "../../shared/contracts/trial-balance.v1";
 import {
   generateTaxAdjustmentsFromAiProposalsV1,
   generateTaxAdjustmentsV1,
 } from "../adjustments/tax-adjustments-engine.v1";
+import { resolveConservativeFallbackCategoryCodeV1 } from "../mapping/conservative-fallback.v1";
 import type { GenerateTaxAdjustmentsInputV1 } from "../adjustments/tax-adjustments-engine.v1";
 import {
   projectAnnualReportMappingContextV1,
@@ -74,15 +88,16 @@ import {
   TAX_ADJUSTMENTS_REPRESENTATION_SYSTEM_PROMPT_V1,
   TAX_ADJUSTMENTS_REPRESENTATION_USER_PROMPT_V1,
 } from "../ai/modules/tax-adjustments-representation-entertainment/prompt-text.v1";
-import {
-  executeTaxAdjustmentSubmoduleV1,
-  projectTaxAdjustmentCandidatesV1,
-} from "../ai/modules/tax-adjustments-shared/executor.v1";
+import { executeTaxAdjustmentSubmoduleV1 } from "../ai/modules/tax-adjustments-shared/executor.v1";
 import {
   getGeminiApiKeyV1,
   getGeminiModelConfigV1,
 } from "../ai/providers/gemini-config.v1";
 import { toBase64V1 } from "../ai/providers/gemini-client.v1";
+import {
+  projectRoutedTaxAdjustmentCandidatesV1,
+  projectTaxAdjustmentModuleContextV1,
+} from "../adjustments/tax-adjustment-submodule-routing.v1";
 import type { AnnualReportExtractionDepsV1 } from "./annual-report-extraction.v1";
 import type { AnnualReportProcessingDepsV1 } from "./annual-report-processing.v1";
 import type {
@@ -92,11 +107,11 @@ import type {
 import type { CollaborationDepsV1 } from "./collaboration.v1";
 import type { CompanyLifecycleDepsV1 } from "./company-lifecycle.v1";
 import type { MappingOverrideDepsV1 } from "./mapping-override.v1";
+import type { MappingAiEnrichmentDepsV1 } from "./mapping-ai-enrichment.v1";
 import type { MappingReviewDepsV1 } from "./mapping-review.v1";
 import type { TaxCoreWorkflowDepsV1 } from "./tax-core-workflow.v1";
 import type { TrialBalancePipelineRunDepsV1 } from "./trial-balance-pipeline-run.v1";
 import type { WorkspaceLifecycleDepsV1 } from "./workspace-lifecycle.v1";
-import { generateDeterministicMappingDecisionsV1 } from "../mapping/deterministic-mapping.v1";
 import { parseAnnualReportExtractionV1 } from "../parsing/annual-report-extractor.v1";
 import { prepareAnnualReportPdfRoutingV1 } from "../parsing/annual-report-page-routing.v1";
 import { parseAnnualReportSourceTextForAiV1 } from "../parsing/annual-report-source-text.v1";
@@ -3692,6 +3707,37 @@ function buildAnnualReportTaxAnalysisFallbackFindingV1(input: {
   };
 }
 
+function mergeAnnualReportTaxReviewStateV1(input: {
+  taxAnalysis: AnnualReportTaxAnalysisPayloadV1;
+  patch: Partial<NonNullable<AnnualReportTaxAnalysisPayloadV1["reviewState"]>> &
+    Pick<NonNullable<AnnualReportTaxAnalysisPayloadV1["reviewState"]>, "mode">;
+}): AnnualReportTaxAnalysisPayloadV1 {
+  const currentReasons = input.taxAnalysis.reviewState?.reasons ?? [];
+  const patchReasons = input.patch.reasons ?? [];
+  const mergedReasons = [...currentReasons];
+  for (const reason of patchReasons) {
+    if (!mergedReasons.includes(reason)) {
+      mergedReasons.push(reason);
+    }
+  }
+
+  return {
+    ...input.taxAnalysis,
+    reviewState: {
+      mode: input.patch.mode,
+      sourceDocumentAvailable:
+        input.patch.sourceDocumentAvailable ??
+        input.taxAnalysis.reviewState?.sourceDocumentAvailable ??
+        false,
+      sourceDocumentUsed:
+        input.patch.sourceDocumentUsed ??
+        input.taxAnalysis.reviewState?.sourceDocumentUsed ??
+        false,
+      reasons: mergedReasons,
+    },
+  };
+}
+
 export function buildDeterministicAnnualReportTaxAnalysisFallbackV1(input: {
   config: AnnualReportTaxAnalysisRuntimeConfigV1 | null;
   extraction: ReturnType<typeof parseAnnualReportExtractionPayloadV1>;
@@ -3699,6 +3745,9 @@ export function buildDeterministicAnnualReportTaxAnalysisFallbackV1(input: {
   fallbackReason: string;
   modelName: string;
   policyVersion: string;
+  sourceDocumentAvailable?: boolean;
+  sourceDocumentUsed?: boolean;
+  degradedReasons?: string[];
 }): AnnualReportTaxAnalysisPayloadV1 {
   const taxDeep =
     input.extraction.taxDeep ?? createEmptyAnnualReportTaxDeepV1();
@@ -3901,11 +3950,19 @@ export function buildDeterministicAnnualReportTaxAnalysisFallbackV1(input: {
         ? `${accountingStandardValue} is available in the extracted core facts and can be used for the initial tax review.`
         : "The accounting standard was not available in the extracted core facts and should be confirmed manually.",
     },
+    reviewState: {
+      mode: "deterministic_fallback",
+      reasons: [
+        ...new Set([
+          ...(input.degradedReasons ?? []),
+          `AI fallback reason: ${input.fallbackReason.slice(0, 180)}`,
+        ]),
+      ],
+      sourceDocumentAvailable: input.sourceDocumentAvailable ?? false,
+      sourceDocumentUsed: input.sourceDocumentUsed ?? false,
+    },
     findings,
-    missingInformation: [
-      ...missingInformation,
-      `AI fallback reason: ${input.fallbackReason.slice(0, 180)}`,
-    ],
+    missingInformation: [...missingInformation],
     recommendedNextActions: [...recommendedNextActions],
     aiRun: input.config
       ? parseAiRunMetadataV1({
@@ -3976,12 +4033,20 @@ async function analyzeAnnualReportTaxWithPrimaryAiV1(input: {
     preparedSourceDocumentResult && !preparedSourceDocumentResult.ok
       ? preparedSourceDocumentResult.error.message
       : undefined;
+  const sourceDocumentAvailable = Boolean(input.sourceDocument);
+  const sourceDocumentUsed = Boolean(preparedSourceDocument);
+  const degradedSourceReasons = sourcePreparationWarning
+    ? [`Source document preparation failed: ${sourcePreparationWarning}`]
+    : !input.sourceDocument
+      ? ["Source document unavailable for the active extraction."]
+      : [];
 
   if (!apiKey || !config) {
     return {
       ok: true,
       taxAnalysis: buildDeterministicAnnualReportTaxAnalysisFallbackV1({
         config,
+        degradedReasons: degradedSourceReasons,
         extraction: input.extraction,
         extractionArtifactId: input.extractionArtifactId,
         fallbackReason: !apiKey
@@ -3990,6 +4055,8 @@ async function analyzeAnnualReportTaxWithPrimaryAiV1(input: {
             "Annual-report tax-analysis config failed."),
         modelName: fallbackModelName,
         policyVersion: input.policyVersion,
+        sourceDocumentAvailable,
+        sourceDocumentUsed,
       }),
     };
   }
@@ -4024,6 +4091,7 @@ async function analyzeAnnualReportTaxWithPrimaryAiV1(input: {
       ok: true,
       taxAnalysis: buildDeterministicAnnualReportTaxAnalysisFallbackV1({
         config,
+        degradedReasons: degradedSourceReasons,
         extraction: input.extraction,
         extractionArtifactId: input.extractionArtifactId,
         fallbackReason: sourcePreparationWarning
@@ -4031,56 +4099,183 @@ async function analyzeAnnualReportTaxWithPrimaryAiV1(input: {
           : result.error.message,
         modelName: fallbackModelName,
         policyVersion: input.policyVersion,
+        sourceDocumentAvailable,
+        sourceDocumentUsed,
       }),
     };
   }
 
   return {
     ok: true,
-    taxAnalysis: result.value,
+    taxAnalysis: mergeAnnualReportTaxReviewStateV1({
+      taxAnalysis: result.value,
+      patch: {
+        mode: sourceDocumentUsed ? "full_ai" : "extraction_only",
+        reasons: degradedSourceReasons,
+        sourceDocumentAvailable,
+        sourceDocumentUsed,
+      },
+    }),
   };
 }
 
 async function generateMappingDecisionsWithPrimaryAiV1(input: {
-  annualReportContext?: AnnualReportMappingContextV1;
+  executionBudgetMs?: number;
   env: Env;
-  policyVersion: string;
-  trialBalance: TrialBalanceNormalizedV1;
-  reconciliation: ReconciliationResultPayloadV1;
+  request: ReturnType<typeof parseGenerateMappingDecisionsRequestV2>;
 }) {
-  const deterministicInput = {
-    policyVersion: input.policyVersion,
-    trialBalance: input.trialBalance,
-    reconciliation: input.reconciliation,
+  const annualReportContext =
+    resolveConfirmedAnnualReportMappingContextForRequestV1(input.request);
+  const annualReportLineage =
+    input.request.annualReportInput.status === "confirmed"
+      ? {
+          sourceExtractionArtifactId:
+            input.request.annualReportInput.extractionArtifactId!,
+          sourceTaxAnalysisArtifactId:
+            input.request.annualReportInput.taxAnalysisArtifactId,
+        }
+      : undefined;
+  const modelConfig = getGeminiModelConfigV1(input.env);
+  const stampConservativeFallbackMappingV1 = (fallbackReason: {
+    code: MappingDegradationReasonCodeV1;
+    message: string;
+  }) => {
+    const generatedAt = new Date().toISOString();
+    const decisions = input.request.trialBalance.rows.map((row) => {
+      const rowKey = buildTrialBalanceRowKeyV1(row.source);
+      const fallbackCategory = getSilverfinTaxCategoryByCodeV1(
+        resolveConservativeFallbackCategoryCodeV1({
+          accountName: row.accountName,
+          openingBalance: row.openingBalance,
+          closingBalance: row.closingBalance,
+        }),
+      );
+      return {
+        id: rowKey,
+        trialBalanceRowIdentity: buildTrialBalanceRowIdentityV1(row.source),
+        accountNumber: row.accountNumber,
+        sourceAccountNumber: row.sourceAccountNumber,
+        accountName: row.accountName,
+        proposedCategory: fallbackCategory,
+        selectedCategory: fallbackCategory,
+        confidence: 0.25,
+        evidence: [
+          {
+            type: "tb_row" as const,
+            reference: rowKey,
+            snippet: `${row.sourceAccountNumber} ${row.accountName}`,
+            source: row.source,
+          },
+        ],
+        policyRuleReference: "mapping.ai.fallback.module_unavailable.v1",
+        reviewFlag: true,
+        status: "proposed" as const,
+        source: "ai" as const,
+        aiTrace: {
+          rationale:
+            "AI-primary mapping fallback assigned a conservative non-tax-sensitive category because live model execution was unavailable.",
+          annualReportContextReferences: [],
+          sourceExtractionArtifactId:
+            annualReportLineage?.sourceExtractionArtifactId,
+          sourceTaxAnalysisArtifactId:
+            annualReportLineage?.sourceTaxAnalysisArtifactId,
+        },
+      };
+    });
+
+    return {
+      ok: true as const,
+      mapping: parseMappingDecisionSetArtifactV1({
+        schemaVersion: "mapping_decisions_v2",
+        policyVersion: input.request.policyVersion,
+        aiRun: parseAiRunMetadataV1({
+          runId: crypto.randomUUID(),
+          moduleId: "mapping-decisions",
+          moduleVersion: "v1",
+          promptVersion: "mapping-decisions.prompts.v1",
+          policyVersion: input.request.policyVersion,
+          activePatchVersions: [],
+          provider: "gemini",
+          model: modelConfig.fastModel,
+          modelTier: "fast",
+          generatedAt,
+          usedFallback: true,
+        }),
+        executionMetadata: parseMappingExecutionMetadataV1({
+          requestedStrategy: "ai_primary",
+          actualStrategy: "ai",
+          degraded: true,
+          degradedReasonCode: fallbackReason.code,
+          degradedReason: fallbackReason.message,
+          annualReportContextAvailable: annualReportContext !== undefined,
+          usedAiRunFallback: true,
+        }),
+        summary: {
+          totalRows: decisions.length,
+          deterministicDecisions: 0,
+          manualReviewRequired: decisions.length,
+          fallbackDecisions: decisions.length,
+          matchedByAccountNumber: 0,
+          matchedByAccountName: 0,
+          unmatchedRows: 0,
+        },
+        decisions,
+      }),
+    };
   };
   const apiKey = getGeminiApiKeyV1(input.env);
   if (!apiKey) {
-    return generateDeterministicMappingDecisionsV1(deterministicInput);
+    console.warn("mapping-decisions.ai.unavailable", {
+      reason: "missing_api_key",
+      policyVersion: input.request.policyVersion,
+    });
+    return stampConservativeFallbackMappingV1({
+      code: "missing_api_key",
+      message: "Gemini API key is not configured for AI-primary mapping.",
+    });
   }
 
   const configResult = loadMappingDecisionsModuleConfigV1();
   if (!configResult.ok) {
-    return generateDeterministicMappingDecisionsV1(deterministicInput);
+    console.warn("mapping-decisions.ai.config_invalid", {
+      reason: configResult.error.message,
+      policyVersion: input.request.policyVersion,
+    });
+    return stampConservativeFallbackMappingV1({
+      code: "config_invalid",
+      message: configResult.error.message,
+    });
   }
 
   const aiResult = await executeMappingDecisionsModelV1({
     apiKey,
-    annualReportContext: input.annualReportContext,
+    annualReportContext,
+    annualReportLineage,
     config: configResult.config,
+    executionBudgetMs: input.executionBudgetMs,
     generateId: () => crypto.randomUUID(),
     generatedAt: new Date().toISOString(),
-    modelConfig: getGeminiModelConfigV1(input.env),
-    policyVersion: input.policyVersion,
-    trialBalance: input.trialBalance,
+    modelConfig,
+    policyVersion: input.request.policyVersion,
+    trialBalance: input.request.trialBalance,
   });
   if (!aiResult.ok) {
-    return generateDeterministicMappingDecisionsV1(deterministicInput);
+    console.warn("mapping-decisions.ai.execution_failed", {
+      policyVersion: input.request.policyVersion,
+      reason: aiResult.error.message,
+      executionBudgetMs: input.executionBudgetMs,
+    });
+    return stampConservativeFallbackMappingV1({
+      code: "model_execution_failed",
+      message: aiResult.error.message,
+    });
   }
   if (aiResult.mapping.aiRun?.usedFallback) {
     console.warn("mapping-decisions.ai.degraded", {
       policyVersion: aiResult.mapping.policyVersion,
       totalRows: aiResult.mapping.summary.totalRows,
       fallbackDecisions: aiResult.mapping.summary.fallbackDecisions,
+      annualReportContextAvailable: annualReportContext !== undefined,
     });
   }
 
@@ -4088,6 +4283,85 @@ async function generateMappingDecisionsWithPrimaryAiV1(input: {
     ok: true as const,
     mapping: aiResult.mapping,
   };
+}
+
+async function buildGenerateMappingDecisionsRequestV2FromWorkspaceV1(input: {
+  policyVersion: string;
+  reconciliation: ReconciliationResultPayloadV1;
+  tenantId: string;
+  trialBalance: TrialBalanceNormalizedArtifactV1;
+  workspaceArtifactRepository: WorkspaceArtifactRepositoryV1;
+  workspaceId: string;
+}) {
+  const extraction =
+    await input.workspaceArtifactRepository.getActiveAnnualReportExtraction({
+      tenantId: input.tenantId,
+      workspaceId: input.workspaceId,
+    });
+  const taxAnalysis =
+    await input.workspaceArtifactRepository.getActiveAnnualReportTaxAnalysis({
+      tenantId: input.tenantId,
+      workspaceId: input.workspaceId,
+    });
+
+  if (!extraction) {
+    return parseGenerateMappingDecisionsRequestV2({
+      schemaVersion: "generate_mapping_decisions_request_v2",
+      policyVersion: input.policyVersion,
+      trialBalance: input.trialBalance,
+      reconciliation: input.reconciliation,
+      annualReportInput: {
+        status: "unavailable",
+        extractionConfirmed: false,
+        degraded: false,
+        degradedReasons: [],
+      },
+    });
+  }
+
+  if (!extraction.payload.confirmation.isConfirmed) {
+    return parseGenerateMappingDecisionsRequestV2({
+      schemaVersion: "generate_mapping_decisions_request_v2",
+      policyVersion: input.policyVersion,
+      trialBalance: input.trialBalance,
+      reconciliation: input.reconciliation,
+      annualReportInput: {
+        status: "unconfirmed_omitted",
+        extractionArtifactId: extraction.id,
+        extractionSchemaVersion: extraction.schemaVersion,
+        extractionConfirmed: false,
+        taxAnalysisArtifactId: taxAnalysis?.id,
+        taxAnalysisSchemaVersion: taxAnalysis?.schemaVersion,
+        degraded: true,
+        degradedReasons: [
+          "Active annual-report extraction is not confirmed, so mapper context was omitted.",
+        ],
+      },
+    });
+  }
+
+  return parseGenerateMappingDecisionsRequestV2({
+    schemaVersion: "generate_mapping_decisions_request_v2",
+    policyVersion: input.policyVersion,
+    trialBalance: input.trialBalance,
+    reconciliation: input.reconciliation,
+    annualReportInput: {
+      status: "confirmed",
+      extractionArtifactId: extraction.id,
+      extractionSchemaVersion: extraction.schemaVersion,
+      extractionConfirmed: true,
+      taxAnalysisArtifactId: taxAnalysis?.id,
+      taxAnalysisSchemaVersion: taxAnalysis?.schemaVersion,
+      degraded: false,
+      degradedReasons: [],
+      mappingContext: projectAnnualReportMappingContextV1({
+        annualReportTaxContext: projectAnnualReportTaxContextV1({
+          extraction: extraction.payload,
+          taxAnalysis: taxAnalysis?.payload,
+        }),
+      }),
+    },
+  });
 }
 
 async function generateTaxAdjustmentsWithPrimaryAiV1(input: {
@@ -4114,82 +4388,113 @@ async function generateTaxAdjustmentsWithPrimaryAiV1(input: {
   }
 
   const modelConfig = getGeminiModelConfigV1(input.env);
-  const closingBalanceBySourceAccount = new Map<string, number>();
-  for (const row of input.trialBalance.rows) {
-    closingBalanceBySourceAccount.set(
-      row.sourceAccountNumber,
-      (closingBalanceBySourceAccount.get(row.sourceAccountNumber) ?? 0) +
-        row.closingBalance,
-    );
+  const annualReportTaxContext =
+    input.annualReportTaxContext ??
+    projectAnnualReportTaxContextV1({
+      extraction: input.annualReportExtraction,
+    });
+  const routedCandidates = projectRoutedTaxAdjustmentCandidatesV1({
+    mapping: input.mapping,
+    trialBalance: input.trialBalance,
+  }).filter(
+    (candidate) => candidate.bridgeAiModule !== null,
+  );
+  if (routedCandidates.length === 0) {
+    return generateTaxAdjustmentsV1(deterministicInput);
   }
 
-  const moduleLoaders = [
-    {
-      moduleCode: "non_deductible_expenses" as const,
-      configResult: loadTaxAdjustmentsNonDeductibleExpensesModuleConfigV1(),
-      systemPrompt: TAX_ADJUSTMENTS_NON_DEDUCTIBLE_SYSTEM_PROMPT_V1,
-      userPrompt: TAX_ADJUSTMENTS_NON_DEDUCTIBLE_USER_PROMPT_V1,
-    },
-    {
-      moduleCode: "representation_entertainment" as const,
-      configResult:
-        loadTaxAdjustmentsRepresentationEntertainmentModuleConfigV1(),
-      systemPrompt: TAX_ADJUSTMENTS_REPRESENTATION_SYSTEM_PROMPT_V1,
-      userPrompt: TAX_ADJUSTMENTS_REPRESENTATION_USER_PROMPT_V1,
-    },
-    {
-      moduleCode: "depreciation_differences_basic" as const,
-      configResult:
-        loadTaxAdjustmentsDepreciationDifferencesBasicModuleConfigV1(),
-      systemPrompt: TAX_ADJUSTMENTS_DEPRECIATION_SYSTEM_PROMPT_V1,
-      userPrompt: TAX_ADJUSTMENTS_DEPRECIATION_USER_PROMPT_V1,
-    },
-  ] as const;
+  const groupedCandidates = new Map<string, typeof routedCandidates>();
+  for (const candidate of routedCandidates) {
+    const groupKey = `${candidate.moduleCode}|${candidate.bridgeAiModule}`;
+    const existing = groupedCandidates.get(groupKey);
+    if (existing) {
+      existing.push(candidate);
+      continue;
+    }
+
+    groupedCandidates.set(groupKey, [candidate]);
+  }
+
+  const routedCandidateByDecisionId = new Map(
+    routedCandidates.map((candidate) => [candidate.mappingDecisionId, candidate]),
+  );
 
   const allDecisions: TaxAdjustmentAiProposalDecisionV1[] = [];
   const aiRuns: AiRunMetadataV1[] = [];
 
-  for (const moduleLoader of moduleLoaders) {
-    if (!moduleLoader.configResult.ok) {
-      return generateTaxAdjustmentsV1(deterministicInput);
+  for (const candidates of groupedCandidates.values()) {
+    const bridgeAiModule = candidates[0]?.bridgeAiModule;
+    if (!bridgeAiModule) {
+      continue;
     }
 
-    const candidates = projectTaxAdjustmentCandidatesV1({
-      mapping: input.mapping,
-      allowedCategoryCodes:
-        moduleLoader.configResult.config.policyPack.candidateCategoryCodes,
-      closingBalanceBySourceAccount,
-    });
-    if (candidates.length === 0) {
+    let configResult:
+      | ReturnType<typeof loadTaxAdjustmentsNonDeductibleExpensesModuleConfigV1>
+      | ReturnType<
+          typeof loadTaxAdjustmentsRepresentationEntertainmentModuleConfigV1
+        >
+      | ReturnType<
+          typeof loadTaxAdjustmentsDepreciationDifferencesBasicModuleConfigV1
+        >;
+    let systemPrompt: string;
+    let userPrompt: string;
+
+    switch (bridgeAiModule) {
+      case "non_deductible_expenses":
+        configResult = loadTaxAdjustmentsNonDeductibleExpensesModuleConfigV1();
+        systemPrompt = TAX_ADJUSTMENTS_NON_DEDUCTIBLE_SYSTEM_PROMPT_V1;
+        userPrompt = TAX_ADJUSTMENTS_NON_DEDUCTIBLE_USER_PROMPT_V1;
+        break;
+      case "representation_entertainment":
+        configResult =
+          loadTaxAdjustmentsRepresentationEntertainmentModuleConfigV1();
+        systemPrompt = TAX_ADJUSTMENTS_REPRESENTATION_SYSTEM_PROMPT_V1;
+        userPrompt = TAX_ADJUSTMENTS_REPRESENTATION_USER_PROMPT_V1;
+        break;
+      case "depreciation_differences_basic":
+        configResult =
+          loadTaxAdjustmentsDepreciationDifferencesBasicModuleConfigV1();
+        systemPrompt = TAX_ADJUSTMENTS_DEPRECIATION_SYSTEM_PROMPT_V1;
+        userPrompt = TAX_ADJUSTMENTS_DEPRECIATION_USER_PROMPT_V1;
+        break;
+      default:
+        continue;
+    }
+
+    if (!configResult.ok) {
+      console.warn("tax-adjustments.ai.config_invalid", {
+        bridgeAiModule,
+        moduleCode: candidates[0]?.moduleCode,
+        mappingArtifactId: input.mappingArtifactId,
+      });
       continue;
     }
 
     const moduleResult = await executeTaxAdjustmentSubmoduleV1({
       apiKey,
-      annualReportTaxContext:
-        input.annualReportTaxContext ??
-        projectAnnualReportTaxContextV1({
-          extraction: input.annualReportExtraction,
-        }),
+      annualReportTaxContext: projectTaxAdjustmentModuleContextV1({
+        annualReportTaxContext,
+        moduleCode: candidates[0]!.moduleCode,
+      }),
       candidates,
-      config: moduleLoader.configResult.config as never,
+      config: configResult.config as never,
       generateId: () => crypto.randomUUID(),
       generatedAt: new Date().toISOString(),
       modelConfig,
-      systemPrompt: moduleLoader.systemPrompt,
-      userPrompt: moduleLoader.userPrompt,
+      systemPrompt,
+      userPrompt,
     });
     if (!moduleResult.ok) {
       for (const candidate of candidates) {
         allDecisions.push({
-          decisionId: `adj-fallback-${moduleLoader.moduleCode}-${candidate.sourceMappingDecisionId}`,
-          module: moduleLoader.moduleCode,
-          sourceMappingDecisionId: candidate.sourceMappingDecisionId,
-          direction: moduleLoader.configResult.config.policyPack.direction,
-          targetField: moduleLoader.configResult.config.policyPack.targetField,
+          decisionId: `adj-fallback-${candidate.moduleCode}-${candidate.mappingDecisionId}`,
+          module: candidate.moduleCode,
+          sourceMappingDecisionId: candidate.mappingDecisionId,
+          direction: candidate.direction,
+          targetField: candidate.targetField,
           reviewFlag: true,
           confidence: 0.25,
-          policyRuleReference: `adj.ai.fallback.${moduleLoader.moduleCode}.execution_failed.v1`,
+          policyRuleReference: `adj.ai.fallback.${candidate.moduleCode}.${bridgeAiModule}.execution_failed.v1`,
           rationale:
             "AI submodule failed; deterministic fallback proposal applied for this candidate.",
         });
@@ -4200,18 +4505,46 @@ async function generateTaxAdjustmentsWithPrimaryAiV1(input: {
     if (moduleResult.aiRun) {
       aiRuns.push(moduleResult.aiRun);
     }
-    allDecisions.push(...moduleResult.decisions);
+    allDecisions.push(
+      ...moduleResult.decisions.flatMap((decision) => {
+        const routedCandidate = routedCandidateByDecisionId.get(
+          decision.sourceMappingDecisionId,
+        );
+        if (!routedCandidate) {
+          console.warn("tax-adjustments.ai.unknown_candidate", {
+            bridgeAiModule,
+            sourceMappingDecisionId: decision.sourceMappingDecisionId,
+            mappingArtifactId: input.mappingArtifactId,
+          });
+          return [];
+        }
+
+        return [
+          {
+            ...decision,
+            module: routedCandidate.moduleCode,
+          },
+        ];
+      }),
+    );
     if (moduleResult.failedCandidates.length > 0) {
       for (const candidate of moduleResult.failedCandidates) {
+        const routedCandidate = routedCandidateByDecisionId.get(
+          candidate.mappingDecisionId,
+        );
+        if (!routedCandidate) {
+          continue;
+        }
+
         allDecisions.push({
-          decisionId: `adj-fallback-${moduleLoader.moduleCode}-${candidate.sourceMappingDecisionId}`,
-          module: moduleLoader.moduleCode,
-          sourceMappingDecisionId: candidate.sourceMappingDecisionId,
-          direction: moduleLoader.configResult.config.policyPack.direction,
-          targetField: moduleLoader.configResult.config.policyPack.targetField,
+          decisionId: `adj-fallback-${routedCandidate.moduleCode}-${candidate.mappingDecisionId}`,
+          module: routedCandidate.moduleCode,
+          sourceMappingDecisionId: candidate.mappingDecisionId,
+          direction: routedCandidate.direction,
+          targetField: routedCandidate.targetField,
           reviewFlag: true,
           confidence: 0.25,
-          policyRuleReference: `adj.ai.fallback.${moduleLoader.moduleCode}.chunk_retry_exhausted.v1`,
+          policyRuleReference: `adj.ai.fallback.${routedCandidate.moduleCode}.${bridgeAiModule}.chunk_retry_exhausted.v1`,
           rationale:
             "AI submodule chunk failed after retries; deterministic fallback proposal applied for this candidate.",
         });
@@ -4223,7 +4556,8 @@ async function generateTaxAdjustmentsWithPrimaryAiV1(input: {
       moduleResult.failedCandidates.length > 0
     ) {
       console.warn("tax-adjustments.ai.degraded", {
-        moduleCode: moduleLoader.moduleCode,
+        bridgeAiModule,
+        moduleCode: candidates[0]?.moduleCode,
         failedCandidates: moduleResult.failedCandidates.length,
         splitCount: moduleResult.telemetry.splitCount,
         totalAttempts: moduleResult.telemetry.totalAttempts,
@@ -4312,11 +4646,13 @@ export function createCompanyLifecycleDepsV1(env: Env): CompanyLifecycleDepsV1 {
 }
 
 /**
- * Creates environment-backed dependencies for deterministic TB pipeline runs.
+ * Creates environment-backed dependencies for TB pipeline runs with AI-primary mapping.
  */
 export function createTrialBalancePipelineRunDepsV1(
   env: Env,
 ): TrialBalancePipelineRunDepsV1 {
+  const trialBalanceImportAiExecutionBudgetMs = 900_000;
+
   return {
     artifactRepository: createD1TbPipelineArtifactRepositoryV1(env.DB),
     auditRepository: createD1AuditRepositoryV1(env.DB),
@@ -4325,31 +4661,20 @@ export function createTrialBalancePipelineRunDepsV1(
       const workspaceArtifactRepository = createD1WorkspaceArtifactRepositoryV1(
         env.DB,
       );
-      const extraction =
-        await workspaceArtifactRepository.getActiveAnnualReportExtraction({
+      const mappingRequest =
+        await buildGenerateMappingDecisionsRequestV2FromWorkspaceV1({
           tenantId: input.tenantId,
           workspaceId: input.workspaceId,
+          policyVersion: input.policyVersion,
+          trialBalance: input.trialBalance,
+          reconciliation: input.reconciliation,
+          workspaceArtifactRepository,
         });
-      const taxAnalysis =
-        await workspaceArtifactRepository.getActiveAnnualReportTaxAnalysis({
-          tenantId: input.tenantId,
-          workspaceId: input.workspaceId,
-        });
-      const annualReportContext = extraction
-        ? projectAnnualReportMappingContextV1({
-            annualReportTaxContext: projectAnnualReportTaxContextV1({
-              extraction: extraction.payload,
-              taxAnalysis: taxAnalysis?.payload,
-            }),
-          })
-        : undefined;
 
       return generateMappingDecisionsWithPrimaryAiV1({
+        executionBudgetMs: trialBalanceImportAiExecutionBudgetMs,
         env,
-        annualReportContext,
-        policyVersion: input.policyVersion,
-        trialBalance: input.trialBalance,
-        reconciliation: input.reconciliation,
+        request: mappingRequest,
       });
     },
     mappingPreferenceRepository: createD1MappingPreferenceRepositoryV1(env.DB),
@@ -4382,6 +4707,43 @@ export function createMappingReviewDepsV1(env: Env): MappingReviewDepsV1 {
     auditRepository: createD1AuditRepositoryV1(env.DB),
     loadModuleConfig: loadMappingReviewModuleConfigV1,
     runModel: executeMappingReviewModelV1,
+    generateId: () => crypto.randomUUID(),
+    nowIsoUtc: () => new Date().toISOString(),
+  };
+}
+
+/**
+ * Creates environment-backed dependencies for follow-up mapping AI enrichment.
+ */
+export function createMappingAiEnrichmentDepsV1(
+  env: Env,
+  options?: {
+    executionBudgetMs?: number;
+  },
+): MappingAiEnrichmentDepsV1 {
+  return {
+    artifactRepository: createD1TbPipelineArtifactRepositoryV1(env.DB),
+    auditRepository: createD1AuditRepositoryV1(env.DB),
+    mappingPreferenceRepository: createD1MappingPreferenceRepositoryV1(env.DB),
+    workspaceArtifactRepository: createD1WorkspaceArtifactRepositoryV1(env.DB),
+    workspaceRepository: createD1WorkspaceRepositoryV1(env.DB),
+    buildMappingRequest: (input) =>
+      buildGenerateMappingDecisionsRequestV2FromWorkspaceV1({
+        policyVersion: input.policyVersion,
+        reconciliation: input.reconciliation,
+        tenantId: input.tenantId,
+        trialBalance: input.trialBalance,
+        workspaceArtifactRepository: createD1WorkspaceArtifactRepositoryV1(
+          env.DB,
+        ),
+        workspaceId: input.workspaceId,
+      }),
+    generateAiMapping: ({ request }) =>
+      generateMappingDecisionsWithPrimaryAiV1({
+        env,
+        request,
+        executionBudgetMs: options?.executionBudgetMs,
+      }),
     generateId: () => crypto.randomUUID(),
     nowIsoUtc: () => new Date().toISOString(),
   };

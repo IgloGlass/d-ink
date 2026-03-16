@@ -2,16 +2,7 @@ import { z } from "zod";
 
 import { UuidV4Schema } from "./common.v1";
 
-export const Ink2FieldIdV1Schema = z.enum([
-  "INK2R.profit_before_tax",
-  "INK2S.non_deductible_expenses",
-  "INK2S.representation_non_deductible",
-  "INK2S.depreciation_adjustment",
-  "INK2S.other_manual_adjustments",
-  "INK2S.total_adjustments",
-  "INK2S.taxable_income",
-  "INK2S.corporate_tax",
-]);
+export const Ink2FieldIdV1Schema = z.string().trim().min(1);
 export type Ink2FieldIdV1 = z.infer<typeof Ink2FieldIdV1Schema>;
 
 export const Ink2FieldProvenanceV1Schema = z.enum([
@@ -38,7 +29,7 @@ export const Ink2FormDraftPayloadV1Schema = z
     extractionArtifactId: UuidV4Schema,
     adjustmentsArtifactId: UuidV4Schema,
     summaryArtifactId: UuidV4Schema,
-    fields: z.array(Ink2DraftFieldV1Schema).length(8),
+    fields: z.array(Ink2DraftFieldV1Schema).min(8),
     validation: z
       .object({
         status: z.enum(["valid", "invalid"]),

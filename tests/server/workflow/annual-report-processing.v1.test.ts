@@ -12,9 +12,12 @@ import { createD1WorkspaceRepositoryV1 } from "../../../src/db/repositories/work
 import {
   getLatestAnnualReportProcessingRunV1,
   processAnnualReportProcessingRunV1,
+  startAnnualReportTaxAnalysisProcessingRunV1,
   type AnnualReportProcessingDepsV1,
 } from "../../../src/server/workflow/annual-report-processing.v1";
+import { computeSourceContentSha256V1 } from "../../../src/server/workflow/annual-report-extraction.v1";
 import { parseAnnualReportExtractionPayloadV1 } from "../../../src/shared/contracts/annual-report-extraction.v1";
+import { parseAnnualReportTaxAnalysisPayloadV1 } from "../../../src/shared/contracts/annual-report-tax-analysis.v1";
 import { applyWorkspaceAuditSchemaForTests } from "../../db/test-schema";
 
 const TENANT_ID = "9d100000-0000-4000-8000-000000000001";
@@ -167,10 +170,214 @@ function createCompleteExtractionPayloadV1() {
   });
 }
 
+async function saveActiveExtractionForTestV1(input?: {
+  extraction?: ReturnType<typeof createCompleteExtractionPayloadV1>;
+}) {
+  const repository = createD1WorkspaceArtifactRepositoryV1(env.DB);
+  const writeResult = await repository.appendAnnualReportExtractionAndSetActive({
+    artifactId: "9d100000-0000-4000-8000-000000000099",
+    tenantId: TENANT_ID,
+    workspaceId: WORKSPACE_ID,
+    createdAt: "2026-03-03T12:05:00.000Z",
+    extraction: input?.extraction ?? createCompleteExtractionPayloadV1(),
+  });
+  if (!writeResult.ok) {
+    throw new Error(writeResult.message);
+  }
+
+  return writeResult.artifact;
+}
+
 describe("annual report processing workflow v1", () => {
   beforeEach(async () => {
     await applyWorkspaceAuditSchemaForTests();
     await seedWorkspace();
+  });
+
+  it("starts manual forensic review as a durable running processing run", async () => {
+    const activeExtraction = await saveActiveExtractionForTestV1();
+    const deps = createBaseDeps();
+    const queuedMessages: Array<{
+      runId: string;
+      tenantId: string;
+      workspaceId: string;
+    }> = [];
+    deps.analyzeAnnualReportTax = async () => {
+      throw new Error("manual tax analysis should not execute during run creation");
+    };
+    deps.enqueueProcessingRun = async (message) => {
+      queuedMessages.push(message);
+      return { ok: true as const };
+    };
+
+    const result = await startAnnualReportTaxAnalysisProcessingRunV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        expectedActiveExtraction: {
+          artifactId: activeExtraction.id,
+          version: activeExtraction.version,
+        },
+      },
+      deps,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.run).toBeDefined();
+    if (!result.run) {
+      return;
+    }
+
+    expect(result.run.status).toBe("running_tax_analysis");
+    expect(result.run.result?.extractionArtifactId).toBe(activeExtraction.id);
+    expect(result.run.result?.taxAnalysisArtifactId).toBeUndefined();
+    expect(result.run.technicalDetails).toEqual(
+      expect.arrayContaining([
+        "processing.operation=tax_analysis",
+        `tax_analysis.expected_extraction_artifact_id=${activeExtraction.id}`,
+        `tax_analysis.expected_extraction_version=${activeExtraction.version}`,
+      ]),
+    );
+    expect(queuedMessages).toEqual([
+      {
+        runId: result.run.runId,
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+      },
+    ]);
+  });
+
+  it("blocks starting a second forensic review while one is already open", async () => {
+    const activeExtraction = await saveActiveExtractionForTestV1();
+    const deps = createBaseDeps();
+    deps.analyzeAnnualReportTax = async () => {
+      throw new Error("manual tax analysis should not execute during run creation");
+    };
+    deps.enqueueProcessingRun = async () => ({ ok: true as const });
+
+    const firstRun = await startAnnualReportTaxAnalysisProcessingRunV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        expectedActiveExtraction: {
+          artifactId: activeExtraction.id,
+          version: activeExtraction.version,
+        },
+      },
+      deps,
+    );
+    expect(firstRun.ok).toBe(true);
+    if (!firstRun.ok || !firstRun.run) {
+      return;
+    }
+
+    const secondRun = await startAnnualReportTaxAnalysisProcessingRunV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        expectedActiveExtraction: {
+          artifactId: activeExtraction.id,
+          version: activeExtraction.version,
+        },
+      },
+      deps,
+    );
+
+    expect(secondRun.ok).toBe(false);
+    if (secondRun.ok) {
+      return;
+    }
+
+    expect(secondRun.error.code).toBe("STATE_CONFLICT");
+  });
+
+  it("processes queued forensic-review runs and persists the completed tax analysis", async () => {
+    const activeExtraction = await saveActiveExtractionForTestV1();
+    const deps = createBaseDeps();
+    deps.enqueueProcessingRun = async () => ({ ok: true as const });
+    deps.analyzeAnnualReportTax = async (input) => ({
+      ok: true as const,
+      taxAnalysis: parseAnnualReportTaxAnalysisPayloadV1({
+        schemaVersion: "annual_report_tax_analysis_v1",
+        sourceExtractionArtifactId: input.extractionArtifactId,
+        policyVersion: input.policyVersion,
+        basedOn: input.extraction.taxDeep ?? createCompleteExtractionPayloadV1().taxDeep,
+        executiveSummary: "Queued forensic review finished.",
+        accountingStandardAssessment: {
+          status: "aligned",
+          rationale: "K3 is explicit in the saved extraction.",
+        },
+        reviewState: {
+          mode: "full_ai",
+          reasons: [],
+          sourceDocumentAvailable: false,
+          sourceDocumentUsed: false,
+        },
+        findings: [],
+        missingInformation: [],
+        recommendedNextActions: [],
+      }),
+    });
+
+    const startResult = await startAnnualReportTaxAnalysisProcessingRunV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        expectedActiveExtraction: {
+          artifactId: activeExtraction.id,
+          version: activeExtraction.version,
+        },
+      },
+      deps,
+    );
+    expect(startResult.ok).toBe(true);
+    if (!startResult.ok || !startResult.run) {
+      return;
+    }
+
+    await processAnnualReportProcessingRunV1(
+      {
+        runId: startResult.run.runId,
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+      },
+      deps,
+    );
+
+    const latest = await getLatestAnnualReportProcessingRunV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+      },
+      deps,
+    );
+    expect(latest.ok).toBe(true);
+    if (!latest.ok) {
+      return;
+    }
+
+    expect(latest.run.status).toBe("completed");
+    expect(latest.run.result?.extractionArtifactId).toBe(activeExtraction.id);
+    expect(latest.run.result?.taxAnalysisArtifactId).toBeTruthy();
+    expect(latest.run.technicalDetails).toEqual(
+      expect.arrayContaining([
+        "processing.tax_analysis.review_mode=extraction_only",
+        "processing.tax_analysis.source_document_available=0",
+        "processing.tax_analysis.source_document_used=0",
+      ]),
+    );
+
+    const activeTaxAnalysis =
+      await deps.artifactRepository.getActiveAnnualReportTaxAnalysis({
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+      });
+    expect(activeTaxAnalysis?.payload.executiveSummary).toBe(
+      "Queued forensic review finished.",
+    );
   });
 
   it("marks queued run as failed when source storage binding is unavailable", async () => {
@@ -490,6 +697,52 @@ describe("annual report processing workflow v1", () => {
         "tax_analysis.manual_run_available=1",
       ]),
     );
+  });
+
+  it("persists source lineage on queued extraction artifacts", async () => {
+    await createQueuedRun();
+    const deps = createBaseDeps();
+    const sourceBytes = new Uint8Array([37, 80, 68, 70, 45, 54]);
+    deps.sourceStore = {
+      async delete() {
+        return;
+      },
+      async get() {
+        return {
+          async arrayBuffer() {
+            return Uint8Array.from(sourceBytes).buffer;
+          },
+        };
+      },
+      async put() {
+        return;
+      },
+    };
+    deps.extractAnnualReport = async () => ({
+      ok: true as const,
+      extraction: createCompleteExtractionPayloadV1(),
+    });
+
+    await processAnnualReportProcessingRunV1(
+      {
+        runId: RUN_ID,
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+      },
+      deps,
+    );
+
+    const activeExtraction =
+      await deps.artifactRepository.getActiveAnnualReportExtraction({
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+      });
+    expect(activeExtraction).toBeTruthy();
+    expect(activeExtraction?.payload.sourceLineage).toEqual({
+      processingRunId: RUN_ID,
+      sourceStorageKey: "annual-report-source/test.pdf",
+      sourceContentSha256: await computeSourceContentSha256V1(sourceBytes),
+    });
   });
 
   it("marks manual forensic review as blocked when extraction is incomplete", async () => {

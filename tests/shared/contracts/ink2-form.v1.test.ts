@@ -8,52 +8,52 @@ import {
 function createDraftFields() {
   return [
     {
-      fieldId: "INK2R.profit_before_tax" as const,
-      amount: 1000000,
+      fieldId: "1.1",
+      amount: 1006000,
       provenance: "extracted" as const,
-      sourceReferences: ["annual_report:profitBeforeTax"],
+      sourceReferences: ["ink2_derived:1.1"],
     },
     {
-      fieldId: "INK2S.non_deductible_expenses" as const,
+      fieldId: "2.26",
+      amount: 250000,
+      provenance: "adjustment" as const,
+      sourceReferences: ["annual_report_statement:2.26"],
+    },
+    {
+      fieldId: "3.26",
+      amount: 20000,
+      provenance: "adjustment" as const,
+      sourceReferences: ["annual_report_statement:3.25"],
+    },
+    {
+      fieldId: "3.27",
+      amount: 150000,
+      provenance: "adjustment" as const,
+      sourceReferences: ["annual_report_statement:3.26"],
+    },
+    {
+      fieldId: "4.3c",
       amount: 5000,
-      provenance: "adjustment" as const,
-      sourceReferences: ["adjustment:non_deductible_expenses"],
-    },
-    {
-      fieldId: "INK2S.representation_non_deductible" as const,
-      amount: 1000,
-      provenance: "adjustment" as const,
-      sourceReferences: ["adjustment:representation_entertainment"],
-    },
-    {
-      fieldId: "INK2S.depreciation_adjustment" as const,
-      amount: 0,
-      provenance: "adjustment" as const,
-      sourceReferences: ["adjustment:depreciation_differences_basic"],
-    },
-    {
-      fieldId: "INK2S.other_manual_adjustments" as const,
-      amount: 0,
       provenance: "manual" as const,
-      sourceReferences: ["adjustment:manual_review_bucket"],
+      sourceReferences: ["tax_adjustments:adj-1"],
     },
     {
-      fieldId: "INK2S.total_adjustments" as const,
-      amount: 6000,
+      fieldId: "4.9",
+      amount: -4000,
       provenance: "calculated" as const,
-      sourceReferences: ["summary:totalAdjustments"],
+      sourceReferences: ["tax_adjustments:adj-2"],
     },
     {
-      fieldId: "INK2S.taxable_income" as const,
+      fieldId: "4.15",
       amount: 1006000,
       provenance: "calculated" as const,
-      sourceReferences: ["summary:taxableIncome"],
+      sourceReferences: ["ink2_derived:4.15"],
     },
     {
-      fieldId: "INK2S.corporate_tax" as const,
-      amount: 207236,
+      fieldId: "4.16",
+      amount: 0,
       provenance: "calculated" as const,
-      sourceReferences: ["summary:corporateTax"],
+      sourceReferences: ["ink2_derived:4.16"],
     },
   ];
 }

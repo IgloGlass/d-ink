@@ -28,6 +28,37 @@ export type AnnualReportRuntimeMetadataV1 = z.infer<
   typeof AnnualReportRuntimeMetadataV1Schema
 >;
 
+export const AnnualReportSourceLineageV1Schema = z
+  .object({
+    processingRunId: UuidV4Schema.optional(),
+    sourceStorageKey: z.string().trim().min(1).optional(),
+    sourceContentSha256: z
+      .string()
+      .trim()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (
+      value.processingRunId ||
+      value.sourceStorageKey ||
+      value.sourceContentSha256
+    ) {
+      return;
+    }
+
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        "sourceLineage must include at least one durable source identifier.",
+      path: [],
+    });
+  });
+export type AnnualReportSourceLineageV1 = z.infer<
+  typeof AnnualReportSourceLineageV1Schema
+>;
+
 export const AnnualReportExtractionFieldStatusV1Schema = z.enum([
   "extracted",
   "needs_review",
@@ -370,6 +401,7 @@ export const AnnualReportExtractionPayloadV1Schema = z
       .default([]),
     documentWarnings: z.array(z.string().trim().min(1)).default([]),
     taxDeep: AnnualReportTaxDeepExtractionV1Schema.optional(),
+    sourceLineage: AnnualReportSourceLineageV1Schema.optional(),
     engineMetadata: AnnualReportRuntimeMetadataV1Schema.optional(),
     aiRun: AiRunMetadataV1Schema.optional(),
     confirmation: z

@@ -11,7 +11,8 @@ const MappingDecisionsPolicyPackV1Schema = z
     policyVersion: z.string().trim().min(1),
     batching: z
       .object({
-        maxRowsPerBatch: z.number().int().positive(),
+        // Keep mapper prompts small for stable classification quality.
+        maxRowsPerBatch: z.number().int().positive().max(40),
         minRowsPerChunk: z.number().int().positive(),
       })
       .strict(),
@@ -24,6 +25,17 @@ const MappingDecisionsPolicyPackV1Schema = z
     timeouts: z
       .object({
         requestTimeoutMs: z.number().int().positive(),
+      })
+      .strict(),
+    classificationStrategy: z
+      .object({
+        mode: z.literal("ai_primary"),
+        deterministicFallback: z.enum([
+          "conservative_only",
+          "deterministic_engine_on_failure",
+        ]),
+        preferSemanticSignalsOverAccountNumbers: z.boolean(),
+        useAnnualReportContext: z.boolean(),
       })
       .strict(),
     reviewThresholds: z

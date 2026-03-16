@@ -7,6 +7,7 @@
     "provider": "gemini",
     "modelTier": "fast"
   },
+  "purpose": "AI-first mapping of trial-balance rows into the canonical tax-category catalog, using annual-report context when available and conservative AI fallback outputs when live model execution is unavailable.",
   "policy": {
     "basePolicyVersion": "mapping-decisions.v1",
     "activePatchVersions": []

@@ -19,6 +19,7 @@ import type {
   WorkspaceRepositoryV1,
 } from "../../../src/db/repositories/workspace.repository.v1";
 import {
+  applyMappingPreferencesToDecisionSetV1,
   applyMappingOverridesV1,
   getActiveMappingDecisionsV1,
 } from "../../../src/server/workflow/mapping-override.v1";
@@ -190,6 +191,16 @@ class InMemoryArtifactRepositoryV1 implements TbPipelineArtifactRepositoryV1 {
   ): Promise<null> {
     void input;
     return null;
+  }
+
+  async clearActiveArtifacts(
+    input: Parameters<TbPipelineArtifactRepositoryV1["clearActiveArtifacts"]>[0],
+  ) {
+    void input;
+    return {
+      ok: true as const,
+      clearedArtifactTypes: [],
+    };
   }
 
   async listMappingVersions(
@@ -394,6 +405,60 @@ function createDeps(input?: {
 }
 
 describe("mapping override workflow v1", () => {
+  it("recomputes fallback summary counts from AI fallback policy references", () => {
+    const mapping = MappingDecisionSetPayloadV1Schema.parse({
+      schemaVersion: "mapping_decisions_v1",
+      policyVersion: "mapping-ai.v1",
+      summary: {
+        totalRows: 1,
+        deterministicDecisions: 0,
+        manualReviewRequired: 0,
+        fallbackDecisions: 0,
+        matchedByAccountNumber: 0,
+        matchedByAccountName: 0,
+        unmatchedRows: 0,
+      },
+      decisions: [
+        {
+          id: "decision-ai-fallback",
+          accountNumber: "3010",
+          sourceAccountNumber: "3010",
+          accountName: "Consulting revenue",
+          proposedCategory: {
+            code: "950000",
+            name: "Non-tax sensitive - Profit and loss statement",
+            statementType: "income_statement",
+          },
+          selectedCategory: {
+            code: "950000",
+            name: "Non-tax sensitive - Profit and loss statement",
+            statementType: "income_statement",
+          },
+          confidence: 0.25,
+          evidence: [
+            {
+              type: "tb_row",
+              reference: "TB:2",
+            },
+          ],
+          policyRuleReference: "mapping.ai.fallback.chunk_retry_exhausted.v1",
+          reviewFlag: true,
+          status: "proposed",
+          source: "ai",
+        },
+      ],
+    });
+
+    const { mapping: recomputed } = applyMappingPreferencesToDecisionSetV1({
+      mapping,
+      preferences: [],
+    });
+
+    expect(recomputed.summary.fallbackDecisions).toBe(1);
+    expect(recomputed.summary.manualReviewRequired).toBe(1);
+    expect(recomputed.summary.unmatchedRows).toBe(1);
+  });
+
   it("applies batch overrides, writes new mapping artifact version, and saves preferences", async () => {
     const { deps, artifactRepository, preferenceRepository, auditRepository } =
       createDeps();

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "tax-adjustments-hybrid-targeted-interest-and-net-interest-offset",
+  "moduleVersion": "v1",
+  "promptVersion": "tax-adjustments-hybrid-targeted-interest-and-net-interest-offset.prompts.v1",
+  "runtime": {
+    "provider": "gemini",
+    "modelTier": "thinking"
+  },
+  "policy": {
+    "basePolicyVersion": "tax-adjustments-hybrid-targeted-interest-and-net-interest-offset.v1",
+    "activePatchVersions": []
+  }
+}

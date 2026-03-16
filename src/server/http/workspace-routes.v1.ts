@@ -1,14 +1,14 @@
 import { z } from "zod";
 
 import {
+  type AnnualReportFileTypeV1,
   ApplyAnnualReportExtractionOverridesRequestV1Schema,
   ClearAnnualReportDataRequestV1Schema,
   ConfirmAnnualReportExtractionRequestV1Schema,
-  type AnnualReportFileTypeV1,
   RunAnnualReportExtractionRequestV1Schema,
 } from "../../shared/contracts/annual-report-extraction.v1";
-import { RunAnnualReportTaxAnalysisRequestV1Schema } from "../../shared/contracts/annual-report-tax-analysis.v1";
 import { CreateAnnualReportProcessingRunRequestV1Schema } from "../../shared/contracts/annual-report-processing-run.v1";
+import { RunAnnualReportTaxAnalysisRequestV1Schema } from "../../shared/contracts/annual-report-tax-analysis.v1";
 import { CreateAnnualReportUploadSessionRequestV1Schema } from "../../shared/contracts/annual-report-upload-session.v1";
 import {
   CompleteTaskRequestV1Schema,
@@ -25,6 +25,10 @@ import {
   RunInk2FormRequestV1Schema,
 } from "../../shared/contracts/ink2-form.v1";
 import {
+  RunMappingAiEnrichmentRequestV1Schema,
+  parseRunMappingAiEnrichmentResultV1,
+} from "../../shared/contracts/mapping-ai-enrichment.v1";
+import {
   ExpectedActiveMappingRefV1Schema,
   MappingOverrideInstructionV1Schema,
 } from "../../shared/contracts/mapping-override.v1";
@@ -34,7 +38,10 @@ import {
   RunTaxAdjustmentRequestV1Schema,
 } from "../../shared/contracts/tax-adjustments.v1";
 import { RunTaxSummaryRequestV1Schema } from "../../shared/contracts/tax-summary.v1";
-import { ExecuteTrialBalancePipelineRequestV1Schema } from "../../shared/contracts/tb-pipeline-run.v1";
+import {
+  ClearTrialBalancePipelineDataRequestV1Schema,
+  ExecuteTrialBalancePipelineRequestV1Schema,
+} from "../../shared/contracts/tb-pipeline-run.v1";
 import { WorkspaceStatusV1Schema } from "../../shared/contracts/workspace.v1";
 import type { Env } from "../../shared/types/env";
 import {
@@ -43,19 +50,19 @@ import {
   parseContentLengthHeaderV1,
 } from "../security/payload-limits.v1";
 import {
-  createAnnualReportProcessingRunV1,
-  createAnnualReportUploadSessionV1,
-  getLatestAnnualReportProcessingRunV1,
-  uploadAnnualReportSourceV1,
-} from "../workflow/annual-report-processing.v1";
-import {
   applyAnnualReportExtractionOverridesV1,
   clearAnnualReportDataV1,
   confirmAnnualReportExtractionV1,
   getActiveAnnualReportExtractionV1,
   getActiveAnnualReportTaxAnalysisV1,
-  runAnnualReportTaxAnalysisV1,
 } from "../workflow/annual-report-extraction.v1";
+import {
+  createAnnualReportProcessingRunV1,
+  createAnnualReportUploadSessionV1,
+  getLatestAnnualReportProcessingRunV1,
+  startAnnualReportTaxAnalysisProcessingRunV1,
+  uploadAnnualReportSourceV1,
+} from "../workflow/annual-report-processing.v1";
 import { resolveSessionPrincipalByTokenV1 } from "../workflow/auth-magic-link.v1";
 import {
   completeTaskV1,
@@ -64,6 +71,7 @@ import {
   listCommentsV1,
   listTasksV1,
 } from "../workflow/collaboration.v1";
+import { runMappingAiEnrichmentV1 } from "../workflow/mapping-ai-enrichment.v1";
 import {
   applyMappingOverridesV1,
   getActiveMappingDecisionsV1,
@@ -81,12 +89,16 @@ import {
   runTaxAdjustmentsV1,
   runTaxSummaryV1,
 } from "../workflow/tax-core-workflow.v1";
-import { executeTrialBalancePipelineRunV1 } from "../workflow/trial-balance-pipeline-run.v1";
+import {
+  clearTrialBalancePipelineDataV1,
+  executeTrialBalancePipelineRunV1,
+} from "../workflow/trial-balance-pipeline-run.v1";
 import {
   buildAnnualReportRuntimeMetadataV1,
   createAnnualReportExtractionDepsV1,
   createAnnualReportProcessingDepsV1,
   createCollaborationDepsV1,
+  createMappingAiEnrichmentDepsV1,
   createMappingOverrideDepsV1,
   createMappingReviewDepsV1,
   createResolveSessionPrincipalDepsV1,
@@ -112,6 +124,11 @@ import { parseCookiesV1 } from "./session-auth.v1";
 
 const SESSION_COOKIE_NAME_V1 = "dink_session_v1";
 const WORKSPACES_ROUTE_BASE_PATH_V1 = "/v1/workspaces";
+const MAPPING_AI_ENRICHMENT_BACKGROUND_EXECUTION_BUDGET_MS = 900_000;
+
+type WorkerExecutionContextV1 = {
+  waitUntil(promise: Promise<unknown>): void;
+};
 
 function createAnnualReportRuntimeHeadersV1(env: Env): HeadersInit {
   const runtimeMetadata = buildAnnualReportRuntimeMetadataV1(env);
@@ -172,6 +189,12 @@ const TrialBalancePipelineRunHttpRequestBodyV1Schema =
   ExecuteTrialBalancePipelineRequestV1Schema.omit({
     workspaceId: true,
     createdByUserId: true,
+  });
+
+const TrialBalanceClearHttpRequestBodyV1Schema =
+  ClearTrialBalancePipelineDataRequestV1Schema.omit({
+    workspaceId: true,
+    clearedByUserId: true,
   });
 
 const AnnualReportRunHttpRequestBodyV1Schema =
@@ -281,6 +304,10 @@ const MappingOverrideHttpRequestBodyV1Schema = z
 
 const MappingReviewHttpRequestBodyV1Schema =
   GenerateMappingReviewSuggestionsRequestV1Schema.omit({
+    workspaceId: true,
+  });
+const MappingAiEnrichmentHttpRequestBodyV1Schema =
+  RunMappingAiEnrichmentRequestV1Schema.omit({
     workspaceId: true,
   });
 
@@ -705,6 +732,41 @@ function mapMappingReviewFailureToResponseV1(
   });
 }
 
+function mapMappingAiEnrichmentFailureToResponseV1(
+  input: WorkflowFailureResultV1,
+): Response {
+  if (input.error.code === "INPUT_INVALID") {
+    return createWorkflowFailureResponseV1({
+      status: 400,
+      failure: input,
+    });
+  }
+
+  if (
+    input.error.code === "WORKSPACE_NOT_FOUND" ||
+    input.error.code === "TRIAL_BALANCE_NOT_FOUND" ||
+    input.error.code === "RECONCILIATION_NOT_FOUND" ||
+    input.error.code === "MAPPING_NOT_FOUND"
+  ) {
+    return createWorkflowFailureResponseV1({
+      status: 404,
+      failure: input,
+    });
+  }
+
+  if (input.error.code === "RECONCILIATION_BLOCKED") {
+    return createWorkflowFailureResponseV1({
+      status: 409,
+      failure: input,
+    });
+  }
+
+  return createWorkflowFailureResponseV1({
+    status: 500,
+    failure: input,
+  });
+}
+
 async function handleCreateWorkspaceRouteV1(
   request: Request,
   env: Env,
@@ -966,6 +1028,58 @@ async function handleTrialBalancePipelineRunRouteV1(
     createTrialBalancePipelineRunDepsV1(env),
   );
 
+  if (!result.ok) {
+    return mapTrialBalancePipelineFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: createAnnualReportRuntimeHeadersV1(env),
+  });
+}
+
+async function handleClearTrialBalancePipelineDataRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "TB pipeline clear",
+    schema: TrialBalanceClearHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
+  }
+
+  const parsedBody = bodyParseResult.data;
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await clearTrialBalancePipelineDataV1(
+    {
+      ...parsedBody,
+      workspaceId,
+      clearedByUserId: sessionGuardResult.principal.userId,
+    },
+    createTrialBalancePipelineRunDepsV1(env),
+  );
   if (!result.ok) {
     return mapTrialBalancePipelineFailureToResponseV1(result);
   }
@@ -1481,20 +1595,20 @@ async function handleRunAnnualReportTaxAnalysisRouteV1(
     return sessionGuardResult.response;
   }
 
-  const result = await runAnnualReportTaxAnalysisV1(
+  const result = await startAnnualReportTaxAnalysisProcessingRunV1(
     {
       ...parsedBody,
       workspaceId,
       requestedByUserId: sessionGuardResult.principal.userId,
     },
-    createAnnualReportExtractionDepsV1(env),
+    createAnnualReportProcessingDepsV1(env),
   );
   if (!result.ok) {
     return mapAnnualReportFailureToResponseV1(result);
   }
 
   return Response.json(result, {
-    status: 200,
+    status: result.taxAnalysis ? 200 : 202,
     headers: createAnnualReportRuntimeHeadersV1(env),
   });
 }
@@ -2469,12 +2583,147 @@ async function handleGenerateMappingReviewSuggestionsRouteV1(
   });
 }
 
+async function handleRunMappingAiEnrichmentRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  workspaceId: string,
+  executionContext?: WorkerExecutionContextV1,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Mapping AI enrichment",
+    schema: MappingAiEnrichmentHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
+  }
+
+  const parsedBody = bodyParseResult.data;
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const activeMappingResult = await getActiveMappingDecisionsV1(
+    {
+      tenantId: parsedBody.tenantId,
+      workspaceId,
+    },
+    createMappingOverrideDepsV1(env),
+  );
+  if (!activeMappingResult.ok) {
+    return mapMappingOverrideFailureToResponseV1(activeMappingResult);
+  }
+
+  if (
+    activeMappingResult.active.artifactId !==
+      parsedBody.expectedActiveMapping.artifactId ||
+    activeMappingResult.active.version !==
+      parsedBody.expectedActiveMapping.version
+  ) {
+    return Response.json(
+      parseRunMappingAiEnrichmentResultV1({
+        ok: true,
+        status: "stale_skipped",
+        activeBefore: activeMappingResult.active,
+        activeAfter: activeMappingResult.active,
+        message:
+          "Active mapping changed before AI enrichment started, so no upgrade was applied.",
+      }),
+      {
+        status: 200,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
+    );
+  }
+
+  const workflowInput = {
+    ...parsedBody,
+    workspaceId,
+  };
+  const actor = {
+    actorUserId: sessionGuardResult.principal.userId,
+  };
+
+  if (!executionContext) {
+    const result = await runMappingAiEnrichmentV1(
+      workflowInput,
+      actor,
+      createMappingAiEnrichmentDepsV1(env, {
+        executionBudgetMs: MAPPING_AI_ENRICHMENT_BACKGROUND_EXECUTION_BUDGET_MS,
+      }),
+    );
+    if (!result.ok) {
+      return mapMappingAiEnrichmentFailureToResponseV1(result);
+    }
+
+    return Response.json(result, {
+      status: 200,
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  executionContext.waitUntil(
+    runMappingAiEnrichmentV1(
+      workflowInput,
+      actor,
+      createMappingAiEnrichmentDepsV1(env, {
+        executionBudgetMs: MAPPING_AI_ENRICHMENT_BACKGROUND_EXECUTION_BUDGET_MS,
+      }),
+    ).then((result) => {
+      if (!result.ok) {
+        console.warn("mapping.ai_enrichment.background_failed", {
+          code: result.error.code,
+          tenantId: parsedBody.tenantId,
+          workspaceId,
+        });
+      }
+    }),
+  );
+
+  return Response.json(
+    parseRunMappingAiEnrichmentResultV1({
+      ok: true,
+      status: "accepted",
+      activeBefore: activeMappingResult.active,
+      activeAfter: activeMappingResult.active,
+      message:
+        "AI account mapping started in the background. This page will refresh automatically when the latest mapping is ready.",
+    }),
+    {
+      status: 202,
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    },
+  );
+}
+
 /**
  * Handles V1 workspace HTTP routes for create, fetch, and status transitions.
  */
 export async function handleWorkspaceRoutesV1(
   request: Request,
   env: Env,
+  executionContext?: WorkerExecutionContextV1,
 ): Promise<Response> {
   let appBaseUrl: URL;
   try {
@@ -2540,6 +2789,24 @@ export async function handleWorkspaceRoutesV1(
     }
 
     return handleTrialBalancePipelineRunRouteV1(
+      request,
+      env,
+      appBaseUrl,
+      routeSegments[0],
+    );
+  }
+
+  if (
+    routeSegments.length === 3 &&
+    routeSegments[0] &&
+    routeSegments[1] === "tb-pipeline-runs" &&
+    routeSegments[2] === "clear"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+
+    return handleClearTrialBalancePipelineDataRouteV1(
       request,
       env,
       appBaseUrl,
@@ -2943,6 +3210,25 @@ export async function handleWorkspaceRoutesV1(
     }
 
     return handleGetActiveMappingRouteV1(request, env, routeSegments[0]);
+  }
+
+  if (
+    routeSegments.length === 3 &&
+    routeSegments[0] &&
+    routeSegments[1] === "mapping-decisions" &&
+    routeSegments[2] === "ai-enrichment"
+  ) {
+    if (request.method !== "POST") {
+      return createMethodNotAllowedResponseV1("POST");
+    }
+
+    return handleRunMappingAiEnrichmentRouteV1(
+      request,
+      env,
+      appBaseUrl,
+      routeSegments[0],
+      executionContext,
+    );
   }
 
   if (

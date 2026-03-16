@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "tax-adjustments-warranty-provision",
+  "moduleVersion": "v1",
+  "promptVersion": "tax-adjustments-warranty-provision.prompts.v1",
+  "runtime": {
+    "provider": "gemini",
+    "modelTier": "thinking"
+  },
+  "policy": {
+    "basePolicyVersion": "tax-adjustments-warranty-provision.v1",
+    "activePatchVersions": []
+  }
+}

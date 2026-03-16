@@ -8,7 +8,11 @@ import {
   type ReconciliationStatusV1,
   parseReconcileTrialBalanceResultV1,
 } from "../../shared/contracts/reconciliation.v1";
-import type { TrialBalanceRejectedRowReasonCodeV1 } from "../../shared/contracts/trial-balance.v1";
+import {
+  getTrialBalanceRowBalanceValueV1,
+  listAvailableTrialBalanceBalanceColumnsV1,
+  type TrialBalanceRejectedRowReasonCodeV1,
+} from "../../shared/contracts/trial-balance.v1";
 
 const MATERIAL_REJECTION_REASON_CODES_V1 =
   new Set<TrialBalanceRejectedRowReasonCodeV1>([
@@ -220,19 +224,27 @@ export function evaluateTrialBalanceReconciliationV1(
   const trialBalance = parsedRequest.data.trialBalance;
   const normalizedRows = trialBalance.rows;
   const rejectedRows = trialBalance.rejectedRows;
+  const availableBalanceColumns =
+    listAvailableTrialBalanceBalanceColumnsV1(trialBalance);
 
   const candidateRows = normalizedRows.length + rejectedRows.length;
   const normalizedRowCount = normalizedRows.length;
   const rejectedRowCount = rejectedRows.length;
 
-  const openingBalanceTotal = normalizedRows.reduce(
-    (sum, row) => sum + row.openingBalance,
-    0,
-  );
-  const closingBalanceTotal = normalizedRows.reduce(
-    (sum, row) => sum + row.closingBalance,
-    0,
-  );
+  const openingBalanceTotal = availableBalanceColumns.includes("opening_balance")
+    ? normalizedRows.reduce(
+        (sum, row) =>
+          sum + (getTrialBalanceRowBalanceValueV1(row, "opening_balance") ?? 0),
+        0,
+      )
+    : 0;
+  const closingBalanceTotal = availableBalanceColumns.includes("closing_balance")
+    ? normalizedRows.reduce(
+        (sum, row) =>
+          sum + (getTrialBalanceRowBalanceValueV1(row, "closing_balance") ?? 0),
+        0,
+      )
+    : 0;
 
   const materialRejectedRows = rejectedRows.filter((row) =>
     MATERIAL_REJECTION_REASON_CODES_V1.has(row.reasonCode),
@@ -338,7 +350,10 @@ export function evaluateTrialBalanceReconciliationV1(
     }),
   );
 
-  const rowsBySourceAccountNumber = new Map<string, typeof normalizedRows>();
+  const rowsBySourceAccountNumber = new Map<
+    string,
+    Array<(typeof normalizedRows)[number]>
+  >();
   for (const row of normalizedRows) {
     const existingRows = rowsBySourceAccountNumber.get(row.sourceAccountNumber);
     if (existingRows) {
@@ -450,20 +465,27 @@ export function evaluateTrialBalanceReconciliationV1(
 
   const openingTotalMatches = isApproximatelyEqualV1(
     openingBalanceTotal,
-    trialBalance.verification.openingBalanceTotal,
+    trialBalance.verification.openingBalanceTotal ?? 0,
   );
   const closingTotalMatches = isApproximatelyEqualV1(
     closingBalanceTotal,
-    trialBalance.verification.closingBalanceTotal,
+    trialBalance.verification.closingBalanceTotal ?? 0,
   );
+  const shouldValidateOpeningTotal =
+    availableBalanceColumns.includes("opening_balance");
+  const shouldValidateClosingTotal =
+    availableBalanceColumns.includes("closing_balance");
+  const totalsConsistent =
+    (!shouldValidateOpeningTotal || openingTotalMatches) &&
+    (!shouldValidateClosingTotal || closingTotalMatches);
 
   checks.push(
     buildCheckV1({
       code: "verification_total_consistency",
-      status: openingTotalMatches && closingTotalMatches ? "pass" : "fail",
-      blocking: !(openingTotalMatches && closingTotalMatches),
+      status: totalsConsistent ? "pass" : "fail",
+      blocking: !totalsConsistent,
       message:
-        openingTotalMatches && closingTotalMatches
+        totalsConsistent
           ? "Parser verification totals match derived normalized-row totals."
           : "Parser verification totals are inconsistent with derived totals.",
       context: {
@@ -475,6 +497,7 @@ export function evaluateTrialBalanceReconciliationV1(
           openingBalanceTotal,
           closingBalanceTotal,
         },
+        availableBalanceColumns,
         openingTotalMatches,
         closingTotalMatches,
       },
@@ -486,9 +509,18 @@ export function evaluateTrialBalanceReconciliationV1(
   );
   const summaryRowsWithNumericTotals = summaryRows
     .map((row) => {
-      const opening = parseNumericSummaryValueV1(row.rawValues.opening_balance);
-      const closing = parseNumericSummaryValueV1(row.rawValues.closing_balance);
-      if (opening === null || closing === null) {
+      const opening = availableBalanceColumns.includes("opening_balance")
+        ? parseNumericSummaryValueV1(row.rawValues.opening_balance)
+        : null;
+      const closing = availableBalanceColumns.includes("closing_balance")
+        ? parseNumericSummaryValueV1(row.rawValues.closing_balance)
+        : null;
+      if (
+        (availableBalanceColumns.includes("opening_balance") &&
+          opening === null) ||
+        (availableBalanceColumns.includes("closing_balance") &&
+          closing === null)
+      ) {
         return null;
       }
 
@@ -509,8 +541,12 @@ export function evaluateTrialBalanceReconciliationV1(
   );
   const hasMatchingGrandTotal = grandTotalRows.some(
     (row) =>
-      isApproximatelyEqualV1(row.opening, openingBalanceTotal) &&
-      isApproximatelyEqualV1(row.closing, closingBalanceTotal),
+      (!availableBalanceColumns.includes("opening_balance") ||
+        (row.opening !== null &&
+          isApproximatelyEqualV1(row.opening, openingBalanceTotal))) &&
+      (!availableBalanceColumns.includes("closing_balance") ||
+        (row.closing !== null &&
+          isApproximatelyEqualV1(row.closing, closingBalanceTotal))),
   );
 
   let summaryConsistencyStatus: ReconciliationStatusV1;
@@ -578,6 +614,7 @@ export function evaluateTrialBalanceReconciliationV1(
         rejectedRows: rejectedRowCount,
         materialRejectedRows: materialRejectedRows.length,
         nonMaterialRejectedRows: nonMaterialRejectedRows.length,
+        availableBalanceColumns,
         openingBalanceTotal,
         closingBalanceTotal,
       },

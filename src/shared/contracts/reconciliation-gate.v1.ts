@@ -4,7 +4,7 @@ import {
   ReconciliationResultPayloadV1Schema,
   ReconciliationStatusV1Schema,
 } from "./reconciliation.v1";
-import { TrialBalanceNormalizedV1Schema } from "./trial-balance.v1";
+import { TrialBalanceNormalizedArtifactV1Schema } from "./trial-balance.v1";
 
 /**
  * Error codes for workflow-level reconciliation gating before mapping.
@@ -26,7 +26,7 @@ export type ReconciliationGateErrorCodeV1 = z.infer<
  */
 export const EvaluateReconciliationGateRequestV1Schema = z
   .object({
-    trialBalance: TrialBalanceNormalizedV1Schema,
+    trialBalance: TrialBalanceNormalizedArtifactV1Schema,
   })
   .strict();
 

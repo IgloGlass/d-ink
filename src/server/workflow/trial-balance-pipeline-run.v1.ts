@@ -4,17 +4,21 @@ import type { AuditRepositoryV1 } from "../../db/repositories/audit.repository.v
 import type { MappingPreferenceRepositoryV1 } from "../../db/repositories/mapping-preference.repository.v1";
 import type { TbPipelineArtifactRepositoryV1 } from "../../db/repositories/tb-pipeline-artifact.repository.v1";
 import type { WorkspaceArtifactRepositoryV1 } from "../../db/repositories/workspace-artifact.repository.v1";
+import type { WorkspaceArtifactTypeV1 } from "../../db/repositories/workspace-artifact.repository.v1";
 import { AUDIT_EVENT_TYPES_V1 } from "../../shared/audit/audit-event-catalog.v1";
 import { parseAuditEventV2 } from "../../shared/contracts/audit-event.v2";
+import type { GenerateMappingDecisionsResultV1 } from "../../shared/contracts/mapping.v1";
 import type { ReconciliationResultPayloadV1 } from "../../shared/contracts/reconciliation.v1";
 import {
+  ClearTrialBalancePipelineDataRequestV1Schema,
+  type ClearTrialBalancePipelineDataResultV1,
   ExecuteTrialBalancePipelineRequestV1Schema,
   type ExecuteTrialBalancePipelineResultV1,
+  type TbPipelineArtifactTypeV1,
+  parseClearTrialBalancePipelineDataResultV1,
   parseExecuteTrialBalancePipelineResultV1,
 } from "../../shared/contracts/tb-pipeline-run.v1";
-import type { GenerateMappingDecisionsResultV1 } from "../../shared/contracts/mapping.v1";
-import type { TrialBalanceNormalizedV1 } from "../../shared/contracts/trial-balance.v1";
-import { generateDeterministicMappingDecisionsV1 } from "../mapping/deterministic-mapping.v1";
+import type { TrialBalanceNormalizedArtifactV1 } from "../../shared/contracts/trial-balance.v1";
 import { parseTrialBalanceFileV1 } from "../parsing/trial-balance-parser.v1";
 import { validateTrialBalanceFileTypeCoherenceV1 } from "../security/file-type-coherence.v1";
 import { MAX_TRIAL_BALANCE_FILE_BYTES_V1 } from "../security/payload-limits.v1";
@@ -22,16 +26,16 @@ import { evaluateTrialBalanceReconciliationV1 } from "../validation/trial-balanc
 import { applyMappingPreferencesToDecisionSetV1 } from "./mapping-override.v1";
 
 /**
- * Dependencies required by the deterministic TB pipeline workflow.
+ * Dependencies required by the TB pipeline workflow.
  */
 export interface TrialBalancePipelineRunDepsV1 {
   artifactRepository: TbPipelineArtifactRepositoryV1;
   auditRepository: AuditRepositoryV1;
-  generateMappingDecisions?: (input: {
+  generateMappingDecisions: (input: {
     tenantId: string;
     workspaceId: string;
     policyVersion: string;
-    trialBalance: TrialBalanceNormalizedV1;
+    trialBalance: TrialBalanceNormalizedArtifactV1;
     reconciliation: ReconciliationResultPayloadV1;
   }) => Promise<GenerateMappingDecisionsResultV1>;
   mappingPreferenceRepository: MappingPreferenceRepositoryV1;
@@ -108,11 +112,78 @@ async function appendAuditEventBestEffortV1(input: {
   }
 }
 
+const TRIAL_BALANCE_CLEAR_ARTIFACT_TYPES_V1: TbPipelineArtifactTypeV1[] = [
+  "trial_balance",
+  "reconciliation",
+  "mapping",
+];
+
+const MAPPING_DEPENDENT_WORKSPACE_ARTIFACT_TYPES_V1: WorkspaceArtifactTypeV1[] =
+  ["tax_adjustments", "tax_summary", "ink2_form", "export_package"];
+
+async function clearMappingDependentsV1(input: {
+  deps: TrialBalancePipelineRunDepsV1;
+  tenantId: string;
+  workspaceId: string;
+  actorType: "system" | "user";
+  actorUserId?: string;
+  reason: "mapping_cleared" | "mapping_replaced";
+}): Promise<
+  | { ok: true; clearedArtifactTypes: WorkspaceArtifactTypeV1[] }
+  | {
+      ok: false;
+      code: "WORKSPACE_NOT_FOUND" | "PERSISTENCE_ERROR";
+      message: string;
+    }
+> {
+  if (!input.deps.workspaceArtifactRepository) {
+    return {
+      ok: true,
+      clearedArtifactTypes: [],
+    };
+  }
+
+  const clearResult =
+    await input.deps.workspaceArtifactRepository.clearActiveArtifacts({
+      tenantId: input.tenantId,
+      workspaceId: input.workspaceId,
+      artifactTypes: MAPPING_DEPENDENT_WORKSPACE_ARTIFACT_TYPES_V1,
+    });
+  if (!clearResult.ok) {
+    return clearResult;
+  }
+
+  if (clearResult.clearedArtifactTypes.length > 0) {
+    await appendAuditEventBestEffortV1({
+      deps: input.deps,
+      event: parseAuditEventV2({
+        id: input.deps.generateId(),
+        tenantId: input.tenantId,
+        workspaceId: input.workspaceId,
+        actorType: input.actorType,
+        actorUserId: input.actorUserId,
+        eventType: AUDIT_EVENT_TYPES_V1.MAPPING_ACTIVE_DEPENDENTS_CLEARED,
+        targetType: "workspace_active_artifacts",
+        targetId: input.workspaceId,
+        after: {
+          clearedArtifactTypes: clearResult.clearedArtifactTypes,
+          reason: input.reason,
+        },
+        timestamp: input.deps.nowIsoUtc(),
+        context: {},
+      }),
+    });
+  }
+
+  return clearResult;
+}
+
 /**
- * Runs the deterministic TB pipeline and persists immutable artifacts per step.
+ * Runs the TB pipeline and persists immutable artifacts per step.
  *
  * Safety boundary:
- * - Parser, reconciliation, and mapping remain deterministic and AI-free.
+ * - Parser and reconciliation remain deterministic and AI-free.
+ * - Mapping is AI-first and executed through the injected AI mapper.
  * - Mapping is strictly blocked if reconciliation cannot proceed.
  */
 export async function executeTrialBalancePipelineRunV1(
@@ -409,19 +480,13 @@ export async function executeTrialBalancePipelineRunV1(
     });
   }
 
-  const mappingResult = deps.generateMappingDecisions
-    ? await deps.generateMappingDecisions({
-        tenantId: request.tenantId,
-        workspaceId: request.workspaceId,
-        trialBalance: parseResult.trialBalance,
-        reconciliation: reconciliationResult.reconciliation,
-        policyVersion: request.policyVersion,
-      })
-    : generateDeterministicMappingDecisionsV1({
-        trialBalance: parseResult.trialBalance,
-        reconciliation: reconciliationResult.reconciliation,
-        policyVersion: request.policyVersion,
-      });
+  const mappingResult = await deps.generateMappingDecisions({
+    tenantId: request.tenantId,
+    workspaceId: request.workspaceId,
+    trialBalance: parseResult.trialBalance,
+    reconciliation: reconciliationResult.reconciliation,
+    policyVersion: request.policyVersion,
+  });
   if (!mappingResult.ok) {
     return parseExecuteTrialBalancePipelineResultV1({
       ok: false,
@@ -518,6 +583,9 @@ export async function executeTrialBalancePipelineRunV1(
         artifactId: mappingPersisted.artifact.id,
         version: mappingPersisted.artifact.version,
         decisionCount: mappingPersisted.artifact.payload.decisions.length,
+        executionMetadata:
+          mappingPersisted.artifact.payload.executionMetadata ?? null,
+        aiRun: mappingPersisted.artifact.payload.aiRun ?? null,
       },
       timestamp: deps.nowIsoUtc(),
       context: {},
@@ -544,6 +612,32 @@ export async function executeTrialBalancePipelineRunV1(
         timestamp: deps.nowIsoUtc(),
         context: {},
       }),
+    });
+  }
+
+  const clearDependentsResult = await clearMappingDependentsV1({
+    deps,
+    tenantId: request.tenantId,
+    workspaceId: request.workspaceId,
+    actorType: actorFields.actorType,
+    actorUserId: actorFields.actorUserId,
+    reason: "mapping_replaced",
+  });
+  if (!clearDependentsResult.ok) {
+    return parseExecuteTrialBalancePipelineResultV1({
+      ok: false,
+      error: {
+        code:
+          clearDependentsResult.code === "WORKSPACE_NOT_FOUND"
+            ? "WORKSPACE_NOT_FOUND"
+            : "PERSISTENCE_ERROR",
+        message: clearDependentsResult.message,
+        user_message:
+          "The updated account mapping could not clear downstream workspace data.",
+        context: {
+          operation: "mapping.clear_dependents",
+        },
+      },
     });
   }
 
@@ -602,5 +696,100 @@ export async function executeTrialBalancePipelineRunV1(
       reconciliation: reconciliationResult.reconciliation,
       mapping: mappingWithPreferences.mapping,
     },
+  });
+}
+
+export async function clearTrialBalancePipelineDataV1(
+  input: unknown,
+  deps: TrialBalancePipelineRunDepsV1,
+): Promise<ClearTrialBalancePipelineDataResultV1> {
+  const parsedRequest =
+    ClearTrialBalancePipelineDataRequestV1Schema.safeParse(input);
+  if (!parsedRequest.success) {
+    return parseClearTrialBalancePipelineDataResultV1({
+      ok: false,
+      error: {
+        code: "INPUT_INVALID",
+        message: "Trial-balance clear request payload is invalid.",
+        user_message:
+          "The trial-balance clear request is invalid. Refresh and retry.",
+        context: buildErrorContextFromZod(parsedRequest.error),
+      },
+    });
+  }
+
+  const request = parsedRequest.data;
+  const tbClearResult = await deps.artifactRepository.clearActiveArtifacts({
+    tenantId: request.tenantId,
+    workspaceId: request.workspaceId,
+    artifactTypes: TRIAL_BALANCE_CLEAR_ARTIFACT_TYPES_V1,
+  });
+  if (!tbClearResult.ok) {
+    return parseClearTrialBalancePipelineDataResultV1({
+      ok: false,
+      error: {
+        code:
+          tbClearResult.code === "WORKSPACE_NOT_FOUND"
+            ? "WORKSPACE_NOT_FOUND"
+            : "PERSISTENCE_ERROR",
+        message: tbClearResult.message,
+        user_message:
+          "The current account-mapping data could not be cleared due to a storage error.",
+        context: {
+          operation: "trial_balance.clear_active",
+        },
+      },
+    });
+  }
+
+  const clearDependentsResult = await clearMappingDependentsV1({
+    deps,
+    tenantId: request.tenantId,
+    workspaceId: request.workspaceId,
+    actorType: request.clearedByUserId ? "user" : "system",
+    actorUserId: request.clearedByUserId,
+    reason: "mapping_cleared",
+  });
+  if (!clearDependentsResult.ok) {
+    return parseClearTrialBalancePipelineDataResultV1({
+      ok: false,
+      error: {
+        code:
+          clearDependentsResult.code === "WORKSPACE_NOT_FOUND"
+            ? "WORKSPACE_NOT_FOUND"
+            : "PERSISTENCE_ERROR",
+        message: clearDependentsResult.message,
+        user_message:
+          "The current account-mapping data could not clear downstream workspace data.",
+        context: {
+          operation: "trial_balance.clear_dependents",
+        },
+      },
+    });
+  }
+
+  await appendAuditEventBestEffortV1({
+    deps,
+    event: parseAuditEventV2({
+      id: deps.generateId(),
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      actorType: request.clearedByUserId ? "user" : "system",
+      actorUserId: request.clearedByUserId,
+      eventType: AUDIT_EVENT_TYPES_V1.MAPPING_ACTIVE_DATA_CLEARED,
+      targetType: "tb_pipeline_active_artifacts",
+      targetId: request.workspaceId,
+      after: {
+        clearedArtifactTypes: tbClearResult.clearedArtifactTypes,
+      },
+      timestamp: deps.nowIsoUtc(),
+      context: {},
+    }),
+  });
+
+  return parseClearTrialBalancePipelineDataResultV1({
+    ok: true,
+    clearedArtifactTypes: tbClearResult.clearedArtifactTypes,
+    clearedDependentArtifactTypes: clearDependentsResult.clearedArtifactTypes,
   });
 }

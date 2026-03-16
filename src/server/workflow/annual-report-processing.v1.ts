@@ -39,23 +39,32 @@ import {
   parseCreateAnnualReportUploadSessionResultV1,
   parseUploadAnnualReportSourceResultV1,
 } from "../../shared/contracts/annual-report-upload-session.v1";
+import {
+  RunAnnualReportTaxAnalysisRequestV1Schema,
+  type RunAnnualReportTaxAnalysisResultV1,
+  parseRunAnnualReportTaxAnalysisResultV1,
+} from "../../shared/contracts/annual-report-tax-analysis.v1";
 import { parseAuditEventV2 } from "../../shared/contracts/audit-event.v2";
 import type { AnnualReportSourceStoreV1 } from "../../shared/types/env";
 import type { ParseAnnualReportExtractionResultV1 } from "../parsing/annual-report-extractor.v1";
 import { validateAnnualReportFileTypeCoherenceV1 } from "../security/file-type-coherence.v1";
 import { MAX_ANNUAL_REPORT_FILE_BYTES_V1 } from "../security/payload-limits.v1";
 import {
+  buildAnnualReportSourceLineageV1,
   finalizeExtractionConfirmationV1,
   hasAnnualReportFullExtractionV1,
   listMissingRequiredExtractionFieldsV1,
   persistAnnualReportExtractionArtifactV1,
+  runAnnualReportTaxAnalysisV1,
 } from "./annual-report-extraction.v1";
 
 type AnnualReportCreateRunFailureCodeV1 =
   | "INPUT_INVALID"
   | "WORKSPACE_NOT_FOUND"
+  | "EXTRACTION_NOT_FOUND"
   | "PROCESSING_RUN_NOT_FOUND"
   | "PROCESSING_RUN_UNAVAILABLE"
+  | "STATE_CONFLICT"
   | "PERSISTENCE_ERROR";
 
 export interface AnnualReportProcessingDepsV1 {
@@ -247,6 +256,50 @@ function mergeTechnicalDetailsV1(input: {
   }
 
   return merged.slice(-60);
+}
+
+const PROCESSING_OPERATION_TECHNICAL_DETAIL_PREFIX_V1 = "processing.operation";
+const TAX_ANALYSIS_OPERATION_TECHNICAL_DETAIL_VALUE_V1 = "tax_analysis";
+const TAX_ANALYSIS_EXPECTED_EXTRACTION_ARTIFACT_ID_DETAIL_PREFIX_V1 =
+  "tax_analysis.expected_extraction_artifact_id";
+const TAX_ANALYSIS_EXPECTED_EXTRACTION_VERSION_DETAIL_PREFIX_V1 =
+  "tax_analysis.expected_extraction_version";
+
+function readTechnicalDetailValueV1(input: {
+  prefix: string;
+  technicalDetails: string[];
+}): string | undefined {
+  const detail = input.technicalDetails.find((entry) =>
+    entry.startsWith(`${input.prefix}=`),
+  );
+  if (!detail) {
+    return undefined;
+  }
+
+  return detail.slice(input.prefix.length + 1).trim() || undefined;
+}
+
+function buildTaxAnalysisRunTechnicalDetailsV1(input: {
+  expectedExtractionArtifactId: string;
+  expectedExtractionVersion: number;
+}): string[] {
+  return [
+    `${PROCESSING_OPERATION_TECHNICAL_DETAIL_PREFIX_V1}=${TAX_ANALYSIS_OPERATION_TECHNICAL_DETAIL_VALUE_V1}`,
+    `${TAX_ANALYSIS_EXPECTED_EXTRACTION_ARTIFACT_ID_DETAIL_PREFIX_V1}=${input.expectedExtractionArtifactId}`,
+    `${TAX_ANALYSIS_EXPECTED_EXTRACTION_VERSION_DETAIL_PREFIX_V1}=${input.expectedExtractionVersion}`,
+  ];
+}
+
+function isTaxAnalysisProcessingRunV1(
+  run: AnnualReportProcessingRunRecordV1,
+): boolean {
+  return (
+    run.status === "running_tax_analysis" &&
+    readTechnicalDetailValueV1({
+      prefix: PROCESSING_OPERATION_TECHNICAL_DETAIL_PREFIX_V1,
+      technicalDetails: run.technicalDetails,
+    }) === TAX_ANALYSIS_OPERATION_TECHNICAL_DETAIL_VALUE_V1
+  );
 }
 
 function projectRunV1(run: AnnualReportProcessingRunRecordV1) {
@@ -808,13 +861,22 @@ async function executeProcessingRunFromSourceBytesV1(input: {
       return;
     }
 
+    const extractionWithSourceLineage = {
+      ...finalizedExtraction,
+      sourceLineage: await buildAnnualReportSourceLineageV1({
+        fileBytes: input.sourceBytes,
+        processingRunId: currentRun.id,
+        sourceStorageKey: currentRun.sourceStorageKey,
+      }),
+    };
+
     const persistedExtraction = await persistAnnualReportExtractionArtifactV1({
       actorType: currentRun.createdByUserId ? "user" : "system",
       actorUserId: currentRun.createdByUserId,
       artifactId: pendingExtractionArtifactId,
       clearDependentsReason: "annual_report_replaced",
       deps: createArtifactPersistenceDepsV1(deps),
-      extraction: finalizedExtraction,
+      extraction: extractionWithSourceLineage,
       tenantId: currentRun.tenantId,
       workspaceId: currentRun.workspaceId,
     });
@@ -1463,6 +1525,408 @@ export async function getLatestAnnualReportProcessingRunV1(
   });
 }
 
+export async function startAnnualReportTaxAnalysisProcessingRunV1(
+  input: unknown,
+  deps: AnnualReportProcessingDepsV1,
+): Promise<RunAnnualReportTaxAnalysisResultV1> {
+  const parsedRequest =
+    RunAnnualReportTaxAnalysisRequestV1Schema.safeParse(input);
+  if (!parsedRequest.success) {
+    return parseRunAnnualReportTaxAnalysisResultV1(
+      buildFailureV1({
+        code: "INPUT_INVALID",
+        message: "Annual-report tax-analysis request payload is invalid.",
+        userMessage:
+          "The forensic tax-review request is invalid. Refresh and retry.",
+        context: buildErrorContextFromZod(parsedRequest.error),
+      }),
+    );
+  }
+  const request = parsedRequest.data;
+
+  if (!deps.analyzeAnnualReportTax) {
+    return parseRunAnnualReportTaxAnalysisResultV1(
+      buildFailureV1({
+        code: "PROCESSING_RUN_UNAVAILABLE",
+        message: "Annual-report tax analysis dependency is not configured.",
+        userMessage:
+          "Forensic tax review is temporarily unavailable. Try again shortly.",
+        context: {
+          operation: "annual_report.tax_analysis.start_run",
+        },
+      }),
+    );
+  }
+  if (!deps.enqueueProcessingRun) {
+    return parseRunAnnualReportTaxAnalysisResultV1(
+      buildFailureV1({
+        code: "PROCESSING_RUN_UNAVAILABLE",
+        message:
+          deps.processingConfigError ??
+          "Annual-report background processing is not configured.",
+        userMessage:
+          "Forensic tax review is temporarily unavailable. Try again shortly.",
+        context: {
+          operation: "annual_report.tax_analysis.start_run",
+        },
+      }),
+    );
+  }
+
+  const workspace = await deps.workspaceRepository.getById({
+    tenantId: request.tenantId,
+    workspaceId: request.workspaceId,
+  });
+  if (!workspace) {
+    return parseRunAnnualReportTaxAnalysisResultV1(
+      buildFailureV1({
+        code: "WORKSPACE_NOT_FOUND",
+        message: "Workspace does not exist for tenant and workspace ID.",
+        userMessage: "Workspace could not be found.",
+        context: {
+          tenantId: request.tenantId,
+          workspaceId: request.workspaceId,
+        },
+      }),
+    );
+  }
+
+  const openRuns = await deps.processingRunRepository.listOpenByWorkspace({
+    tenantId: request.tenantId,
+    workspaceId: request.workspaceId,
+  });
+  if (openRuns.length > 0) {
+    const blockingRun = openRuns[0];
+    return parseRunAnnualReportTaxAnalysisResultV1(
+      buildFailureV1({
+        code: "STATE_CONFLICT",
+        message: "Another annual-report processing run is already open.",
+        userMessage:
+          blockingRun.status === "running_tax_analysis"
+            ? "A forensic tax review is already running. Wait for it to finish before starting another."
+            : "An annual-report run is already in progress. Wait for it to finish before starting forensic review.",
+        context: {
+          blockingRunId: blockingRun.id,
+          blockingRunStatus: blockingRun.status,
+        },
+      }),
+    );
+  }
+
+  const activeExtraction =
+    await deps.artifactRepository.getActiveAnnualReportExtraction({
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+    });
+  if (!activeExtraction) {
+    return parseRunAnnualReportTaxAnalysisResultV1(
+      buildFailureV1({
+        code: "EXTRACTION_NOT_FOUND",
+        message:
+          "No active annual report extraction exists for this workspace.",
+        userMessage:
+          "Run the annual report extraction before starting forensic review.",
+        context: {
+          tenantId: request.tenantId,
+          workspaceId: request.workspaceId,
+        },
+      }),
+    );
+  }
+
+  if (
+    request.expectedActiveExtraction &&
+    (activeExtraction.id !== request.expectedActiveExtraction.artifactId ||
+      activeExtraction.version !== request.expectedActiveExtraction.version)
+  ) {
+    return parseRunAnnualReportTaxAnalysisResultV1(
+      buildFailureV1({
+        code: "STATE_CONFLICT",
+        message:
+          "Active extraction artifact/version differs from expected compare-and-set values.",
+        userMessage:
+          "The annual report changed before forensic review started. Refresh and retry.",
+        context: {
+          expectedActiveExtraction: request.expectedActiveExtraction,
+          actualActiveExtraction: {
+            artifactId: activeExtraction.id,
+            version: activeExtraction.version,
+          },
+        },
+      }),
+    );
+  }
+
+  const missingRequiredFields = listMissingRequiredExtractionFieldsV1(
+    activeExtraction.payload,
+  );
+  if (
+    missingRequiredFields.length > 0 ||
+    !hasAnnualReportFullExtractionV1(activeExtraction.payload)
+  ) {
+    return parseRunAnnualReportTaxAnalysisResultV1(
+      buildFailureV1({
+        code: "STATE_CONFLICT",
+        message:
+          "Forensic tax analysis requires a usable annual-report extraction with core facts and statements.",
+        userMessage:
+          "Finish the annual report extraction before running forensic review.",
+        context: {
+          missingRequiredFields,
+          hasFullExtraction: hasAnnualReportFullExtractionV1(
+            activeExtraction.payload,
+          ),
+        },
+      }),
+    );
+  }
+
+  const now = deps.nowIsoUtc();
+  const runId = deps.generateId();
+  const createdRun: AnnualReportProcessingRunRecordV1 = {
+    id: runId,
+    tenantId: request.tenantId,
+    workspaceId: request.workspaceId,
+    sourceFileName: activeExtraction.payload.sourceFileName,
+    sourceFileType: activeExtraction.payload.sourceFileType,
+    sourceStorageKey:
+      activeExtraction.payload.sourceLineage?.sourceStorageKey ??
+      [
+        "annual-report-tax-analysis",
+        request.tenantId,
+        request.workspaceId,
+        runId,
+      ].join("/"),
+    sourceSizeBytes: 1,
+    policyVersion: activeExtraction.payload.policyVersion,
+    status: "running_tax_analysis",
+    hasPreviousActiveResult: Boolean(
+      await deps.artifactRepository.getActiveAnnualReportTaxAnalysis({
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+      }),
+    ),
+    previousActiveExtractionArtifactId: activeExtraction.id,
+    technicalDetails: buildTaxAnalysisRunTechnicalDetailsV1({
+      expectedExtractionArtifactId: activeExtraction.id,
+      expectedExtractionVersion: activeExtraction.version,
+    }),
+    resultExtractionArtifactId: activeExtraction.id,
+    runtime: deps.getRuntimeMetadata?.(),
+    createdByUserId: request.requestedByUserId,
+    createdAt: now,
+    updatedAt: now,
+    startedAt: now,
+  };
+
+  const persistedRun = await deps.processingRunRepository.create(createdRun);
+  if (!persistedRun.ok) {
+    return parseRunAnnualReportTaxAnalysisResultV1(
+      buildFailureV1({
+        code:
+          persistedRun.code === "WORKSPACE_NOT_FOUND"
+            ? "WORKSPACE_NOT_FOUND"
+            : "PERSISTENCE_ERROR",
+        message: persistedRun.message,
+        userMessage:
+          persistedRun.code === "WORKSPACE_NOT_FOUND"
+            ? "Workspace could not be found."
+            : "The forensic review could not be started.",
+        context: {},
+      }),
+    );
+  }
+
+  const enqueueResult = await deps.enqueueProcessingRun({
+    runId,
+    tenantId: request.tenantId,
+    workspaceId: request.workspaceId,
+  });
+  if (!enqueueResult.ok) {
+    const failedRun = await markRunStatusV1({
+      deps,
+      run: persistedRun.value,
+      status: "failed",
+      error: {
+        code: enqueueResult.code,
+        userMessage:
+          "The forensic review could not be started. Try again shortly.",
+        technicalMessage: enqueueResult.message,
+      },
+      finishedAt: deps.nowIsoUtc(),
+    });
+    return parseRunAnnualReportTaxAnalysisResultV1({
+      ok: true,
+      run: projectRunV1(failedRun),
+    });
+  }
+
+  await appendAuditEventBestEffortV1({
+    deps,
+    event: parseAuditEventV2({
+      id: deps.generateId(),
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      actorType: request.requestedByUserId ? "user" : "system",
+      actorUserId: request.requestedByUserId,
+      eventType: AUDIT_EVENT_TYPES_V1.PROCESSING_RUN_STARTED,
+      targetType: "annual_report_processing_run",
+      targetId: runId,
+      after: {
+        runId,
+        sourceExtractionArtifactId: activeExtraction.id,
+      },
+      timestamp: deps.nowIsoUtc(),
+      context: {},
+    }),
+  });
+
+  return parseRunAnnualReportTaxAnalysisResultV1({
+    ok: true,
+    run: projectRunV1(persistedRun.value),
+  });
+}
+
+async function executeTaxAnalysisProcessingRunV1(input: {
+  deps: AnnualReportProcessingDepsV1;
+  run: AnnualReportProcessingRunRecordV1;
+}): Promise<void> {
+  const refreshedRun = await refreshRunIfCurrentV1({
+    deps: input.deps,
+    run: input.run,
+  });
+  if (!refreshedRun) {
+    return;
+  }
+
+  const expectedExtractionArtifactId = readTechnicalDetailValueV1({
+    prefix: TAX_ANALYSIS_EXPECTED_EXTRACTION_ARTIFACT_ID_DETAIL_PREFIX_V1,
+    technicalDetails: refreshedRun.technicalDetails,
+  });
+  const expectedExtractionVersionRaw = readTechnicalDetailValueV1({
+    prefix: TAX_ANALYSIS_EXPECTED_EXTRACTION_VERSION_DETAIL_PREFIX_V1,
+    technicalDetails: refreshedRun.technicalDetails,
+  });
+  const expectedExtractionVersion = expectedExtractionVersionRaw
+    ? Number(expectedExtractionVersionRaw)
+    : NaN;
+  if (
+    !expectedExtractionArtifactId ||
+    !Number.isInteger(expectedExtractionVersion) ||
+    expectedExtractionVersion <= 0
+  ) {
+    await markRunFailedForRuntimeIssueV1({
+      deps: input.deps,
+      run: refreshedRun,
+      technicalDetail:
+        "processing.tax_analysis.failed missing_expected_extraction_reference",
+      technicalMessage:
+        "Forensic review run did not store the expected extraction reference.",
+    });
+    return;
+  }
+
+  const taxAnalysisResult = await runAnnualReportTaxAnalysisV1(
+    {
+      tenantId: refreshedRun.tenantId,
+      workspaceId: refreshedRun.workspaceId,
+      expectedActiveExtraction: {
+        artifactId: expectedExtractionArtifactId,
+        version: expectedExtractionVersion,
+      },
+      requestedByUserId: refreshedRun.createdByUserId,
+    },
+    {
+      artifactRepository: input.deps.artifactRepository,
+      auditRepository: input.deps.auditRepository,
+      processingRunRepository: input.deps.processingRunRepository,
+      sourceStore: input.deps.sourceStore,
+      workspaceRepository: input.deps.workspaceRepository,
+      analyzeAnnualReportTax: input.deps.analyzeAnnualReportTax,
+      generateId: input.deps.generateId,
+      nowIsoUtc: input.deps.nowIsoUtc,
+    },
+  );
+  if (!taxAnalysisResult.ok) {
+    await markRunStatusV1({
+      deps: input.deps,
+      run: refreshedRun,
+      status: "failed",
+      technicalDetails: [
+        `processing.tax_analysis.failed code=${taxAnalysisResult.error.code}`,
+      ],
+      error: {
+        code: taxAnalysisResult.error.code,
+        userMessage: taxAnalysisResult.error.user_message,
+        technicalMessage: taxAnalysisResult.error.message,
+      },
+      finishedAt: input.deps.nowIsoUtc(),
+    });
+    return;
+  }
+  if (!taxAnalysisResult.taxAnalysis || !taxAnalysisResult.active) {
+    await markRunFailedForRuntimeIssueV1({
+      deps: input.deps,
+      run: refreshedRun,
+      technicalDetail:
+        "processing.tax_analysis.failed missing_completed_tax_analysis_payload",
+      technicalMessage:
+        "Forensic review run completed without a persisted tax-analysis artifact.",
+    });
+    return;
+  }
+
+  const completedRun = await markRunStatusV1({
+    deps: input.deps,
+    run: refreshedRun,
+    status: "completed",
+    technicalDetails: [
+      `processing.tax_analysis.review_mode=${
+        taxAnalysisResult.taxAnalysis.reviewState?.mode ?? "unknown"
+      }`,
+      `processing.tax_analysis.source_document_available=${
+        taxAnalysisResult.taxAnalysis.reviewState?.sourceDocumentAvailable
+          ? 1
+          : 0
+      }`,
+      `processing.tax_analysis.source_document_used=${
+        taxAnalysisResult.taxAnalysis.reviewState?.sourceDocumentUsed ? 1 : 0
+      }`,
+      ...(taxAnalysisResult.taxAnalysis.reviewState?.reasons ?? []).map(
+        (reason) => `processing.tax_analysis.reason=${reason}`,
+      ),
+    ],
+    degradation: {
+      mode: "none",
+      warnings: taxAnalysisResult.taxAnalysis.reviewState?.reasons ?? [],
+      fallbacks: [],
+    },
+    resultTaxAnalysisArtifactId: taxAnalysisResult.active?.artifactId,
+    finishedAt: input.deps.nowIsoUtc(),
+  });
+
+  await appendAuditEventBestEffortV1({
+    deps: input.deps,
+    event: parseAuditEventV2({
+      id: input.deps.generateId(),
+      tenantId: completedRun.tenantId,
+      workspaceId: completedRun.workspaceId,
+      actorType: completedRun.createdByUserId ? "user" : "system",
+      actorUserId: completedRun.createdByUserId,
+      eventType: AUDIT_EVENT_TYPES_V1.PROCESSING_RUN_COMPLETED,
+      targetType: "annual_report_processing_run",
+      targetId: completedRun.id,
+      after: {
+        runId: completedRun.id,
+        extractionArtifactId: completedRun.resultExtractionArtifactId,
+        taxAnalysisArtifactId: completedRun.resultTaxAnalysisArtifactId,
+      },
+      timestamp: input.deps.nowIsoUtc(),
+      context: {},
+    }),
+  });
+}
+
 export async function processAnnualReportProcessingRunV1(
   input: AnnualReportProcessingQueueMessageV1,
   deps: AnnualReportProcessingDepsV1,
@@ -1477,9 +1941,19 @@ export async function processAnnualReportProcessingRunV1(
     tenantId: parsed.data.tenantId,
     workspaceId: parsed.data.workspaceId,
   });
+  if (!initialRun) {
+    return;
+  }
+  if (isTaxAnalysisProcessingRunV1(initialRun)) {
+    await executeTaxAnalysisProcessingRunV1({
+      deps,
+      run: initialRun,
+    });
+    return;
+  }
   if (
-    !initialRun ||
-    (initialRun.status !== "queued" && initialRun.status !== "uploading_source")
+    initialRun.status !== "queued" &&
+    initialRun.status !== "uploading_source"
   ) {
     return;
   }

@@ -149,11 +149,11 @@ function updateVerificationFromRowsV1(
   trialBalance.verification.normalizedRows = trialBalance.rows.length;
   trialBalance.verification.rejectedRows = trialBalance.rejectedRows.length;
   trialBalance.verification.openingBalanceTotal = trialBalance.rows.reduce(
-    (sum, row) => sum + row.openingBalance,
+    (sum, row) => sum + (row.openingBalance ?? 0),
     0,
   );
   trialBalance.verification.closingBalanceTotal = trialBalance.rows.reduce(
-    (sum, row) => sum + row.closingBalance,
+    (sum, row) => sum + (row.closingBalance ?? 0),
     0,
   );
   trialBalance.verification.duplicateAccountNumberGroups = Array.from(
@@ -256,7 +256,8 @@ describe("reconciliation gate workflow v1", () => {
 
   it("blocks mapping when verification totals are inconsistent", () => {
     const trialBalance = createBaseTrialBalanceV1();
-    trialBalance.verification.openingBalanceTotal += 10;
+    trialBalance.verification.openingBalanceTotal =
+      (trialBalance.verification.openingBalanceTotal ?? 0) + 10;
 
     const result = evaluateReconciliationGateForMappingV1({
       trialBalance,

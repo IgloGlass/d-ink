@@ -10,6 +10,7 @@ import {
   type AnnualReportExtractionDepsV1,
   applyAnnualReportExtractionOverridesV1,
   clearAnnualReportDataV1,
+  computeSourceContentSha256V1,
   confirmAnnualReportExtractionV1,
   getActiveAnnualReportExtractionV1,
   getActiveAnnualReportTaxAnalysisV1,
@@ -56,6 +57,40 @@ async function seedWorkspace(): Promise<void> {
 
 function toBase64(input: string): string {
   return btoa(input);
+}
+
+async function buildSourceLineageForTestV1(input: {
+  fileBytes: Uint8Array;
+  processingRunId?: string;
+  sourceStorageKey?: string;
+}) {
+  return {
+    processingRunId: input.processingRunId,
+    sourceStorageKey: input.sourceStorageKey,
+    sourceContentSha256: await computeSourceContentSha256V1(input.fileBytes),
+  };
+}
+
+async function saveActiveExtractionForTestV1(input: {
+  deps: AnnualReportExtractionDepsV1;
+  extraction: ReturnType<typeof parseAnnualReportExtractionPayloadV1>;
+}) {
+  const writeResult =
+    await input.deps.artifactRepository.appendAnnualReportExtractionAndSetActive(
+      {
+        artifactId: crypto.randomUUID(),
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        createdAt: "2026-03-03T12:09:00.000Z",
+        extraction: input.extraction,
+      },
+    );
+  expect(writeResult.ok).toBe(true);
+  if (!writeResult.ok) {
+    throw new Error(writeResult.message);
+  }
+
+  return writeResult.artifact;
 }
 
 function createDeps(): AnnualReportExtractionDepsV1 {
@@ -896,29 +931,9 @@ describe("annual report extraction workflow v1", () => {
     );
   });
 
-  it("forwards the stored source document into manual forensic tax analysis when available", async () => {
+  it("persists source lineage for direct annual-report extraction uploads", async () => {
     await seedWorkspace();
     const deps = createDeps();
-    const sourceBytes = Uint8Array.from([37, 80, 68, 70, 45, 49, 46, 55]);
-    deps.sourceStore = {
-      async delete() {
-        return;
-      },
-      async get(key) {
-        if (key !== "annual-report-source/test.pdf") {
-          return null;
-        }
-
-        return {
-          async arrayBuffer() {
-            return Uint8Array.from(sourceBytes).buffer;
-          },
-        };
-      },
-      async put() {
-        return;
-      },
-    };
     deps.extractAnnualReport = async (input) => ({
       ok: true,
       extraction: createCompleteExtractionPayloadV1({
@@ -926,6 +941,61 @@ describe("annual report extraction workflow v1", () => {
         policyVersion: input.policyVersion,
       }),
     });
+    const uploadedBytes = "fake pdf text";
+
+    const runResult = await runAnnualReportExtractionV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        fileName: "annual-report.pdf",
+        fileBytesBase64: toBase64(uploadedBytes),
+        policyVersion: "annual-report-ai.v1",
+      },
+      deps,
+    );
+    expect(runResult.ok).toBe(true);
+    if (!runResult.ok) {
+      return;
+    }
+
+    expect(runResult.extraction.sourceLineage).toEqual({
+      sourceContentSha256: await computeSourceContentSha256V1(
+        new TextEncoder().encode(uploadedBytes),
+      ),
+    });
+  });
+
+  it("loads the exact stored source for manual forensic review even when a newer file shares the same name", async () => {
+    await seedWorkspace();
+    const deps = createDeps();
+    const originalSourceBytes = Uint8Array.from([37, 80, 68, 70, 45, 49]);
+    const newerSourceBytes = Uint8Array.from([37, 80, 68, 70, 45, 50]);
+    deps.sourceStore = {
+      async delete() {
+        return;
+      },
+      async get(key) {
+        if (key === "annual-report-source/original.pdf") {
+          return {
+            async arrayBuffer() {
+              return Uint8Array.from(originalSourceBytes).buffer;
+            },
+          };
+        }
+        if (key === "annual-report-source/newer.pdf") {
+          return {
+            async arrayBuffer() {
+              return Uint8Array.from(newerSourceBytes).buffer;
+            },
+          };
+        }
+
+        return null;
+      },
+      async put() {
+        return;
+      },
+    };
     let receivedSourceDocument:
       | {
           fileBytes: Uint8Array;
@@ -959,56 +1029,333 @@ describe("annual report extraction workflow v1", () => {
       };
     };
 
-    const runResult = await runAnnualReportExtractionV1(
-      {
-        tenantId: TENANT_ID,
-        workspaceId: WORKSPACE_ID,
-        fileName: "annual-report.pdf",
-        fileBytesBase64: toBase64("fake pdf text"),
-        policyVersion: "annual-report-ai.v1",
-      },
-      deps,
-    );
-    expect(runResult.ok).toBe(true);
-    if (!runResult.ok) {
-      return;
-    }
+    const originalRun = await deps.processingRunRepository?.create({
+      id: "9d000000-0000-4000-8000-000000000098",
+      tenantId: TENANT_ID,
+      workspaceId: WORKSPACE_ID,
+      sourceFileName: "annual-report.pdf",
+      sourceFileType: "pdf",
+      sourceStorageKey: "annual-report-source/original.pdf",
+      sourceSizeBytes: originalSourceBytes.byteLength,
+      policyVersion: "annual-report-ai.v1",
+      status: "completed",
+      hasPreviousActiveResult: false,
+      technicalDetails: [],
+      createdAt: "2026-03-03T12:09:00.000Z",
+      updatedAt: "2026-03-03T12:09:00.000Z",
+    });
+    expect(originalRun?.ok).toBe(true);
 
-    const persistedRun = await deps.processingRunRepository?.create({
+    const newerRun = await deps.processingRunRepository?.create({
       id: "9d000000-0000-4000-8000-000000000099",
       tenantId: TENANT_ID,
       workspaceId: WORKSPACE_ID,
       sourceFileName: "annual-report.pdf",
       sourceFileType: "pdf",
-      sourceStorageKey: "annual-report-source/test.pdf",
-      sourceSizeBytes: sourceBytes.byteLength,
+      sourceStorageKey: "annual-report-source/newer.pdf",
+      sourceSizeBytes: newerSourceBytes.byteLength,
       policyVersion: "annual-report-ai.v1",
       status: "completed",
       hasPreviousActiveResult: false,
       technicalDetails: [],
-      resultExtractionArtifactId: runResult.active.artifactId,
-      createdAt: "2026-03-03T12:09:00.000Z",
-      updatedAt: "2026-03-03T12:09:00.000Z",
+      createdAt: "2026-03-03T12:10:00.000Z",
+      updatedAt: "2026-03-03T12:10:00.000Z",
     });
-    expect(persistedRun?.ok).toBe(true);
+    expect(newerRun?.ok).toBe(true);
+
+    const activeExtraction = await saveActiveExtractionForTestV1({
+      deps,
+      extraction: parseAnnualReportExtractionPayloadV1({
+        ...createCompleteExtractionPayloadV1({
+          fileName: "annual-report.pdf",
+          policyVersion: "annual-report-ai.v1",
+        }),
+        sourceLineage: await buildSourceLineageForTestV1({
+          fileBytes: originalSourceBytes,
+          processingRunId: "9d000000-0000-4000-8000-000000000098",
+          sourceStorageKey: "annual-report-source/original.pdf",
+        }),
+      }),
+    });
 
     const taxRunResult = await runAnnualReportTaxAnalysisV1(
       {
         tenantId: TENANT_ID,
         workspaceId: WORKSPACE_ID,
         expectedActiveExtraction: {
-          artifactId: runResult.active.artifactId,
-          version: runResult.active.version,
+          artifactId: activeExtraction.id,
+          version: activeExtraction.version,
         },
         requestedByUserId: USER_ID,
       },
       deps,
     );
     expect(taxRunResult.ok).toBe(true);
+    if (!taxRunResult.ok) {
+      return;
+    }
+    expect(taxRunResult.taxAnalysis).toBeDefined();
+    if (!taxRunResult.taxAnalysis) {
+      return;
+    }
+    expect(receivedSourceDocument).toEqual({
+      fileBytes: originalSourceBytes,
+      fileName: "annual-report.pdf",
+      fileType: "pdf",
+    });
+    expect(taxRunResult.taxAnalysis.missingInformation).toEqual([]);
+  });
+
+  it("uses a legacy filename/type source lookup only for artifacts without source lineage", async () => {
+    await seedWorkspace();
+    const deps = createDeps();
+    const sourceBytes = Uint8Array.from([37, 80, 68, 70, 45, 51]);
+    deps.sourceStore = {
+      async delete() {
+        return;
+      },
+      async get(key) {
+        if (key !== "annual-report-source/legacy.pdf") {
+          return null;
+        }
+
+        return {
+          async arrayBuffer() {
+            return Uint8Array.from(sourceBytes).buffer;
+          },
+        };
+      },
+      async put() {
+        return;
+      },
+    };
+    let receivedSourceDocument:
+      | {
+          fileBytes: Uint8Array;
+          fileName: string;
+          fileType: "pdf" | "docx";
+        }
+      | undefined;
+    deps.analyzeAnnualReportTax = async (input) => {
+      receivedSourceDocument = input.sourceDocument;
+      return {
+        ok: true,
+        taxAnalysis: parseAnnualReportTaxAnalysisPayloadV1({
+          schemaVersion: "annual_report_tax_analysis_v1",
+          sourceExtractionArtifactId: input.extractionArtifactId,
+          policyVersion: input.policyVersion,
+          basedOn:
+            input.extraction.taxDeep ??
+            createCompleteExtractionPayloadV1({
+              fileName: input.extraction.sourceFileName,
+              policyVersion: input.policyVersion,
+            }).taxDeep,
+          executiveSummary: "Legacy source lookup used.",
+          accountingStandardAssessment: {
+            status: "aligned",
+            rationale: "K2 disclosed in report.",
+          },
+          findings: [],
+          missingInformation: [],
+          recommendedNextActions: [],
+        }),
+      };
+    };
+
+    const persistedRun = await deps.processingRunRepository?.create({
+      id: "9d000000-0000-4000-8000-000000000097",
+      tenantId: TENANT_ID,
+      workspaceId: WORKSPACE_ID,
+      sourceFileName: "annual-report.pdf",
+      sourceFileType: "pdf",
+      sourceStorageKey: "annual-report-source/legacy.pdf",
+      sourceSizeBytes: sourceBytes.byteLength,
+      policyVersion: "annual-report-ai.v1",
+      status: "completed",
+      hasPreviousActiveResult: false,
+      technicalDetails: [],
+      createdAt: "2026-03-03T12:09:00.000Z",
+      updatedAt: "2026-03-03T12:09:00.000Z",
+    });
+    expect(persistedRun?.ok).toBe(true);
+
+    const activeExtraction = await saveActiveExtractionForTestV1({
+      deps,
+      extraction: createCompleteExtractionPayloadV1({
+        fileName: "annual-report.pdf",
+        policyVersion: "annual-report-ai.v1",
+      }),
+    });
+
+    const taxRunResult = await runAnnualReportTaxAnalysisV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        expectedActiveExtraction: {
+          artifactId: activeExtraction.id,
+          version: activeExtraction.version,
+        },
+        requestedByUserId: USER_ID,
+      },
+      deps,
+    );
+    expect(taxRunResult.ok).toBe(true);
+    if (!taxRunResult.ok) {
+      return;
+    }
+    expect(taxRunResult.taxAnalysis).toBeDefined();
+    if (!taxRunResult.taxAnalysis) {
+      return;
+    }
     expect(receivedSourceDocument).toEqual({
       fileBytes: sourceBytes,
       fileName: "annual-report.pdf",
       fileType: "pdf",
+    });
+    expect(taxRunResult.taxAnalysis.reviewState).toEqual({
+      mode: "full_ai",
+      reasons: [
+        "Source document was loaded via legacy filename/type matching because extraction source lineage was unavailable.",
+      ],
+      sourceDocumentAvailable: true,
+      sourceDocumentUsed: true,
+    });
+  });
+
+  it("does not substitute a newer same-name source when exact lineage points to a missing object", async () => {
+    await seedWorkspace();
+    const deps = createDeps();
+    const missingSourceBytes = Uint8Array.from([37, 80, 68, 70, 45, 52]);
+    const newerSourceBytes = Uint8Array.from([37, 80, 68, 70, 45, 53]);
+    deps.sourceStore = {
+      async delete() {
+        return;
+      },
+      async get(key) {
+        if (key === "annual-report-source/newer.pdf") {
+          return {
+            async arrayBuffer() {
+              return Uint8Array.from(newerSourceBytes).buffer;
+            },
+          };
+        }
+
+        return null;
+      },
+      async put() {
+        return;
+      },
+    };
+    let receivedSourceDocument:
+      | {
+          fileBytes: Uint8Array;
+          fileName: string;
+          fileType: "pdf" | "docx";
+        }
+      | undefined;
+    deps.analyzeAnnualReportTax = async (input) => {
+      receivedSourceDocument = input.sourceDocument;
+      return {
+        ok: true,
+        taxAnalysis: parseAnnualReportTaxAnalysisPayloadV1({
+          schemaVersion: "annual_report_tax_analysis_v1",
+          sourceExtractionArtifactId: input.extractionArtifactId,
+          policyVersion: input.policyVersion,
+          basedOn:
+            input.extraction.taxDeep ??
+            createCompleteExtractionPayloadV1({
+              fileName: input.extraction.sourceFileName,
+              policyVersion: input.policyVersion,
+            }).taxDeep,
+          executiveSummary: "Extraction-only review.",
+          accountingStandardAssessment: {
+            status: "aligned",
+            rationale: "K2 disclosed in report.",
+          },
+          findings: [],
+          missingInformation: [],
+          recommendedNextActions: [],
+        }),
+      };
+    };
+
+    const originalRun = await deps.processingRunRepository?.create({
+      id: "9d000000-0000-4000-8000-000000000095",
+      tenantId: TENANT_ID,
+      workspaceId: WORKSPACE_ID,
+      sourceFileName: "annual-report.pdf",
+      sourceFileType: "pdf",
+      sourceStorageKey: "annual-report-source/missing.pdf",
+      sourceSizeBytes: missingSourceBytes.byteLength,
+      policyVersion: "annual-report-ai.v1",
+      status: "completed",
+      hasPreviousActiveResult: false,
+      technicalDetails: [],
+      createdAt: "2026-03-03T12:08:00.000Z",
+      updatedAt: "2026-03-03T12:08:00.000Z",
+    });
+    expect(originalRun?.ok).toBe(true);
+
+    const newerRun = await deps.processingRunRepository?.create({
+      id: "9d000000-0000-4000-8000-000000000096",
+      tenantId: TENANT_ID,
+      workspaceId: WORKSPACE_ID,
+      sourceFileName: "annual-report.pdf",
+      sourceFileType: "pdf",
+      sourceStorageKey: "annual-report-source/newer.pdf",
+      sourceSizeBytes: newerSourceBytes.byteLength,
+      policyVersion: "annual-report-ai.v1",
+      status: "completed",
+      hasPreviousActiveResult: false,
+      technicalDetails: [],
+      createdAt: "2026-03-03T12:10:00.000Z",
+      updatedAt: "2026-03-03T12:10:00.000Z",
+    });
+    expect(newerRun?.ok).toBe(true);
+
+    const activeExtraction = await saveActiveExtractionForTestV1({
+      deps,
+      extraction: parseAnnualReportExtractionPayloadV1({
+        ...createCompleteExtractionPayloadV1({
+          fileName: "annual-report.pdf",
+          policyVersion: "annual-report-ai.v1",
+        }),
+        sourceLineage: await buildSourceLineageForTestV1({
+          fileBytes: missingSourceBytes,
+          processingRunId: "9d000000-0000-4000-8000-000000000095",
+          sourceStorageKey: "annual-report-source/missing.pdf",
+        }),
+      }),
+    });
+
+    const taxRunResult = await runAnnualReportTaxAnalysisV1(
+      {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        expectedActiveExtraction: {
+          artifactId: activeExtraction.id,
+          version: activeExtraction.version,
+        },
+        requestedByUserId: USER_ID,
+      },
+      deps,
+    );
+    expect(taxRunResult.ok).toBe(true);
+    if (!taxRunResult.ok) {
+      return;
+    }
+    expect(taxRunResult.taxAnalysis).toBeDefined();
+    if (!taxRunResult.taxAnalysis) {
+      return;
+    }
+    expect(receivedSourceDocument).toBeUndefined();
+    expect(taxRunResult.taxAnalysis.reviewState).toEqual({
+      mode: "extraction_only",
+      reasons: [
+        "Source document unavailable for active extraction; forensic review used extraction-only context.",
+      ],
+      sourceDocumentAvailable: false,
+      sourceDocumentUsed: false,
     });
   });
 

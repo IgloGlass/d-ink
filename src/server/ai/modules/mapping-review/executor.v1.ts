@@ -179,6 +179,40 @@ function evaluateDecisionForSuggestionV1(input: {
 
   if (
     statementType === "balance_sheet" &&
+    selectedCode !== "100000" &&
+    hasAnyKeywordV1(normalizedName, [
+      "ackumulerad avskrivning",
+      "ackumulerade avskrivningar",
+      "accumulated depreciation",
+    ]) &&
+    hasAnyKeywordV1(normalizedName, [
+      "byggnad",
+      "byggnader",
+      "building",
+      "markanlaggning",
+      "markanläggning",
+      "land improvement",
+      "leasehold",
+      "hyrd lokal",
+      "annans fastighet",
+      "forbattringsutgift",
+      "förbättringsutgift",
+    ])
+  ) {
+    return buildSuggestionV1({
+      config: input.config,
+      decision: input.decision,
+      requestedScope: input.requestedScope,
+      selectedCategoryCode: "100000",
+      policyRuleReference:
+        "guideline.bs.building-land-leasehold-depr.not-bs-categories.v1",
+      confidence: 0.93,
+      baseReviewFlag: false,
+    });
+  }
+
+  if (
+    statementType === "balance_sheet" &&
     selectedCode === "229000" &&
     hasAnyKeywordV1(normalizedName, ["koncernbidrag", "group contribution"]) &&
     hasAnyKeywordV1(normalizedName, ["fordran", "receivable"])

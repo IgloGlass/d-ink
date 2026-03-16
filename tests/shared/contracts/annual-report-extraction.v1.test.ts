@@ -47,6 +47,10 @@ describe("annual report extraction contracts v1", () => {
         autoDetectedFieldCount: 1,
         needsReviewFieldCount: 1,
       },
+      sourceLineage: {
+        sourceContentSha256:
+          "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      },
       engineMetadata: {
         extractionEngineVersion: "annual-report-deep-extraction.v2",
         runtimeFingerprint:
@@ -132,6 +136,10 @@ describe("annual report extraction contracts v1", () => {
           autoDetectedFieldCount: 0,
           needsReviewFieldCount: 0,
         },
+        sourceLineage: {
+          sourceContentSha256:
+            "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+        },
         engineMetadata: {
           extractionEngineVersion: "annual-report-deep-extraction.v2",
           runtimeFingerprint:
@@ -201,5 +209,44 @@ describe("annual report extraction contracts v1", () => {
         confirmedByUserId: "97000000-0000-4000-8000-000000000003",
       }).success,
     ).toBe(true);
+  });
+
+  it("rejects empty source lineage objects", () => {
+    const result = AnnualReportExtractionPayloadV1Schema.safeParse({
+      schemaVersion: "annual_report_extraction_v1",
+      sourceFileName: "annual-report.pdf",
+      sourceFileType: "pdf",
+      policyVersion: "annual-report-manual-first.v1",
+      fields: {
+        companyName: { status: "manual", confidence: 1, value: "Acme AB" },
+        organizationNumber: {
+          status: "manual",
+          confidence: 1,
+          value: "556677-8899",
+        },
+        fiscalYearStart: {
+          status: "manual",
+          confidence: 1,
+          value: "2025-01-01",
+        },
+        fiscalYearEnd: {
+          status: "manual",
+          confidence: 1,
+          value: "2025-12-31",
+        },
+        accountingStandard: { status: "manual", confidence: 1, value: "K2" },
+        profitBeforeTax: { status: "manual", confidence: 1, value: 250000 },
+      },
+      summary: {
+        autoDetectedFieldCount: 0,
+        needsReviewFieldCount: 0,
+      },
+      sourceLineage: {},
+      confirmation: {
+        isConfirmed: false,
+      },
+    });
+
+    expect(result.success).toBe(false);
   });
 });

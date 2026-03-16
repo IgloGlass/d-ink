@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-import { TrialBalanceNormalizedV1Schema } from "./trial-balance.v1";
+import {
+  TrialBalanceBalanceColumnKeyV1Schema,
+  TrialBalanceNormalizedArtifactV1Schema,
+} from "./trial-balance.v1";
 
 /**
  * Reconciliation status values used for deterministic trial-balance gating.
@@ -64,6 +67,10 @@ export const ReconciliationSummaryV1Schema = z
     rejectedRows: z.number().int().nonnegative(),
     materialRejectedRows: z.number().int().nonnegative(),
     nonMaterialRejectedRows: z.number().int().nonnegative(),
+    availableBalanceColumns: z
+      .array(TrialBalanceBalanceColumnKeyV1Schema)
+      .min(1)
+      .optional(),
     openingBalanceTotal: z.number().finite(),
     closingBalanceTotal: z.number().finite(),
   })
@@ -102,7 +109,7 @@ export type ReconciliationResultPayloadV1 = z.infer<
  */
 export const ReconcileTrialBalanceRequestV1Schema = z
   .object({
-    trialBalance: TrialBalanceNormalizedV1Schema,
+    trialBalance: TrialBalanceNormalizedArtifactV1Schema,
   })
   .strict();
 

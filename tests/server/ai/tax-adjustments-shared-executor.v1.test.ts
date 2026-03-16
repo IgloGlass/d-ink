@@ -14,10 +14,10 @@ vi.mock("../../../src/server/ai/providers/gemini-client.v1", async () => {
 import { executeTaxAdjustmentSubmoduleV1 } from "../../../src/server/ai/modules/tax-adjustments-shared/executor.v1";
 import { loadTaxAdjustmentsNonDeductibleExpensesModuleConfigV1 } from "../../../src/server/ai/modules/tax-adjustments-non-deductible-expenses/loader.v1";
 import { generateGeminiStructuredOutputV1 } from "../../../src/server/ai/providers/gemini-client.v1";
-import type { AnnualReportDownstreamTaxContextV1 } from "../../../src/shared/contracts/annual-report-tax-context.v1";
+import { parseTaxAdjustmentModuleContextV1 } from "../../../src/shared/contracts/tax-adjustment-routing.v1";
 
 function parseCandidatesFromInstruction(userInstruction: string): Array<{
-  sourceMappingDecisionId: string;
+  mappingDecisionId: string;
 }> {
   const marker = "Candidate mapping rows:";
   const markerIndex = userInstruction.indexOf(marker);
@@ -28,55 +28,24 @@ function parseCandidatesFromInstruction(userInstruction: string): Array<{
   return JSON.parse(
     userInstruction.slice(markerIndex + marker.length).trim(),
   ) as Array<{
-    sourceMappingDecisionId: string;
+    mappingDecisionId: string;
   }>;
 }
 
-const taxContext: AnnualReportDownstreamTaxContextV1 = {
-  schemaVersion: "annual_report_tax_context_v1",
-  incomeStatementAnchors: [],
-  balanceSheetAnchors: [],
-  depreciationContext: {
-    assetAreas: [],
-    evidence: [],
+const taxContext = parseTaxAdjustmentModuleContextV1({
+  schemaVersion: "tax_adjustment_module_context_v1",
+  moduleCode: "disallowed_expenses",
+  shared: {
+    relevantNotes: [],
+    priorYearComparatives: [],
+    selectedRiskFindings: [],
+    missingInformation: [],
   },
-  assetMovements: {
-    lines: [],
-    evidence: [],
-  },
-  netInterestContext: {
+  taxExpenseContext: {
     notes: [],
     evidence: [],
   },
-  reserveContext: {
-    movements: [],
-    notes: [],
-    evidence: [],
-  },
-  pensionContext: {
-    flags: [],
-    notes: [],
-    evidence: [],
-  },
-  leasingContext: {
-    flags: [],
-    notes: [],
-    evidence: [],
-  },
-  groupContributionContext: {
-    flags: [],
-    notes: [],
-    evidence: [],
-  },
-  shareholdingContext: {
-    flags: [],
-    notes: [],
-    evidence: [],
-  },
-  priorYearComparatives: [],
-  selectedRiskFindings: [],
-  missingInformation: [],
-};
+});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -94,7 +63,7 @@ describe("tax-adjustment submodule executor reliability v1", () => {
       const candidates = parseCandidatesFromInstruction(input.request.userInstruction);
       if (
         candidates.some((candidate) =>
-          ["map-1", "map-2"].includes(candidate.sourceMappingDecisionId),
+          ["map-1", "map-2"].includes(candidate.mappingDecisionId),
         )
       ) {
         return {
@@ -113,9 +82,9 @@ describe("tax-adjustment submodule executor reliability v1", () => {
         output: {
           schemaVersion: "tax_adjustment_ai_proposal_v1",
           decisions: candidates.map((candidate) => ({
-            decisionId: `adj-ai-${candidate.sourceMappingDecisionId}`,
+            decisionId: `adj-ai-${candidate.mappingDecisionId}`,
             module: "non_deductible_expenses",
-            sourceMappingDecisionId: candidate.sourceMappingDecisionId,
+            sourceMappingDecisionId: candidate.mappingDecisionId,
             direction: "increase_taxable_income",
             targetField: "INK2S.non_deductible_expenses",
             reviewFlag: false,
@@ -132,26 +101,41 @@ describe("tax-adjustment submodule executor reliability v1", () => {
       annualReportTaxContext: taxContext,
       candidates: [
         {
-          sourceMappingDecisionId: "map-1",
+          mappingDecisionId: "map-1",
+          accountNumber: "6072",
           sourceAccountNumber: "6072",
           accountName: "Representation",
-          selectedCategoryCode: "607200",
+          selectedCategory: {
+            code: "607200",
+            name: "Entertainment - internal and external - presumed non-deductible",
+            statementType: "income_statement",
+          },
           closingBalance: 100,
           mappingReviewFlag: false,
         },
         {
-          sourceMappingDecisionId: "map-2",
+          mappingDecisionId: "map-2",
+          accountNumber: "6982",
           sourceAccountNumber: "6982",
           accountName: "Membership fee",
-          selectedCategoryCode: "698200",
+          selectedCategory: {
+            code: "698200",
+            name: "Membership fees - presumed non-deductible",
+            statementType: "income_statement",
+          },
           closingBalance: 200,
           mappingReviewFlag: false,
         },
         {
-          sourceMappingDecisionId: "map-3",
+          mappingDecisionId: "map-3",
+          accountNumber: "6900",
           sourceAccountNumber: "6900",
           accountName: "Other non deductible",
-          selectedCategoryCode: "690000",
+          selectedCategory: {
+            code: "690000",
+            name: "Other non-deductible costs",
+            statementType: "income_statement",
+          },
           closingBalance: 300,
           mappingReviewFlag: false,
         },

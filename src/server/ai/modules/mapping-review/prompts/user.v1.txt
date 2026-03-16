@@ -1,6 +1,6 @@
 Use the provided JSON payload:
 - `reconciliation`
-- `mapping` (active deterministic mapping decisions)
+- `mapping` (active mapping decisions)
 - `policyPack`
 - `workspaceContext`
 
@@ -37,4 +37,3 @@ If blocked:
     "context": {}
   }
 }
-

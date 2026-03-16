@@ -1,15 +1,29 @@
 import type { z } from "zod";
 
 import {
-  GenerateMappingDecisionsRequestV1Schema,
+  GenerateMappingDecisionsRequestArtifactV1Schema,
   type GenerateMappingDecisionsResultV1,
   type MappingDecisionEvidenceV1,
   type SilverfinTaxCategoryCodeV1,
   type SilverfinTaxCategoryStatementTypeV1,
   getSilverfinTaxCategoryByCodeV1,
+  parseMappingExecutionMetadataV1,
   parseGenerateMappingDecisionsResultV1,
+  resolveConfirmedAnnualReportMappingContextForRequestV1,
 } from "../../shared/contracts/mapping.v1";
-import type { TrialBalanceNormalizedRowV1 } from "../../shared/contracts/trial-balance.v1";
+import {
+  getTrialBalanceRowBalanceValueV1,
+  type TrialBalanceNormalizedArtifactV1,
+  type TrialBalanceNormalizedRowArtifactV1,
+  buildTrialBalanceRowIdentityV1,
+  buildTrialBalanceRowKeyV1,
+} from "../../shared/contracts/trial-balance.v1";
+
+/**
+ * Legacy deterministic mapper preserved only for reference tests and targeted
+ * replay. The active TB pipeline is AI-first and must not rely on BAS-style
+ * account-number assumptions from this module.
+ */
 
 type DeterministicMappingRuleV1 = {
   ruleId: string;
@@ -993,7 +1007,7 @@ function normalizeTextForMatchingV1(value: string): string {
 }
 
 function normalizeAccountNumberForMatchingV1(
-  row: TrialBalanceNormalizedRowV1,
+  row: TrialBalanceNormalizedRowArtifactV1,
 ): string {
   const primary =
     row.sourceAccountNumber.trim().length > 0
@@ -1038,15 +1052,25 @@ function getFallbackCategoryCodeV1(
 }
 
 function evaluateRuleForRowV1(input: {
-  row: TrialBalanceNormalizedRowV1;
+  row: TrialBalanceNormalizedRowArtifactV1;
   normalizedAccountNumber: string;
   normalizedAccountName: string;
   inferredStatementType: StatementTypeInferenceV1;
   rule: DeterministicMappingRuleV1;
 }): RuleEvaluationV1 | null {
+  const openingBalance = getTrialBalanceRowBalanceValueV1(
+    input.row,
+    "opening_balance",
+  );
+  const closingBalance = getTrialBalanceRowBalanceValueV1(
+    input.row,
+    "closing_balance",
+  );
   if (
     input.rule.requireClosingLowerThanOpening &&
-    !(input.row.closingBalance < input.row.openingBalance)
+    (openingBalance === null ||
+      closingBalance === null ||
+      !(closingBalance < openingBalance))
   ) {
     return null;
   }
@@ -1213,7 +1237,7 @@ export function generateDeterministicMappingDecisionsV1(
   input: unknown,
 ): GenerateMappingDecisionsResultV1 {
   const parsedRequest =
-    GenerateMappingDecisionsRequestV1Schema.safeParse(input);
+    GenerateMappingDecisionsRequestArtifactV1Schema.safeParse(input);
   if (!parsedRequest.success) {
     return parseGenerateMappingDecisionsResultV1({
       ok: false,
@@ -1227,6 +1251,8 @@ export function generateDeterministicMappingDecisionsV1(
   }
 
   const request = parsedRequest.data;
+    const confirmedAnnualReportContext =
+    resolveConfirmedAnnualReportMappingContextForRequestV1(request);
   if (!request.reconciliation.canProceedToMapping) {
     return parseGenerateMappingDecisionsResultV1({
       ok: false,
@@ -1309,7 +1335,8 @@ export function generateDeterministicMappingDecisionsV1(
     }
 
     return {
-      id: `${row.source.sheetName}:${row.source.rowNumber}:${row.sourceAccountNumber}`,
+      id: buildTrialBalanceRowKeyV1(row.source),
+      trialBalanceRowIdentity: buildTrialBalanceRowIdentityV1(row.source),
       accountNumber: row.accountNumber,
       sourceAccountNumber: row.sourceAccountNumber,
       accountName: row.accountName,
@@ -1345,8 +1372,16 @@ export function generateDeterministicMappingDecisionsV1(
   return parseGenerateMappingDecisionsResultV1({
     ok: true,
     mapping: {
-      schemaVersion: "mapping_decisions_v1",
+      schemaVersion: "mapping_decisions_v2",
       policyVersion: request.policyVersion,
+      executionMetadata: parseMappingExecutionMetadataV1({
+        requestedStrategy: "deterministic_only",
+        actualStrategy: "deterministic",
+        degraded: false,
+        annualReportContextAvailable:
+          confirmedAnnualReportContext !== undefined,
+        usedAiRunFallback: false,
+      }),
       summary: {
         totalRows: decisions.length,
         deterministicDecisions: decisions.length,

@@ -8,11 +8,15 @@ import type { Env } from "./shared/types/env";
 
 const SCAFFOLD_MARKER = "dink_scaffold_ready";
 
+type WorkerExecutionContextV1 = {
+  waitUntil(promise: Promise<unknown>): void;
+};
+
 export default {
   async fetch(
     request: Request,
     env: Env,
-    _ctx?: unknown,
+    ctx?: WorkerExecutionContextV1,
   ): Promise<Response> {
     try {
       const requestUrl = new URL(request.url);
@@ -23,7 +27,7 @@ export default {
         return handleCompanyRoutesV1(request, env);
       }
       if (requestUrl.pathname.startsWith("/v1/workspaces")) {
-        return handleWorkspaceRoutesV1(request, env);
+        return handleWorkspaceRoutesV1(request, env, ctx);
       }
 
       return Response.json(

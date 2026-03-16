@@ -22,13 +22,13 @@ export const coreModuleDefinitionsV1: CoreModuleDefinitionV1[] = [
     shortLabel: "Annual Report",
     longLabel: "Annual Report Analysis",
     ctaLabel: "Upload annual report",
-    nextStepLabel: "Review extracted facts",
+    nextStepLabel: "Inspect extracted facts",
     description:
-      "Upload and review the annual report before downstream tax work starts.",
+      "Upload the annual report so D.ink can prepare workflow-ready structured data for downstream tax work.",
     checklist: [
       "Upload the signed annual report",
       "Extract company facts and financial values",
-      "Review and confirm the extracted fields",
+      "Inspect extracted fields and flagged gaps",
     ],
   },
   {

@@ -14,7 +14,7 @@ The product is an **AI tax reviewer + draft engine**, not a full professional ta
 - K2 and K3
 - Single entities and small groups (3–5 companies) for organization and policy memory
 - Template-first TB import, free-form fallback behind disclaimer
-- Human-in-the-loop (assistant mode)
+- Automation-first assistant mode with downstream user review
 
 ### V1 out of scope
 - Branches / permanent establishments
@@ -27,12 +27,25 @@ The product is an **AI tax reviewer + draft engine**, not a full professional ta
 ---
 
 ## Core product principles
-1. **Human-in-the-loop by default**: AI proposes; users review/approve.
+1. **Automation-first with reviewable outputs**: annual-report extraction may auto-confirm when complete enough for V1 workflow automation, while users still review downstream tax outputs and the final filing package.
 2. **Deterministic where possible**: calculations, reconciliations, form population, exports must be code-first.
 3. **Structured AI outputs only**: schema-validated JSON; no free-text driving computations.
 4. **Auditability is a feature**: every decision/change must be traceable.
 5. **Scoped memory only**: save treatments at return/group/user scope; never globally.
 6. **Structured AI reasoning only**: AI logic must be module-scoped, policy-driven, and versioned outside prompt prose.
+
+## Cross-app AI execution guardrails
+Carry forward the annual-report hardening lessons to every AI-backed module:
+- Use deterministic routing, validation, and merge logic before AI calls.
+- Keep AI stages narrow, single-purpose, and bound to explicit contracts.
+- Prefer extractable text over heavier PDF/image inputs unless layout is required.
+- Make degraded and fallback states explicit in both artifacts and UI.
+- Persist exact source lineage for artifacts that depend on uploaded documents.
+- Reduce prompt size or document weight before increasing retry/time budgets.
+
+Reference docs:
+- `references/ai-execution-patterns.v1.md`
+- `references/account-mapper-kickoff-checklist.v1.md`
 
 ## UI/UX Standards (Deloitte Ascend)
 All frontend work must strictly follow the **Deloitte Ascend** design language implemented in `src/client/styles/tokens.css` and `global.css`.
@@ -230,6 +243,8 @@ Each ticket should touch **one module** (or one interface) at a time:
 5. Run the golden test pack (for AI-related changes).
 6. Run the relevant automated checks for the change before handoff (for example typecheck, unit/contract tests, and UI/browser checks when applicable). If a test fails, improve the change until the relevant checks pass before handing work back.
 7. Only then integrate into the next module.
+
+When moving from one module to another, codify the previous module's guardrails in checked-in docs or tests first. Use `references/account-mapper-kickoff-checklist.v1.md` as the default handoff checklist when starting mapper work after annual-report changes.
 
 ### “No cross-module edits” default
 Unless the ticket explicitly says otherwise:

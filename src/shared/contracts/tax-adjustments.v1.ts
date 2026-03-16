@@ -2,9 +2,32 @@ import { z } from "zod";
 
 import { AiRunMetadataV1Schema } from "./ai-run.v1";
 import { UuidV4Schema } from "./common.v1";
-import { MappingDecisionSetPayloadV1Schema } from "./mapping.v1";
+import { MappingDecisionSetArtifactV1Schema } from "./mapping.v1";
 
 export const TaxAdjustmentModuleCodeV1Schema = z.enum([
+  "general_client_information",
+  "trial_balance_to_local_gaap",
+  "provisions",
+  "buildings_improvements_property_gains",
+  "avskrivning_pa_byggnader_vm4",
+  "capital_assets_and_unrealized_changes",
+  "cfc_taxation",
+  "non_taxable_income",
+  "yield_risk_and_renewable_energy_taxes",
+  "group_contributions",
+  "disallowed_expenses",
+  "pension_costs_and_special_payroll_tax",
+  "depreciation_tangible_and_acquired_intangible_assets",
+  "shares_and_participations",
+  "partnership_interest_n3b",
+  "property_tax_and_property_fee",
+  "warranty_provision",
+  "notional_income_on_tax_allocation_reserve",
+  "inventory_obsolescence_reserve",
+  "shares_and_participations_average_method",
+  "items_not_included_in_books",
+  "hybrid_targeted_interest_and_net_interest_offset",
+  "final_tax_calculation",
   "non_deductible_expenses",
   "representation_entertainment",
   "depreciation_differences_basic",
@@ -143,7 +166,7 @@ export const RunTaxAdjustmentRequestV1Schema = z
     workspaceId: UuidV4Schema,
     policyVersion: z.string().trim().min(1),
     createdByUserId: UuidV4Schema.optional(),
-    mapping: MappingDecisionSetPayloadV1Schema.optional(),
+    mapping: MappingDecisionSetArtifactV1Schema.optional(),
   })
   .strict();
 export type RunTaxAdjustmentRequestV1 = z.infer<

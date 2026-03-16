@@ -1,7 +1,11 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
 
 import { parseTrialBalanceFileV1 } from "../../../src/server/parsing/trial-balance-parser.v1";
+import { ACCOUNT_MAPPER_REFERENCE_TRIAL_BALANCE_BASE64 } from "../../fixtures/account-mapper-reference-trial-balance.fixture";
 
 function createWorkbookBytesV1(input: {
   sheets: Record<string, unknown[][]>;
@@ -227,6 +231,108 @@ describe("trial balance parser v1", () => {
     );
     expect(result.trialBalance.rows[2]?.accountNumber).toBe("1003");
     expect(result.trialBalance.rows[2]?.accountName).toBe("Inventory");
+  });
+
+  it("accepts closing-balance-only trial balances and emits the flexible v2 artifact", () => {
+    const fileBytes = createWorkbookBytesV1({
+      sheets: {
+        "Trial Balance": [
+          ["Account Number", "Account Name", "Closing Balance"],
+          ["1930", "Bank", "1200"],
+          ["1510", "Accounts receivable", "800"],
+        ],
+      },
+    });
+
+    const result = parseTrialBalanceFileV1({
+      fileName: "closing-only.xlsx",
+      fileBytes,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.trialBalance.schemaVersion).toBe("trial_balance_normalized_v2");
+    if (result.trialBalance.schemaVersion !== "trial_balance_normalized_v2") {
+      return;
+    }
+
+    expect(result.trialBalance.availableBalanceColumns).toEqual([
+      "closing_balance",
+    ]);
+    expect(result.trialBalance.rows[0]?.openingBalance).toBeNull();
+    expect(result.trialBalance.rows[0]?.closingBalance).toBe(1200);
+    expect(result.trialBalance.verification.openingBalanceTotal).toBeNull();
+    expect(result.trialBalance.verification.closingBalanceTotal).toBe(2000);
+  });
+
+  it("parses the repository reference workbook used for account-mapper testing", () => {
+    const binary = atob(ACCOUNT_MAPPER_REFERENCE_TRIAL_BALANCE_BASE64);
+    const fileBytes = Uint8Array.from(binary, (character) =>
+      character.charCodeAt(0),
+    );
+
+    const result = parseTrialBalanceFileV1({
+      fileName: "mock_trial_balance_sek_random.xlsx",
+      fileBytes,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.trialBalance.schemaVersion).toBe("trial_balance_normalized_v2");
+    if (result.trialBalance.schemaVersion !== "trial_balance_normalized_v2") {
+      return;
+    }
+
+    expect(result.trialBalance.availableBalanceColumns).toEqual([
+      "closing_balance",
+    ]);
+    expect(result.trialBalance.rows.length).toBeGreaterThan(150);
+    expect(result.trialBalance.rows[0]?.accountNumber).toBe("1030");
+    expect(result.trialBalance.rows[0]?.accountName).toBe(
+      "Programvaror, anskaffningsvärde",
+    );
+    expect(result.trialBalance.rows[0]?.closingBalance).toBe(70000754);
+    expect(result.trialBalance.rows[0]?.openingBalance).toBeNull();
+  });
+
+  it("parses the checked-in account-mapper reference workbook from disk", () => {
+    const fileBytes = new Uint8Array(
+      readFileSync(
+        resolve(
+          process.cwd(),
+          "account mapper reference",
+          "mock_trial_balance_sek_random.xlsx",
+        ),
+      ),
+    );
+
+    const result = parseTrialBalanceFileV1({
+      fileName: "mock_trial_balance_sek_random.xlsx",
+      fileBytes,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.trialBalance.schemaVersion).toBe("trial_balance_normalized_v2");
+    if (result.trialBalance.schemaVersion !== "trial_balance_normalized_v2") {
+      return;
+    }
+
+    expect(result.trialBalance.availableBalanceColumns).toEqual([
+      "closing_balance",
+    ]);
+    expect(result.trialBalance.rows).toHaveLength(201);
+    expect(result.trialBalance.rows[0]?.accountNumber).toBe("1030");
+    expect(result.trialBalance.rows[200]?.accountNumber).toBe("8912");
   });
 
   it("fails verification when required balances are blank", () => {

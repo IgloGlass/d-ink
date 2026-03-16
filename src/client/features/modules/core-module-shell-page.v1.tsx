@@ -2,6 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, type Ref, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
+import {
+  type AnnualReportCodeDefinitionV1,
+  getAnnualReportCodeDefinitionV1,
+  getAnnualReportCodeOrderV1,
+  isAnnualReportBalanceAssetCodeV1,
+  isAnnualReportBalanceEquityLiabilityCodeV1,
+} from "../../../shared/contracts/annual-report-codes.v1";
 import type {
   AnnualReportAmountUnitV1,
   AnnualReportEvidenceReferenceV1,
@@ -11,20 +18,16 @@ import type {
   AnnualReportRuntimeMetadataV1,
   AnnualReportStatementLineV1,
 } from "../../../shared/contracts/annual-report-extraction.v1";
-import type { AnnualReportTaxAnalysisFindingV1 } from "../../../shared/contracts/annual-report-tax-analysis.v1";
-import {
-  getAnnualReportCodeDefinitionV1,
-  getAnnualReportCodeOrderV1,
-  isAnnualReportBalanceAssetCodeV1,
-  isAnnualReportBalanceEquityLiabilityCodeV1,
-  type AnnualReportCodeDefinitionV1,
-} from "../../../shared/contracts/annual-report-codes.v1";
-import { MAX_ANNUAL_REPORT_UPLOAD_BYTES_V1 } from "../../../shared/contracts/annual-report-upload-session.v1";
 import type { AnnualReportProcessingRunV1 } from "../../../shared/contracts/annual-report-processing-run.v1";
+import type {
+  AnnualReportTaxAnalysisFindingV1,
+  AnnualReportTaxAnalysisReviewStateV1,
+} from "../../../shared/contracts/annual-report-tax-analysis.v1";
+import { MAX_ANNUAL_REPORT_UPLOAD_BYTES_V1 } from "../../../shared/contracts/annual-report-upload-session.v1";
 import {
-  coreModuleDefinitionsV1,
   type CoreModuleDefinitionV1,
   type CoreModuleSlugV1,
+  coreModuleDefinitionsV1,
 } from "../../app/core-modules.v1";
 import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
 import { ButtonV1 } from "../../components/button-v1";
@@ -34,44 +37,50 @@ import { SkeletonV1 } from "../../components/skeleton-v1";
 import { UploadDropZoneV1 } from "../../components/upload-drop-zone.v1";
 import { WorkspaceReviewPanelV1 } from "../../components/workspace-review-panel.v1";
 import {
-  formatAnnualReportRunElapsedLabelV1,
-  isAnnualReportOpenRunStaleV1,
-  isAnnualReportProcessingOpenStatusV1,
-  selectAnnualReportProgressDetailsV1,
-  useAnnualReportUploadControllerV1,
-} from "../annual-report/use-annual-report-upload-controller.v1";
+  ApiClientError,
+  toUserFacingErrorMessage,
+} from "../../lib/http/api-client";
 import {
-  createPdfExportV1,
+  applyInk2OverridesV1,
+  clearTrialBalancePipelineDataV1,
   getActiveAnnualReportExtractionV1,
   getActiveAnnualReportTaxAnalysisV1,
   getActiveInk2FormV1,
-  getLatestAnnualReportProcessingRunV1,
   getActiveMappingDecisionsV1,
   getActiveTaxAdjustmentsV1,
   getActiveTaxSummaryV1,
+  getLatestAnnualReportProcessingRunV1,
   getWorkspaceByIdV1,
   runAnnualReportTaxAnalysisV1,
   runInk2FormV1,
+  runMappingAiEnrichmentV1,
   runTaxAdjustmentsV1,
   runTaxSummaryV1,
   runTrialBalancePipelineV1,
 } from "../../lib/http/workspace-api";
 import type { GetActiveAnnualReportTaxAnalysisResponseV1 } from "../../lib/http/workspace-api";
 import {
+  buildWorkflowSnapshotV1,
+  getModuleWorkflowStateV1,
+} from "../../lib/workflow-v1";
+import {
   fileToBase64V1,
   inferTrialBalanceFileTypeV1,
 } from "../../lib/workspace-files.v1";
 import {
-  ApiClientError,
-  toUserFacingErrorMessage,
-} from "../../lib/http/api-client";
-import {
-  buildWorkflowSnapshotV1,
-  getModuleWorkflowStateV1,
-} from "../../lib/workflow-v1";
+  formatAnnualReportRunElapsedLabelV1,
+  isAnnualReportOpenRunStaleV1,
+  isAnnualReportProcessingOpenStatusV1,
+  selectAnnualReportProgressDetailsV1,
+  useAnnualReportUploadControllerV1,
+} from "../annual-report/use-annual-report-upload-controller.v1";
+import { AccountMappingGridV1 } from "./AccountMappingGridV1";
+import { Ink2FormReplicaV1 } from "./Ink2FormReplicaV1";
+import { TaxAdjustmentsWorkbenchV1 } from "./TaxAdjustmentsWorkbenchV1";
+import { downloadPopulatedInk2PdfV1 } from "./ink2-pdf-download.v1";
 
 const ANNUAL_REPORT_POLICY_VERSION_V1 = "annual-report-manual-first.v1";
-const TRIAL_BALANCE_POLICY_VERSION_V1 = "deterministic-bas.v1";
+const TRIAL_BALANCE_POLICY_VERSION_V1 = "mapping-ai.v1";
 const TAX_ADJUSTMENTS_POLICY_VERSION_V1 = "tax-adjustments.v1";
 const ANNUAL_REPORT_FORENSIC_RAIL_ID_V1 = "annual-report-forensic-rail";
 
@@ -87,6 +96,57 @@ function formatSeverityLabelV1(input: "low" | "medium" | "high"): string {
     return "Medium";
   }
   return "Low";
+}
+
+function describeAnnualReportReviewStateV1(
+  reviewState: AnnualReportTaxAnalysisReviewStateV1 | undefined,
+): {
+  isDegraded: boolean;
+  title: string;
+  helperText: string;
+  reasons: string[];
+} {
+  if (!reviewState) {
+    return {
+      isDegraded: false,
+      title: "Full AI review",
+      helperText: "The forensic AI review completed on the saved extraction.",
+      reasons: [],
+    };
+  }
+
+  switch (reviewState.mode) {
+    case "deterministic_fallback":
+      return {
+        isDegraded: true,
+        title: "Fallback review only",
+        helperText:
+          "The forensic AI review did not complete normally, so D.ink saved a deterministic fallback summary instead.",
+        reasons: reviewState.reasons,
+      };
+    case "extraction_only":
+      return {
+        isDegraded: true,
+        title: "Extraction-only AI review",
+        helperText:
+          "The forensic AI review completed without the full source document and relied on the structured extraction only.",
+        reasons: reviewState.reasons,
+      };
+    case "full_ai":
+    default:
+      return {
+        isDegraded: reviewState.reasons.length > 0,
+        title:
+          reviewState.reasons.length > 0
+            ? "Full AI review with limitations"
+            : "Full AI review",
+        helperText:
+          reviewState.reasons.length > 0
+            ? "The forensic AI review completed, but this result has important limitations that should stay visible to the reviewer."
+            : "The forensic AI review completed on the saved extraction.",
+        reasons: reviewState.reasons,
+      };
+  }
 }
 
 function ModuleStageIntroV1({
@@ -114,29 +174,6 @@ function ModuleStageIntroV1({
           </div>
         ) : null}
       </div>
-    </div>
-  );
-}
-
-function ModuleSummaryGridV1({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  return <div className="module-summary-grid">{children}</div>;
-}
-
-function ModuleSummaryItemV1({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="module-summary-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
     </div>
   );
 }
@@ -761,7 +798,8 @@ function buildRelevantNoteLinesV1(input: {
       );
     }) ?? [];
   const dedupedRelevantNoteLines = relevantNoteLines.filter(
-    (line, index, values) => line.trim().length > 0 && values.indexOf(line) === index,
+    (line, index, values) =>
+      line.trim().length > 0 && values.indexOf(line) === index,
   );
   if (dedupedRelevantNoteLines.length > 0) {
     return dedupedRelevantNoteLines;
@@ -769,7 +807,10 @@ function buildRelevantNoteLinesV1(input: {
 
   const directNotes = input.notes
     .map((note) => note.trim())
-    .filter((note, index, values) => note.length > 0 && values.indexOf(note) === index);
+    .filter(
+      (note, index, values) =>
+        note.length > 0 && values.indexOf(note) === index,
+    );
   if (directNotes.length > 0) {
     return directNotes;
   }
@@ -784,7 +825,9 @@ function AnnualReportRelevantNotesV1({
 }: {
   sections: AnnualReportNoteSectionV1[];
 }) {
-  const hasExtractedNotes = sections.some((section) => section.notes.length > 0);
+  const hasExtractedNotes = sections.some(
+    (section) => section.notes.length > 0,
+  );
 
   return (
     <div className="annual-report-sidebar__section annual-report-sidebar__section--revealed">
@@ -960,7 +1003,9 @@ function AnnualReportSidebarV1({
         (line) => line.evidence,
       ) ?? []),
       ...(extraction?.taxDeep?.assetMovements.evidence ?? []),
-      ...(extraction?.taxDeep?.assetMovements.lines.flatMap((line) => line.evidence) ?? []),
+      ...(extraction?.taxDeep?.assetMovements.lines.flatMap(
+        (line) => line.evidence,
+      ) ?? []),
     ],
   });
   const interestNotes = buildRelevantNoteLinesV1({
@@ -971,10 +1016,14 @@ function AnnualReportSidebarV1({
     notes: extraction?.taxDeep?.netInterestContext.notes ?? [],
     evidence: [
       ...(extraction?.taxDeep?.netInterestContext.evidence ?? []),
-      ...(extraction?.taxDeep?.netInterestContext.financeIncome?.evidence ?? []),
-      ...(extraction?.taxDeep?.netInterestContext.financeExpense?.evidence ?? []),
-      ...(extraction?.taxDeep?.netInterestContext.interestIncome?.evidence ?? []),
-      ...(extraction?.taxDeep?.netInterestContext.interestExpense?.evidence ?? []),
+      ...(extraction?.taxDeep?.netInterestContext.financeIncome?.evidence ??
+        []),
+      ...(extraction?.taxDeep?.netInterestContext.financeExpense?.evidence ??
+        []),
+      ...(extraction?.taxDeep?.netInterestContext.interestIncome?.evidence ??
+        []),
+      ...(extraction?.taxDeep?.netInterestContext.interestExpense?.evidence ??
+        []),
       ...(extraction?.taxDeep?.netInterestContext.netInterest?.evidence ?? []),
     ],
   });
@@ -986,8 +1035,11 @@ function AnnualReportSidebarV1({
     notes: extraction?.taxDeep?.pensionContext.notes ?? [],
     evidence: [
       ...(extraction?.taxDeep?.pensionContext.evidence ?? []),
-      ...(extraction?.taxDeep?.pensionContext.specialPayrollTax?.evidence ?? []),
-      ...(extraction?.taxDeep?.pensionContext.flags.flatMap((flag) => flag.evidence) ?? []),
+      ...(extraction?.taxDeep?.pensionContext.specialPayrollTax?.evidence ??
+        []),
+      ...(extraction?.taxDeep?.pensionContext.flags.flatMap(
+        (flag) => flag.evidence,
+      ) ?? []),
     ],
   });
   const taxExpenseNotes = buildRelevantNoteLinesV1({
@@ -1000,7 +1052,8 @@ function AnnualReportSidebarV1({
       ...(extraction?.taxDeep?.taxExpenseContext?.evidence ?? []),
       ...(extraction?.taxDeep?.taxExpenseContext?.currentTax?.evidence ?? []),
       ...(extraction?.taxDeep?.taxExpenseContext?.deferredTax?.evidence ?? []),
-      ...(extraction?.taxDeep?.taxExpenseContext?.totalTaxExpense?.evidence ?? []),
+      ...(extraction?.taxDeep?.taxExpenseContext?.totalTaxExpense?.evidence ??
+        []),
     ],
   });
   const reserveNotes = buildRelevantNoteLinesV1({
@@ -1024,7 +1077,9 @@ function AnnualReportSidebarV1({
     notes: extraction?.taxDeep?.leasingContext.notes ?? [],
     evidence: [
       ...(extraction?.taxDeep?.leasingContext.evidence ?? []),
-      ...(extraction?.taxDeep?.leasingContext.flags.flatMap((flag) => flag.evidence) ?? []),
+      ...(extraction?.taxDeep?.leasingContext.flags.flatMap(
+        (flag) => flag.evidence,
+      ) ?? []),
     ],
   });
   const groupContributionNotes = buildRelevantNoteLinesV1({
@@ -1048,9 +1103,13 @@ function AnnualReportSidebarV1({
     notes: extraction?.taxDeep?.shareholdingContext.notes ?? [],
     evidence: [
       ...(extraction?.taxDeep?.shareholdingContext.evidence ?? []),
-      ...(extraction?.taxDeep?.shareholdingContext.dividendsPaid?.evidence ?? []),
-      ...(extraction?.taxDeep?.shareholdingContext.dividendsReceived?.evidence ?? []),
-      ...(extraction?.taxDeep?.shareholdingContext.flags.flatMap((flag) => flag.evidence) ?? []),
+      ...(extraction?.taxDeep?.shareholdingContext.dividendsPaid?.evidence ??
+        []),
+      ...(extraction?.taxDeep?.shareholdingContext.dividendsReceived
+        ?.evidence ?? []),
+      ...(extraction?.taxDeep?.shareholdingContext.flags.flatMap(
+        (flag) => flag.evidence,
+      ) ?? []),
     ],
   });
   const showRecoveryActions =
@@ -1190,8 +1249,8 @@ function AnnualReportSidebarV1({
       notes: shareholdingNotes,
     },
   ];
-  const additionalRelevantNoteSections = ADDITIONAL_RELEVANT_NOTE_SECTIONS_V1
-    .map((section) => ({
+  const additionalRelevantNoteSections =
+    ADDITIONAL_RELEVANT_NOTE_SECTIONS_V1.map((section) => ({
       key: section.key,
       label: section.label,
       notes: buildRelevantNoteLinesV1({
@@ -1202,8 +1261,7 @@ function AnnualReportSidebarV1({
         notes: [],
         evidence: [],
       }),
-    }))
-    .filter((section) => section.notes.length > 0);
+    })).filter((section) => section.notes.length > 0);
 
   return (
     <section className="annual-report-sidebar annual-report-sidebar--main">
@@ -1484,8 +1542,7 @@ function AnnualReportForensicRailV1({
   annualReportRunIsOpen,
   annualReportRunIsStale,
   annualReportTaxAnalysisError,
-  annualReportTaxAnalysisPending,
-  annualReportTaxAnalysisSuccess,
+  annualReportTaxAnalysisRunIsOpen,
   onHide,
   onRecoveryRequested,
   onRunTaxAnalysis,
@@ -1509,14 +1566,17 @@ function AnnualReportForensicRailV1({
   annualReportRunIsOpen: boolean;
   annualReportRunIsStale: boolean;
   annualReportTaxAnalysisError: unknown;
-  annualReportTaxAnalysisPending: boolean;
-  annualReportTaxAnalysisSuccess: boolean;
+  annualReportTaxAnalysisRunIsOpen: boolean;
   onHide: () => void;
   onRecoveryRequested: () => void;
   onRunTaxAnalysis: () => void;
   recoveryActionDisabled: boolean;
   recoveryActionLabel: string;
 }) {
+  const reviewStateSummary = describeAnnualReportReviewStateV1(
+    annualTaxAnalysis?.reviewState,
+  );
+
   return (
     <aside className="annual-report-side-rail" id={railId} ref={railRef}>
       <CardV1 className="module-data-card annual-report-rail-card">
@@ -1541,12 +1601,23 @@ function AnnualReportForensicRailV1({
           <span>Step 2</span>
           <strong>
             {canRunAnnualReportTaxAnalysis || annualTaxAnalysis
-              ? "Review-ready extraction"
+              ? "Workflow-ready extraction"
               : "Waiting for a complete extraction"}
           </strong>
         </div>
 
-        {annualReportRunIsOpen && !annualReportRunIsStale ? (
+        {annualReportTaxAnalysisRunIsOpen ? (
+          <div className="module-ai-analysis-card">
+            <div className="module-ai-analysis-card__summary">
+              <strong>Forensic tax review is running.</strong>
+              <p>
+                {annualTaxAnalysis
+                  ? "A refreshed forensic review is in progress. The current saved review stays visible until the new result is ready."
+                  : "D.ink is reviewing the saved extraction in the background. This panel updates automatically when the new result is ready."}
+              </p>
+            </div>
+          </div>
+        ) : annualReportRunIsOpen && !annualReportRunIsStale ? (
           <div className="module-ai-analysis-card">
             <div className="module-ai-analysis-card__summary">
               <strong>Annual-report extraction is still in progress.</strong>
@@ -1581,6 +1652,20 @@ function AnnualReportForensicRailV1({
                   {latestAnnualReportRun.error?.userMessage ??
                     "The previous annual-report analysis remains active."}
                 </p>
+              </div>
+            ) : null}
+
+            {reviewStateSummary.isDegraded ? (
+              <div className="module-ai-analysis-card__summary">
+                <strong>{reviewStateSummary.title}</strong>
+                <p>{reviewStateSummary.helperText}</p>
+                {reviewStateSummary.reasons.length > 0 ? (
+                  <ul className="module-ai-analysis-actions__list">
+                    {reviewStateSummary.reasons.map((reason) => (
+                      <li key={reason}>{reason}</li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
             ) : null}
 
@@ -1735,11 +1820,11 @@ function AnnualReportForensicRailV1({
         ) : hasSavedExtraction ? (
           <div className="module-ai-analysis-card">
             <div className="module-ai-analysis-card__summary">
-              <strong>Financial extraction is saved.</strong>
+              <strong>Financial extraction is ready for workflow.</strong>
               <p>
-                The structured annual-report data is ready. Run forensic tax
-                review when you want an AI risk assessment based on the saved
-                extraction.
+                The structured annual-report data is ready for downstream
+                workflow automation. Run forensic tax review when you want an AI
+                risk assessment based on the saved extraction.
               </p>
             </div>
             {annualReportTaxAnalysisError ? (
@@ -1752,16 +1837,6 @@ function AnnualReportForensicRailV1({
                 {toUserFacingErrorMessage(annualTaxAnalysisQueryError)}
               </div>
             ) : null}
-            {annualReportTaxAnalysisPending ? (
-              <div className="workspace-inline-info" role="status">
-                Running forensic tax review on the saved extraction.
-              </div>
-            ) : null}
-            {annualReportTaxAnalysisSuccess ? (
-              <div className="workspace-inline-success" role="status">
-                Forensic tax review completed and is now active.
-              </div>
-            ) : null}
             <div className="module-ai-analysis-card__actions">
               <ButtonV1
                 variant="black"
@@ -1769,7 +1844,7 @@ function AnnualReportForensicRailV1({
                 onClick={onRunTaxAnalysis}
                 disabled={
                   !canRunAnnualReportTaxAnalysis ||
-                  annualReportTaxAnalysisPending
+                  annualReportTaxAnalysisRunIsOpen
                 }
               >
                 Run forensic tax review
@@ -1802,6 +1877,10 @@ export function CoreModuleShellPageV1() {
   const principal = useRequiredSessionPrincipalV1();
   const queryClient = useQueryClient();
   const { workspaceId, coreModule, subModule } = useParams();
+  const mappingAiEnrichmentBackgroundBudgetMs = 900_000;
+  const mappingAiEnrichmentPollIntervalMs = 2_000;
+  const mappingAiEnrichmentPollGraceMs = 10_000;
+  const trialBalanceImportPollIntervalMs = 2_000;
 
   const [trialBalanceFile, setTrialBalanceFile] = useState<File | null>(null);
   const [annualReportForensicRailOpen, setAnnualReportForensicRailOpen] =
@@ -1810,6 +1889,20 @@ export function CoreModuleShellPageV1() {
     annualReportForensicRailScrollPending,
     setAnnualReportForensicRailScrollPending,
   ] = useState(false);
+  const [mappingAiEnrichmentMonitor, setMappingAiEnrichmentMonitor] =
+    useState<null | {
+      baselineGeneratedAt: string | null;
+      expectedActiveMapping: {
+        artifactId: string;
+        version: number;
+      };
+      startedAtMs: number;
+    }>(null);
+  const [mappingAiEnrichmentFeedback, setMappingAiEnrichmentFeedback] =
+    useState<null | {
+      message: string;
+      tone: "info" | "success";
+    }>(null);
   const annualReportForensicRailRef = useRef<HTMLElement | null>(null);
 
   const resolvedWorkspaceId = workspaceId ?? "";
@@ -1921,13 +2014,22 @@ export function CoreModuleShellPageV1() {
       });
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: [
-          "active-annual-report-tax-analysis",
-          principal.tenantId,
-          resolvedWorkspaceId,
-        ],
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: [
+            "latest-annual-report-processing-run",
+            principal.tenantId,
+            resolvedWorkspaceId,
+          ],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: [
+            "active-annual-report-tax-analysis",
+            principal.tenantId,
+            resolvedWorkspaceId,
+          ],
+        }),
+      ]);
     },
   });
 
@@ -1968,6 +2070,66 @@ export function CoreModuleShellPageV1() {
     retry: false,
   });
 
+  const mappingAiEnrichmentMutation = useMutation({
+    mutationFn: async (input: {
+      expectedActiveMapping: {
+        artifactId: string;
+        version: number;
+      };
+    }) =>
+      runMappingAiEnrichmentV1({
+        tenantId: principal.tenantId,
+        workspaceId: resolvedWorkspaceId,
+        expectedActiveMapping: input.expectedActiveMapping,
+      }),
+    onSuccess: async (result, variables) => {
+      if (result.status === "accepted") {
+        setMappingAiEnrichmentFeedback({
+          tone: "info",
+          message: result.message,
+        });
+        setMappingAiEnrichmentMonitor({
+          baselineGeneratedAt:
+            mappingQuery.data?.mapping.aiRun?.generatedAt ?? null,
+          expectedActiveMapping: variables.expectedActiveMapping,
+          startedAtMs: Date.now(),
+        });
+        return;
+      }
+
+      setMappingAiEnrichmentFeedback({
+        tone: result.status === "updated" ? "success" : "info",
+        message: result.message,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["active-mapping", principal.tenantId, resolvedWorkspaceId],
+        }),
+        queryClient.removeQueries({
+          queryKey: [
+            "active-tax-adjustments",
+            principal.tenantId,
+            resolvedWorkspaceId,
+          ],
+        }),
+        queryClient.removeQueries({
+          queryKey: [
+            "active-tax-summary",
+            principal.tenantId,
+            resolvedWorkspaceId,
+          ],
+        }),
+        queryClient.removeQueries({
+          queryKey: [
+            "active-ink2-form",
+            principal.tenantId,
+            resolvedWorkspaceId,
+          ],
+        }),
+      ]);
+    },
+  });
+
   const trialBalanceMutation = useMutation({
     mutationFn: async () => {
       if (!trialBalanceFile) {
@@ -1983,11 +2145,77 @@ export function CoreModuleShellPageV1() {
         policyVersion: TRIAL_BALANCE_POLICY_VERSION_V1,
       });
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ["active-mapping", principal.tenantId, resolvedWorkspaceId],
-      });
+    onSuccess: async (response) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["active-mapping", principal.tenantId, resolvedWorkspaceId],
+        }),
+        queryClient.removeQueries({
+          queryKey: [
+            "active-tax-adjustments",
+            principal.tenantId,
+            resolvedWorkspaceId,
+          ],
+        }),
+        queryClient.removeQueries({
+          queryKey: [
+            "active-tax-summary",
+            principal.tenantId,
+            resolvedWorkspaceId,
+          ],
+        }),
+        queryClient.removeQueries({
+          queryKey: [
+            "active-ink2-form",
+            principal.tenantId,
+            resolvedWorkspaceId,
+          ],
+        }),
+      ]);
       setTrialBalanceFile(null);
+      setMappingAiEnrichmentMonitor(null);
+      setMappingAiEnrichmentFeedback(null);
+    },
+  });
+
+  const clearTrialBalanceDataMutation = useMutation({
+    mutationFn: async () =>
+      clearTrialBalancePipelineDataV1({
+        tenantId: principal.tenantId,
+        workspaceId: resolvedWorkspaceId,
+      }),
+    onSuccess: async () => {
+      setTrialBalanceFile(null);
+      setMappingAiEnrichmentMonitor(null);
+      setMappingAiEnrichmentFeedback(null);
+      mappingAiEnrichmentMutation.reset();
+      trialBalanceMutation.reset();
+      await Promise.all([
+        queryClient.removeQueries({
+          queryKey: ["active-mapping", principal.tenantId, resolvedWorkspaceId],
+        }),
+        queryClient.removeQueries({
+          queryKey: [
+            "active-tax-adjustments",
+            principal.tenantId,
+            resolvedWorkspaceId,
+          ],
+        }),
+        queryClient.removeQueries({
+          queryKey: [
+            "active-tax-summary",
+            principal.tenantId,
+            resolvedWorkspaceId,
+          ],
+        }),
+        queryClient.removeQueries({
+          queryKey: [
+            "active-ink2-form",
+            principal.tenantId,
+            resolvedWorkspaceId,
+          ],
+        }),
+      ]);
     },
   });
 
@@ -2027,11 +2255,31 @@ export function CoreModuleShellPageV1() {
   });
 
   const ink2Mutation = useMutation({
-    mutationFn: async () =>
-      runInk2FormV1({
+    mutationFn: async () => {
+      const latestForm = ink2Query.data?.form;
+      const runResult = await runInk2FormV1({
         tenantId: principal.tenantId,
         workspaceId: resolvedWorkspaceId,
-      }),
+      });
+      const manualOverrides = latestForm?.fields
+        .filter((field) => field.provenance === "manual")
+        .map((field) => ({
+          amount: field.amount,
+          fieldId: field.fieldId,
+          reason: "Preserve manual INK2 edit after upstream refresh",
+        }));
+
+      if (!manualOverrides || manualOverrides.length === 0) {
+        return runResult;
+      }
+
+      return applyInk2OverridesV1({
+        tenantId: principal.tenantId,
+        workspaceId: resolvedWorkspaceId,
+        expectedActiveForm: runResult.active,
+        overrides: manualOverrides,
+      });
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ["active-ink2-form", principal.tenantId, resolvedWorkspaceId],
@@ -2039,12 +2287,45 @@ export function CoreModuleShellPageV1() {
     },
   });
 
-  const exportPdfMutation = useMutation({
-    mutationFn: async () =>
-      createPdfExportV1({
+  const ink2OverrideMutation = useMutation({
+    mutationFn: async (input: { amount: number; fieldId: string }) => {
+      if (!ink2Query.data?.active) {
+        throw new Error("INK2 draft is not ready for manual edits yet.");
+      }
+
+      return applyInk2OverridesV1({
         tenantId: principal.tenantId,
         workspaceId: resolvedWorkspaceId,
-      }),
+        expectedActiveForm: ink2Query.data.active,
+        overrides: [
+          {
+            amount: input.amount,
+            fieldId: input.fieldId,
+            reason: "Manual edit in module 4",
+          },
+        ],
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["active-ink2-form", principal.tenantId, resolvedWorkspaceId],
+      });
+    },
+  });
+
+  const downloadInk2PdfMutation = useMutation({
+    mutationFn: async () => {
+      if (!ink2Query.data?.form || !activeAnnualReportData?.extraction) {
+        throw new Error(
+          "INK2 form is still syncing. Wait for the draft first.",
+        );
+      }
+
+      await downloadPopulatedInk2PdfV1({
+        extraction: activeAnnualReportData.extraction,
+        formDraft: ink2Query.data.form,
+      });
+    },
   });
 
   const latestAnnualReportRun = annualReportProcessingRunQuery.data?.run;
@@ -2057,6 +2338,40 @@ export function CoreModuleShellPageV1() {
   const hasActiveAnnualReportExtraction = Boolean(
     activeAnnualReportData?.active,
   );
+  const ink2AutoRefreshSignatureRef = useRef<string | null>(null);
+  const ink2AutoRefreshSignature = [
+    activeAnnualReportData?.active.artifactId ?? "none",
+    String(activeAnnualReportData?.active.version ?? 0),
+    taxAdjustmentsQuery.data?.active.artifactId ?? "none",
+    String(taxAdjustmentsQuery.data?.active.version ?? 0),
+    taxSummaryQuery.data?.active.artifactId ?? "none",
+    String(taxSummaryQuery.data?.active.version ?? 0),
+  ].join(":");
+
+  useEffect(() => {
+    if (normalizedCoreModule !== "tax-return-ink2") {
+      return;
+    }
+    if (!activeAnnualReportData?.active) {
+      return;
+    }
+    if (ink2Mutation.isPending || ink2OverrideMutation.isPending) {
+      return;
+    }
+    if (ink2AutoRefreshSignatureRef.current === ink2AutoRefreshSignature) {
+      return;
+    }
+
+    ink2AutoRefreshSignatureRef.current = ink2AutoRefreshSignature;
+    ink2Mutation.mutate();
+  }, [
+    activeAnnualReportData?.active,
+    ink2AutoRefreshSignature,
+    ink2Mutation.isPending,
+    ink2Mutation.mutate,
+    ink2OverrideMutation.isPending,
+    normalizedCoreModule,
+  ]);
   const {
     annualReportFile,
     annualReportFileTooLarge,
@@ -2140,6 +2455,104 @@ export function CoreModuleShellPageV1() {
   });
 
   useEffect(() => {
+    if (!trialBalanceMutation.isPending) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      queryClient.invalidateQueries({
+        queryKey: ["active-mapping", principal.tenantId, resolvedWorkspaceId],
+      });
+    }, trialBalanceImportPollIntervalMs);
+
+    return () => window.clearInterval(intervalId);
+  }, [
+    principal.tenantId,
+    queryClient,
+    resolvedWorkspaceId,
+    trialBalanceImportPollIntervalMs,
+    trialBalanceMutation.isPending,
+  ]);
+
+  useEffect(() => {
+    if (!mappingAiEnrichmentMonitor) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      queryClient.invalidateQueries({
+        queryKey: ["active-mapping", principal.tenantId, resolvedWorkspaceId],
+      });
+    }, mappingAiEnrichmentPollIntervalMs);
+
+    return () => window.clearInterval(intervalId);
+  }, [
+    mappingAiEnrichmentMonitor,
+    mappingAiEnrichmentPollIntervalMs,
+    principal.tenantId,
+    queryClient,
+    resolvedWorkspaceId,
+  ]);
+
+  useEffect(() => {
+    if (!mappingAiEnrichmentMonitor) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setMappingAiEnrichmentMonitor(null);
+      setMappingAiEnrichmentFeedback({
+        tone: "info",
+        message:
+          "AI account mapping is still running in the background. Keep this page open and it will refresh when a new mapping version is saved.",
+      });
+      mappingAiEnrichmentMutation.reset();
+    }, mappingAiEnrichmentBackgroundBudgetMs + mappingAiEnrichmentPollGraceMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    mappingAiEnrichmentBackgroundBudgetMs,
+    mappingAiEnrichmentMonitor,
+    mappingAiEnrichmentMutation,
+    mappingAiEnrichmentPollGraceMs,
+  ]);
+
+  useEffect(() => {
+    if (!mappingAiEnrichmentMonitor) {
+      return;
+    }
+
+    const activeMapping = mappingQuery.data?.active;
+    const latestMappingGeneratedAt =
+      mappingQuery.data?.mapping.aiRun?.generatedAt ?? null;
+    const generatedAtAdvanced =
+      latestMappingGeneratedAt !== null &&
+      latestMappingGeneratedAt !==
+        mappingAiEnrichmentMonitor.baselineGeneratedAt;
+    if (
+      activeMapping &&
+      (activeMapping.artifactId !==
+        mappingAiEnrichmentMonitor.expectedActiveMapping.artifactId ||
+        activeMapping.version !==
+          mappingAiEnrichmentMonitor.expectedActiveMapping.version ||
+        generatedAtAdvanced)
+    ) {
+      setMappingAiEnrichmentMonitor(null);
+      setMappingAiEnrichmentFeedback({
+        tone: "success",
+        message:
+          "AI account mapping completed and replaced the previous active mapping.",
+      });
+      mappingAiEnrichmentMutation.reset();
+    }
+  }, [
+    mappingAiEnrichmentMonitor,
+    mappingAiEnrichmentMutation,
+    mappingQuery.data?.active,
+    mappingQuery.data?.mapping.aiRun?.generatedAt,
+  ]);
+
+  useEffect(() => {
     if (
       !annualReportForensicRailOpen ||
       !annualReportForensicRailScrollPending
@@ -2215,10 +2628,8 @@ export function CoreModuleShellPageV1() {
   const annualReportConfirmed =
     activeAnnualReportData?.extraction.confirmation.isConfirmed ?? false;
   const mappingDecisions = mappingQuery.data?.mapping.decisions ?? [];
-  const taxAdjustmentDecisions =
-    taxAdjustmentsQuery.data?.adjustments.decisions ?? [];
-  const taxSummary = taxSummaryQuery.data?.summary;
-  const ink2Fields = ink2Query.data?.form.fields ?? [];
+  const activeMappingExecutionMetadata =
+    mappingQuery.data?.mapping.executionMetadata;
   const annualFields = displayedAnnualExtraction?.fields;
   const annualTaxAnalysis = activeAnnualReportTaxAnalysis?.taxAnalysis;
   const annualDocumentWarnings =
@@ -2236,6 +2647,10 @@ export function CoreModuleShellPageV1() {
     warnings: annualDocumentWarnings,
   });
   const hasActiveMappingDecisions = Boolean(mappingQuery.data?.mapping);
+  const activeMappingDecisionCount =
+    mappingQuery.data?.mapping.summary.totalRows;
+  const activeMappingManualReviewCount =
+    mappingQuery.data?.mapping.summary.manualReviewRequired;
   const showReplacementBanner =
     annualReportRunIsOpen &&
     latestAnnualReportRun?.hasPreviousActiveResult === true &&
@@ -2253,7 +2668,29 @@ export function CoreModuleShellPageV1() {
     Boolean(activeAnnualReportData?.active) &&
     annualResultState.status === "ready" &&
     !annualReportRunIsOpen &&
+    !annualReportRunIsStale &&
+    !annualReportTaxAnalysisMutation.isPending;
+  const annualReportTaxAnalysisRunIsOpen =
+    latestAnnualReportRun?.status === "running_tax_analysis" &&
     !annualReportRunIsStale;
+  const latestTrialBalanceImportExecutionMetadata =
+    trialBalanceMutation.data?.pipeline.mapping.executionMetadata ??
+    activeMappingExecutionMetadata;
+  const latestTrialBalanceImportDegraded =
+    latestTrialBalanceImportExecutionMetadata?.degraded ?? false;
+  const latestTrialBalanceImportDegradedReason =
+    latestTrialBalanceImportExecutionMetadata?.degradedReason ??
+    "AI mapping exceeded the synchronous import budget, so a conservative fallback mapping was saved for immediate review.";
+  const mappingAiEnrichmentStatus =
+    mappingAiEnrichmentMonitor !== null
+      ? "accepted"
+      : mappingAiEnrichmentMutation.data?.status;
+  const shouldShowTrialBalanceImportStatus =
+    trialBalanceMutation.isSuccess &&
+    !mappingAiEnrichmentMutation.isPending &&
+    mappingAiEnrichmentMonitor === null &&
+    mappingAiEnrichmentFeedback === null &&
+    !mappingAiEnrichmentMutation.isSuccess;
 
   const handleTrialBalanceRunV1 = () => {
     if (
@@ -2265,7 +2702,47 @@ export function CoreModuleShellPageV1() {
       return;
     }
 
+    mappingAiEnrichmentMutation.reset();
+    setMappingAiEnrichmentMonitor(null);
+    setMappingAiEnrichmentFeedback(null);
     trialBalanceMutation.mutate();
+  };
+
+  const handleRunMappingAiV1 = () => {
+    const activeMapping = mappingQuery.data?.active;
+    if (!activeMapping) {
+      return;
+    }
+
+    if (
+      activeMappingExecutionMetadata?.actualStrategy === "ai" &&
+      !confirmActiveDataOverrideV1(
+        "Run AI account mapping again? This will replace the current AI mapping result for this workspace.",
+      )
+    ) {
+      return;
+    }
+
+    setMappingAiEnrichmentFeedback(null);
+    mappingAiEnrichmentMutation.mutate({
+      expectedActiveMapping: {
+        artifactId: activeMapping.artifactId,
+        version: activeMapping.version,
+      },
+    });
+  };
+
+  const handleClearTrialBalanceDataV1 = () => {
+    if (
+      !hasActiveMappingDecisions ||
+      !confirmActiveDataOverrideV1(
+        "Clear account-mapping data? This will remove the active trial balance, reconciliation, mapping, and downstream tax outputs for this workspace.",
+      )
+    ) {
+      return;
+    }
+
+    clearTrialBalanceDataMutation.mutate();
   };
 
   const workflowSnapshot = buildWorkflowSnapshotV1({
@@ -2464,286 +2941,227 @@ export function CoreModuleShellPageV1() {
       </>
     );
   } else if (normalizedCoreModule === "account-mapping") {
-    const highConfidenceCount = mappingDecisions.filter(
-      (decision) => decision.confidence >= 0.85,
-    ).length;
-
     moduleBody = (
-      <>
-        <CardV1 className="module-stage-card card-v1--hero">
-          <ModuleStageIntroV1
-            heading={activeModuleDefinition.longLabel}
-            description={activeModuleDefinition.description}
-            moduleDefinition={activeModuleDefinition}
-            subModule={subModule}
-          />
+      <CardV1 className="module-stage-card card-v1--hero">
+        <ModuleStageIntroV1
+          heading={activeModuleDefinition.longLabel}
+          description={activeModuleDefinition.description}
+          moduleDefinition={activeModuleDefinition}
+          subModule={subModule}
+        />
 
-          <div className="module-stage-card__body">
-            <div className="module-stage-card__control-panel">
-              <div className="module-stage-card__input-group">
-                <UploadDropZoneV1
-                  idPrefix="trial-balance-upload"
-                  title="Upload trial balance"
-                  helperText="Drag and drop an Excel or CSV trial balance here, or browse for a file."
-                  accept=".xlsx,.xls,.xlsm,.xlsb,.csv"
-                  buttonLabel="Choose trial balance"
-                  file={trialBalanceFile}
-                  onFileSelected={setTrialBalanceFile}
-                  isDisabled={trialBalanceMutation.isPending}
-                />
-                <p className="module-stage-card__note">
-                  The V1 pipeline imports the trial balance and runs the mapping
-                  engine in the same deterministic step. Review still happens
-                  here before moving on.
-                </p>
-                {trialBalanceMutation.isError ? (
-                  <div className="workspace-inline-error" role="alert">
-                    {toUserFacingErrorMessage(trialBalanceMutation.error)}
+        <div className="module-stage-card__body">
+          <div className="module-stage-card__control-panel">
+            <div className="module-stage-card__input-group">
+              <UploadDropZoneV1
+                idPrefix="trial-balance-upload"
+                title="Upload trial balance"
+                helperText="Drag and drop an Excel or CSV trial balance here, or browse for a file."
+                accept=".xlsx,.xls,.xlsm,.xlsb,.csv"
+                buttonLabel="Choose trial balance"
+                file={trialBalanceFile}
+                onFileSelected={setTrialBalanceFile}
+                isDisabled={
+                  trialBalanceMutation.isPending ||
+                  clearTrialBalanceDataMutation.isPending
+                }
+              />
+              <p className="module-stage-card__note">
+                Importing a trial balance now runs AI account mapping
+                automatically. Use "Run AI account mapping" anytime to refresh
+                the classification with a new AI pass.
+              </p>
+              {trialBalanceMutation.isPending ? (
+                <output className="module-ai-progress" aria-live="polite">
+                  <div
+                    className="module-ai-progress__indicator"
+                    aria-hidden="true"
+                  >
+                    <span />
+                    <span />
+                    <span />
                   </div>
-                ) : null}
-                {trialBalanceMutation.isSuccess ? (
-                  <div className="workspace-inline-success" role="status">
-                    Trial balance uploaded and mapping pipeline completed.
+                  <div className="module-ai-progress__content">
+                    <strong>
+                      Trial balance import and AI mapping in progress
+                    </strong>
+                    <p>
+                      Structuring uploaded accounts and mapping them with AI.
+                      Large trial balances can take several minutes.
+                    </p>
+                    <p>
+                      {typeof activeMappingDecisionCount === "number"
+                        ? `Live rows currently visible: ${activeMappingDecisionCount} (manual review flagged: ${activeMappingManualReviewCount ?? 0}). This updates automatically while mapping runs.`
+                        : "Waiting for the first mapped rows. Results will appear automatically."}
+                    </p>
                   </div>
-                ) : null}
-              </div>
-
-              <div className="module-stage-card__actions">
-                <ButtonV1
-                  variant="black"
-                  onClick={handleTrialBalanceRunV1}
-                  disabled={!trialBalanceFile || trialBalanceMutation.isPending}
+                </output>
+              ) : null}
+              {mappingAiEnrichmentMutation.isPending ||
+              mappingAiEnrichmentMonitor !== null ? (
+                <output className="module-ai-progress" aria-live="polite">
+                  <div
+                    className="module-ai-progress__indicator"
+                    aria-hidden="true"
+                  >
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                  <div className="module-ai-progress__content">
+                    <strong>AI account mapping in progress</strong>
+                    <p>
+                      AI is reviewing the imported accounts and applying the
+                      strongest category suggestions it can support.
+                    </p>
+                    <p>
+                      {typeof activeMappingDecisionCount === "number"
+                        ? `Current visible rows: ${activeMappingDecisionCount} (manual review flagged: ${activeMappingManualReviewCount ?? 0}). The grid refreshes as newer mapping versions are saved.`
+                        : "Waiting for the first refreshed mapping rows. The grid will refresh automatically."}
+                    </p>
+                  </div>
+                </output>
+              ) : null}
+              {trialBalanceMutation.isError ? (
+                <div className="workspace-inline-error" role="alert">
+                  {toUserFacingErrorMessage(trialBalanceMutation.error)}
+                </div>
+              ) : null}
+              {mappingAiEnrichmentMutation.isError ? (
+                <div className="workspace-inline-error" role="alert">
+                  {toUserFacingErrorMessage(mappingAiEnrichmentMutation.error)}
+                </div>
+              ) : null}
+              {clearTrialBalanceDataMutation.isError ? (
+                <div className="workspace-inline-error" role="alert">
+                  {toUserFacingErrorMessage(
+                    clearTrialBalanceDataMutation.error,
+                  )}
+                </div>
+              ) : null}
+              {!trialBalanceMutation.isPending && trialBalanceFile ? (
+                <output className="workspace-inline-info" aria-live="polite">
+                  File selected. Ready to import the trial balance.
+                </output>
+              ) : null}
+              {mappingAiEnrichmentFeedback ? (
+                <output
+                  className={
+                    mappingAiEnrichmentFeedback.tone === "success"
+                      ? "workspace-inline-success"
+                      : "workspace-inline-info"
+                  }
+                  aria-live="polite"
                 >
-                  {activeModuleDefinition.ctaLabel}
+                  {mappingAiEnrichmentFeedback.message}
+                </output>
+              ) : null}
+              {clearTrialBalanceDataMutation.isSuccess ? (
+                <output className="workspace-inline-success" aria-live="polite">
+                  Active account-mapping data cleared from this workspace.
+                </output>
+              ) : null}
+              {shouldShowTrialBalanceImportStatus ? (
+                <output
+                  className={
+                    latestTrialBalanceImportDegraded
+                      ? "workspace-inline-info"
+                      : "workspace-inline-success"
+                  }
+                  aria-live="polite"
+                >
+                  {latestTrialBalanceImportDegraded
+                    ? `Trial balance imported. ${latestTrialBalanceImportDegradedReason}`
+                    : "Trial balance imported and AI mapping completed. Review the rows below or rerun AI mapping."}
+                </output>
+              ) : null}
+            </div>
+
+            <div className="module-stage-card__actions">
+              <ButtonV1
+                variant="black"
+                onClick={handleTrialBalanceRunV1}
+                disabled={
+                  !trialBalanceFile ||
+                  trialBalanceMutation.isPending ||
+                  clearTrialBalanceDataMutation.isPending
+                }
+              >
+                {trialBalanceMutation.isPending
+                  ? "Importing and mapping..."
+                  : hasActiveMappingDecisions
+                    ? "Import a new trial balance"
+                    : "Import trial balance"}
+              </ButtonV1>
+              <ButtonV1
+                variant="secondary"
+                onClick={handleRunMappingAiV1}
+                disabled={
+                  !mappingQuery.data?.active ||
+                  trialBalanceMutation.isPending ||
+                  clearTrialBalanceDataMutation.isPending ||
+                  mappingAiEnrichmentMutation.isPending ||
+                  mappingAiEnrichmentMonitor !== null
+                }
+              >
+                {mappingAiEnrichmentMutation.isPending ||
+                mappingAiEnrichmentMonitor !== null
+                  ? "Running AI account mapping..."
+                  : "Run AI account mapping"}
+              </ButtonV1>
+              {hasActiveMappingDecisions ? (
+                <ButtonV1
+                  variant="secondary"
+                  onClick={handleClearTrialBalanceDataV1}
+                  disabled={
+                    trialBalanceMutation.isPending ||
+                    clearTrialBalanceDataMutation.isPending ||
+                    mappingAiEnrichmentMutation.isPending ||
+                    mappingAiEnrichmentMonitor !== null
+                  }
+                >
+                  {clearTrialBalanceDataMutation.isPending
+                    ? "Clearing data..."
+                    : "Clear account-mapping data"}
                 </ButtonV1>
-              </div>
-            </div>
-          </div>
-        </CardV1>
-
-        <CardV1 className="module-data-card">
-          <div className="module-data-card__header">
-            <div>
-              <div className="workspace-panel-header__eyebrow">Review</div>
-              <h2>Mapped account preview</h2>
-            </div>
-            <div className="module-data-card__status">
-              {mappingDecisions.length > 0
-                ? `${mappingDecisions.length} accounts mapped`
-                : "No mapping run yet"}
+              ) : null}
             </div>
           </div>
 
-          {mappingQuery.isPending ? (
-            <SkeletonV1 height={220} />
-          ) : mappingDecisions.length > 0 ? (
-            <>
-              <ModuleSummaryGridV1>
-                <ModuleSummaryItemV1
-                  label="Mapped accounts"
-                  value={String(mappingDecisions.length)}
-                />
-                <ModuleSummaryItemV1
-                  label="High-confidence rows"
-                  value={String(highConfidenceCount)}
-                />
-                <ModuleSummaryItemV1
-                  label="Next action"
-                  value="Review exceptions"
-                />
-              </ModuleSummaryGridV1>
-
-              <table className="module-data-table">
-                <thead>
-                  <tr>
-                    <th>Account</th>
-                    <th>Description</th>
-                    <th>Category</th>
-                    <th>Confidence</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {mappingDecisions.slice(0, 8).map((decision) => (
-                    <tr key={decision.id}>
-                      <td>{decision.sourceAccountNumber}</td>
-                      <td>{decision.accountName}</td>
-                      <td>{decision.selectedCategory.name}</td>
-                      <td>{Math.round(decision.confidence * 100)}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          ) : (
-            <div className="workspace-empty-state">
-              Import the trial balance to populate the account table.
-            </div>
-          )}
-        </CardV1>
-      </>
+          {mappingDecisions.length > 0 ? (
+            <AccountMappingGridV1
+              tenantId={principal.tenantId}
+              workspaceId={resolvedWorkspaceId}
+              mappingQuery={mappingQuery}
+            />
+          ) : null}
+        </div>
+      </CardV1>
     );
   } else if (normalizedCoreModule === "tax-adjustments") {
     moduleBody = (
-      <>
-        <CardV1 className="module-stage-card card-v1--hero">
-          <ModuleStageIntroV1
-            heading={activeModuleDefinition.longLabel}
-            description={activeModuleDefinition.description}
-            moduleDefinition={activeModuleDefinition}
-            subModule={subModule}
-          />
-
-          <div className="module-stage-card__body">
-            <div className="module-stage-card__control-panel">
-              <p className="module-stage-card__note">
-                Generate the draft adjustment set after mapping is reviewed.
-                This action also refreshes the deterministic tax summary used by
-                the INK2 draft.
-              </p>
-
-              <div className="module-stage-card__actions">
-                <ButtonV1
-                  variant="black"
-                  onClick={() => taxAdjustmentsMutation.mutate()}
-                  disabled={taxAdjustmentsMutation.isPending}
-                >
-                  {activeModuleDefinition.ctaLabel}
-                </ButtonV1>
-              </div>
-            </div>
-          </div>
-        </CardV1>
-
-        <CardV1 className="module-data-card">
-          <div className="module-data-card__header">
-            <div>
-              <div className="workspace-panel-header__eyebrow">Review</div>
-              <h2>Tax effect summary</h2>
-            </div>
-            <div className="module-data-card__status">
-              {taxAdjustmentsQuery.isSuccess
-                ? `${taxAdjustmentDecisions.length} adjustments generated`
-                : "No adjustment set yet"}
-            </div>
-          </div>
-
-          {taxSummaryQuery.isPending ? (
-            <SkeletonV1 height={180} />
-          ) : taxSummary ? (
-            <ModuleSummaryGridV1>
-              <ModuleSummaryItemV1
-                label="Taxable income"
-                value={formatCurrencyV1(taxSummary.taxableIncome)}
-              />
-              <ModuleSummaryItemV1
-                label="Corporate tax"
-                value={formatCurrencyV1(taxSummary.corporateTax)}
-              />
-              <ModuleSummaryItemV1
-                label="Draft adjustments"
-                value={String(taxAdjustmentDecisions.length)}
-              />
-            </ModuleSummaryGridV1>
-          ) : (
-            <div className="workspace-empty-state">
-              Generate tax adjustments to produce the tax summary.
-            </div>
-          )}
-        </CardV1>
-      </>
+      <TaxAdjustmentsWorkbenchV1
+        workspaceId={resolvedWorkspaceId}
+        subModule={subModule}
+        taxAdjustmentsQuery={taxAdjustmentsQuery}
+        taxSummaryQuery={taxSummaryQuery}
+        workflowState={moduleWorkflowState}
+        onGenerate={() => taxAdjustmentsMutation.mutate()}
+        isGenerating={taxAdjustmentsMutation.isPending}
+        generateLabel={activeModuleDefinition.ctaLabel}
+      />
     );
   } else {
     moduleBody = (
-      <>
-        <CardV1 className="module-stage-card card-v1--hero">
-          <ModuleStageIntroV1
-            heading={activeModuleDefinition.longLabel}
-            description={activeModuleDefinition.description}
-            moduleDefinition={activeModuleDefinition}
-            subModule={subModule}
-          />
-
-          <div className="module-stage-card__body">
-            <div className="module-stage-card__control-panel">
-              <p className="module-stage-card__note">
-                Generate the INK2 draft once the tax summary is reviewed. Export
-                remains available only after a draft exists.
-              </p>
-
-              <div className="module-stage-card__actions">
-                <ButtonV1
-                  variant="black"
-                  onClick={() => ink2Mutation.mutate()}
-                  disabled={ink2Mutation.isPending}
-                >
-                  {activeModuleDefinition.ctaLabel}
-                </ButtonV1>
-                <ButtonV1
-                  variant="secondary"
-                  onClick={() => exportPdfMutation.mutate()}
-                  disabled={!ink2Query.isSuccess || exportPdfMutation.isPending}
-                >
-                  Export PDF
-                </ButtonV1>
-              </div>
-            </div>
-          </div>
-        </CardV1>
-
-        <CardV1 className="module-data-card">
-          <div className="module-data-card__header">
-            <div>
-              <div className="workspace-panel-header__eyebrow">Review</div>
-              <h2>INK2 draft preview</h2>
-            </div>
-            <div className="module-data-card__status">
-              {ink2Query.isSuccess ? "Draft available" : "No draft generated"}
-            </div>
-          </div>
-
-          {ink2Query.isPending ? (
-            <SkeletonV1 height={220} />
-          ) : ink2Fields.length > 0 ? (
-            <>
-              <ModuleSummaryGridV1>
-                <ModuleSummaryItemV1
-                  label="Draft fields"
-                  value={String(ink2Fields.length)}
-                />
-                <ModuleSummaryItemV1
-                  label="Export"
-                  value={exportPdfMutation.isSuccess ? "Created" : "Pending"}
-                />
-                <ModuleSummaryItemV1
-                  label="Next action"
-                  value="Review and export"
-                />
-              </ModuleSummaryGridV1>
-
-              <table className="module-data-table">
-                <thead>
-                  <tr>
-                    <th>Field</th>
-                    <th>Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ink2Fields.slice(0, 8).map((field) => (
-                    <tr key={field.fieldId}>
-                      <td>{field.fieldId}</td>
-                      <td>{formatCurrencyV1(field.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          ) : (
-            <div className="workspace-empty-state">
-              Generate the INK2 draft to review the final return.
-            </div>
-          )}
-        </CardV1>
-      </>
+      <Ink2FormReplicaV1
+        extraction={activeAnnualReportData?.extraction}
+        form={ink2Query.data?.form}
+        isDownloadingPdf={downloadInk2PdfMutation.isPending}
+        isSavingOverride={ink2OverrideMutation.isPending}
+        isSyncing={ink2Query.isPending || ink2Mutation.isPending}
+        onDownloadPdf={() => downloadInk2PdfMutation.mutate()}
+        onSaveOverride={(input) => ink2OverrideMutation.mutate(input)}
+      />
     );
   }
 
@@ -2768,12 +3186,7 @@ export function CoreModuleShellPageV1() {
         annualReportRunIsOpen={annualReportRunIsOpen}
         annualReportRunIsStale={annualReportRunIsStale}
         annualReportTaxAnalysisError={annualReportTaxAnalysisMutation.error}
-        annualReportTaxAnalysisPending={
-          annualReportTaxAnalysisMutation.isPending
-        }
-        annualReportTaxAnalysisSuccess={
-          annualReportTaxAnalysisMutation.isSuccess
-        }
+        annualReportTaxAnalysisRunIsOpen={annualReportTaxAnalysisRunIsOpen}
         onHide={toggleAnnualReportForensicRail}
         onRecoveryRequested={runRecoveryAction}
         onRunTaxAnalysis={() => annualReportTaxAnalysisMutation.mutate()}
@@ -2782,7 +3195,10 @@ export function CoreModuleShellPageV1() {
         }
         recoveryActionLabel={recoveryActionLabel}
       />
-    ) : normalizedCoreModule === "annual-report-analysis" ? null : (
+    ) : normalizedCoreModule === "annual-report-analysis" ||
+      normalizedCoreModule === "account-mapping" ||
+      normalizedCoreModule === "tax-adjustments" ||
+      normalizedCoreModule === "tax-return-ink2" ? null : (
       <WorkspaceReviewPanelV1
         tenantId={principal.tenantId}
         workspaceId={workspace.id}
@@ -2798,7 +3214,11 @@ export function CoreModuleShellPageV1() {
             ? " module-shell--annual-report-rail-open"
             : ""
         }`
-      : "module-shell";
+      : normalizedCoreModule === "account-mapping" ||
+          normalizedCoreModule === "tax-adjustments" ||
+          normalizedCoreModule === "tax-return-ink2"
+        ? "module-shell module-shell--single-column"
+        : "module-shell";
 
   return (
     <div className={moduleShellClassName}>

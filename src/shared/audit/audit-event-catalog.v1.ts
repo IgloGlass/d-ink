@@ -27,6 +27,8 @@ export const AUDIT_EVENT_TYPES_V1 = {
   RECONCILIATION_RESULT_RECORDED: "reconciliation.run_result_recorded",
 
   MAPPING_GENERATED: "mapping.generated",
+  MAPPING_ACTIVE_DATA_CLEARED: "mapping.active_data_cleared",
+  MAPPING_ACTIVE_DEPENDENTS_CLEARED: "mapping.active_dependents_cleared",
   MAPPING_OVERRIDES_APPLIED: "mapping.overrides_applied",
   MAPPING_PREFERENCE_SAVED: "mapping.preference_saved",
   MAPPING_PREFERENCES_AUTO_APPLIED: "mapping.preferences_auto_applied",

@@ -1263,6 +1263,19 @@ describe("workflow deps annual-report AI date normalization v1", () => {
     });
 
     expect(fallback.executiveSummary).toContain("deterministic fallback");
+    expect(fallback.reviewState).toEqual(
+      expect.objectContaining({
+        mode: "deterministic_fallback",
+        sourceDocumentAvailable: false,
+        sourceDocumentUsed: false,
+      }),
+    );
+    expect(fallback.reviewState?.reasons[0]).toContain("AI fallback reason");
+    expect(
+      fallback.missingInformation.some((item) =>
+        item.includes("AI fallback reason"),
+      ),
+    ).toBe(false);
     expect(fallback.findings.length).toBeGreaterThanOrEqual(3);
     expect(fallback.findings.map((finding) => finding.area)).toEqual(
       expect.arrayContaining([

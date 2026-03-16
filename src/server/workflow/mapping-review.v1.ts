@@ -12,7 +12,7 @@ import {
   parseGenerateMappingReviewSuggestionsResultV1,
 } from "../../shared/contracts/mapping-review.v1";
 import {
-  type MappingDecisionV1,
+  type MappingDecisionRecordV1,
   getSilverfinTaxCategoryByCodeV1,
 } from "../../shared/contracts/mapping.v1";
 import type {
@@ -46,7 +46,7 @@ function buildErrorContextFromZod(error: z.ZodError): Record<string, unknown> {
 
 function buildMappingReviewProjectionV1(input: {
   canProceedToMapping: boolean;
-  decisions: MappingDecisionV1[];
+  decisions: MappingDecisionRecordV1[];
 }): MappingReviewModelInputProjectionV1 {
   return {
     canProceedToMapping: input.canProceedToMapping,
@@ -65,7 +65,7 @@ function buildMappingReviewProjectionV1(input: {
  *
  * Safety boundary:
  * - Mapping review remains advisory and does not mutate persisted artifacts.
- * - Deterministic mapping remains source of truth unless a user later applies overrides.
+ * - The active mapping artifact remains source of truth unless a user later applies overrides.
  */
 export async function generateMappingReviewSuggestionsV1(
   input: unknown,

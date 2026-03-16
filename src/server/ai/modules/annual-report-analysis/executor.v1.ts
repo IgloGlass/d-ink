@@ -138,8 +138,7 @@ Return only:
 - pensionContext,
 - leasingContext,
 - groupContributionContext,
-- shareholdingContext,
-- taxExpenseContext (if found in these notes).
+- shareholdingContext.
 
 Prefer keeping narrative note coverage, not just numeric values:
 - populate notes arrays with concise extracted note text when the note contains useful narrative disclosure,
@@ -1859,6 +1858,7 @@ function buildRelevantNoteFallbackEvidenceFromBlockV1(input: {
 function materializeRelevantNotesFromLocatorV1(input: {
   blocks: AnnualReportRelevantNoteBlockV1[];
   output: AnnualReportAiRelevantNoteLocatorResultV1;
+  warnings: string[];
 }): AnnualReportRelevantNoteV1[] {
   const blockById = new Map(
     input.blocks.map((block) => [block.blockId, block] as const),
@@ -1867,6 +1867,12 @@ function materializeRelevantNotesFromLocatorV1(input: {
   for (const note of input.output.relevantNotes ?? []) {
     const block = blockById.get(note.blockId);
     if (!block) {
+      continue;
+    }
+    if (!note.category) {
+      input.warnings.push(
+        `degraded.relevant_notes.invalid_category:block=${note.blockId}`,
+      );
       continue;
     }
 
@@ -2405,17 +2411,6 @@ async function executeAnnualReportStageWithChunkFallbackV1<TOutput>(input: {
     ok: true,
     outputs: [fullDocumentResult.output],
   };
-}
-
-function shouldUseProviderJsonSchemaV1(input: {
-  chunkLabel: string;
-  executionProfile: "extractable_text_pdf" | "scanned_or_low_text_pdf" | "docx";
-}) {
-  if (input.executionProfile !== "extractable_text_pdf") {
-    return false;
-  }
-
-  return false;
 }
 
 function shouldPreferRequiredStagesFirstV1(input: {
@@ -3506,63 +3501,83 @@ function backfillRelevantNoteContextsV1(input: {
       ...existing,
       ...notesForCategory(category).flatMap((note) => note.notes),
     ]);
+  const shouldBackfillEvidence = (existing: AnnualReportEvidenceReferenceV1[]) =>
+    existing.length === 0;
+  const shouldBackfillNarrative = (existingNotes: string[]) =>
+    existingNotes.length === 0;
 
-  input.taxDeep.depreciationContext.evidence = mergeNoteEvidence(
-    input.taxDeep.depreciationContext.evidence,
-    "fixed_assets_depreciation",
-  );
-  input.taxDeep.assetMovements.evidence = mergeNoteEvidence(
-    input.taxDeep.assetMovements.evidence,
-    "fixed_assets_depreciation",
-  );
-  input.taxDeep.netInterestContext.notes = mergeNoteTexts(
-    input.taxDeep.netInterestContext.notes,
-    "interest",
-  );
-  input.taxDeep.netInterestContext.evidence = mergeNoteEvidence(
-    input.taxDeep.netInterestContext.evidence,
-    "interest",
-  );
-  input.taxDeep.pensionContext.notes = mergeNoteTexts(
-    input.taxDeep.pensionContext.notes,
-    "pension",
-  );
-  input.taxDeep.pensionContext.evidence = mergeNoteEvidence(
-    input.taxDeep.pensionContext.evidence,
-    "pension",
-  );
-  input.taxDeep.reserveContext.notes = mergeNoteTexts(
-    input.taxDeep.reserveContext.notes,
-    "reserve",
-  );
-  input.taxDeep.reserveContext.evidence = mergeNoteEvidence(
-    input.taxDeep.reserveContext.evidence,
-    "reserve",
-  );
-  input.taxDeep.leasingContext.notes = mergeNoteTexts(
-    input.taxDeep.leasingContext.notes,
-    "leasing",
-  );
-  input.taxDeep.leasingContext.evidence = mergeNoteEvidence(
-    input.taxDeep.leasingContext.evidence,
-    "leasing",
-  );
-  input.taxDeep.groupContributionContext.notes = mergeNoteTexts(
-    input.taxDeep.groupContributionContext.notes,
-    "group_contributions",
-  );
-  input.taxDeep.groupContributionContext.evidence = mergeNoteEvidence(
-    input.taxDeep.groupContributionContext.evidence,
-    "group_contributions",
-  );
-  input.taxDeep.shareholdingContext.notes = mergeNoteTexts(
-    input.taxDeep.shareholdingContext.notes,
-    "shareholdings_dividends",
-  );
-  input.taxDeep.shareholdingContext.evidence = mergeNoteEvidence(
-    input.taxDeep.shareholdingContext.evidence,
-    "shareholdings_dividends",
-  );
+  if (shouldBackfillEvidence(input.taxDeep.depreciationContext.evidence)) {
+    input.taxDeep.depreciationContext.evidence = mergeNoteEvidence(
+      input.taxDeep.depreciationContext.evidence,
+      "fixed_assets_depreciation",
+    );
+  }
+  if (shouldBackfillEvidence(input.taxDeep.assetMovements.evidence)) {
+    input.taxDeep.assetMovements.evidence = mergeNoteEvidence(
+      input.taxDeep.assetMovements.evidence,
+      "fixed_assets_depreciation",
+    );
+  }
+  if (shouldBackfillNarrative(input.taxDeep.netInterestContext.notes)) {
+    input.taxDeep.netInterestContext.notes = mergeNoteTexts(
+      input.taxDeep.netInterestContext.notes,
+      "interest",
+    );
+    input.taxDeep.netInterestContext.evidence = mergeNoteEvidence(
+      input.taxDeep.netInterestContext.evidence,
+      "interest",
+    );
+  }
+  if (shouldBackfillNarrative(input.taxDeep.pensionContext.notes)) {
+    input.taxDeep.pensionContext.notes = mergeNoteTexts(
+      input.taxDeep.pensionContext.notes,
+      "pension",
+    );
+    input.taxDeep.pensionContext.evidence = mergeNoteEvidence(
+      input.taxDeep.pensionContext.evidence,
+      "pension",
+    );
+  }
+  if (shouldBackfillNarrative(input.taxDeep.reserveContext.notes)) {
+    input.taxDeep.reserveContext.notes = mergeNoteTexts(
+      input.taxDeep.reserveContext.notes,
+      "reserve",
+    );
+    input.taxDeep.reserveContext.evidence = mergeNoteEvidence(
+      input.taxDeep.reserveContext.evidence,
+      "reserve",
+    );
+  }
+  if (shouldBackfillNarrative(input.taxDeep.leasingContext.notes)) {
+    input.taxDeep.leasingContext.notes = mergeNoteTexts(
+      input.taxDeep.leasingContext.notes,
+      "leasing",
+    );
+    input.taxDeep.leasingContext.evidence = mergeNoteEvidence(
+      input.taxDeep.leasingContext.evidence,
+      "leasing",
+    );
+  }
+  if (shouldBackfillNarrative(input.taxDeep.groupContributionContext.notes)) {
+    input.taxDeep.groupContributionContext.notes = mergeNoteTexts(
+      input.taxDeep.groupContributionContext.notes,
+      "group_contributions",
+    );
+    input.taxDeep.groupContributionContext.evidence = mergeNoteEvidence(
+      input.taxDeep.groupContributionContext.evidence,
+      "group_contributions",
+    );
+  }
+  if (shouldBackfillNarrative(input.taxDeep.shareholdingContext.notes)) {
+    input.taxDeep.shareholdingContext.notes = mergeNoteTexts(
+      input.taxDeep.shareholdingContext.notes,
+      "shareholdings_dividends",
+    );
+    input.taxDeep.shareholdingContext.evidence = mergeNoteEvidence(
+      input.taxDeep.shareholdingContext.evidence,
+      "shareholdings_dividends",
+    );
+  }
 
   if (!input.taxDeep.taxExpenseContext) {
     const taxNotes = notesForCategory("tax_expense");
@@ -3581,7 +3596,7 @@ function backfillRelevantNoteContextsV1(input: {
         ),
       };
     }
-  } else {
+  } else if (shouldBackfillNarrative(input.taxDeep.taxExpenseContext.notes)) {
     input.taxDeep.taxExpenseContext.notes = mergeNoteTexts(
       input.taxDeep.taxExpenseContext.notes,
       "tax_expense",
@@ -4316,15 +4331,14 @@ function hasAssetsContentV1(
     "depreciationContext" | "assetMovements" | "reserveContext" | "taxExpenseContext"
   >,
 ) {
+  // Numeric movement tables alone are not enough to suppress the targeted
+  // asset-note stage; we only skip follow-up when the combined stage already
+  // produced the dedicated asset/reserve/tax-note coverage we need downstream.
   return (
     output.depreciationContext.assetAreas.length > 0 ||
-    output.assetMovements.lines.length > 0 ||
     output.reserveContext.movements.length > 0 ||
     output.reserveContext.notes.length > 0 ||
-    (output.taxExpenseContext?.notes.length ?? 0) > 0 ||
-    Boolean(output.taxExpenseContext?.currentTax) ||
-    Boolean(output.taxExpenseContext?.deferredTax) ||
-    Boolean(output.taxExpenseContext?.totalTaxExpense)
+    (output.taxExpenseContext?.notes.length ?? 0) > 0
   );
 }
 
@@ -4340,19 +4354,35 @@ function hasFinanceContentV1(
   >,
 ) {
   return (
+    Boolean(output.netInterestContext.financeIncome) ||
+    Boolean(output.netInterestContext.financeExpense) ||
+    Boolean(output.netInterestContext.interestIncome) ||
+    Boolean(output.netInterestContext.interestExpense) ||
+    Boolean(output.netInterestContext.netInterest) ||
     output.netInterestContext.notes.length > 0 ||
+    output.netInterestContext.evidence.length > 0 ||
+    Boolean(output.pensionContext.specialPayrollTax) ||
     output.pensionContext.flags.length > 0 ||
     output.pensionContext.notes.length > 0 ||
+    output.pensionContext.evidence.length > 0 ||
     output.leasingContext.flags.length > 0 ||
     output.leasingContext.notes.length > 0 ||
+    output.leasingContext.evidence.length > 0 ||
     output.groupContributionContext.flags.length > 0 ||
     output.groupContributionContext.notes.length > 0 ||
+    output.groupContributionContext.evidence.length > 0 ||
     output.shareholdingContext.flags.length > 0 ||
     output.shareholdingContext.notes.length > 0 ||
+    output.shareholdingContext.evidence.length > 0 ||
     Boolean(output.shareholdingContext.dividendsReceived) ||
-    Boolean(output.shareholdingContext.dividendsPaid) ||
-    (output.taxExpenseContext?.notes.length ?? 0) > 0
+    Boolean(output.shareholdingContext.dividendsPaid)
   );
+}
+
+function hasMeaningfulFinanceStageOutputV1(
+  output: AnnualReportAiTaxNotesFinanceAndOtherResultV1,
+): boolean {
+  return hasFinanceContentV1(output);
 }
 
 export async function executeAnnualReportAnalysisV1(
@@ -4653,10 +4683,20 @@ export async function executeAnnualReportAnalysisV1(
     document: input.document,
     executionProfile,
     focusRanges: taxNotesFinanceFocusRanges,
-    // Note pages often depend on visible table structure and note headings.
-    // Keep these stages on routed PDF chunks even when the PDF text is extractable.
-    preferTextForExtractablePdf: false,
+    // For extractable PDFs, use routed text first to keep finance-note passes
+    // small and cheap. Retry on routed PDF only when the text result is unusable.
+    preferTextForExtractablePdf: true,
   });
+  const taxNotesFinancePdfFallbackStageDocument =
+    executionProfile === "extractable_text_pdf" &&
+    taxNotesFinanceStageDocument.inputType === "text"
+      ? buildStageDocumentV1({
+          document: input.document,
+          executionProfile,
+          focusRanges: taxNotesFinanceFocusRanges,
+          preferTextForExtractablePdf: false,
+        })
+      : null;
   const combinedExtractableStageDocument = buildStageDocumentV1({
     document: input.document,
     executionProfile,
@@ -4686,6 +4726,15 @@ export async function executeAnnualReportAnalysisV1(
         }
       : combinedStageDiagnostics;
   warnings.push(`tax_notes_finance.input=${taxNotesFinanceStageDocument.inputType}`);
+  if (
+    taxNotesFinancePdfFallbackStageDocument &&
+    taxNotesFinancePdfFallbackStageDocument.inputType !==
+      taxNotesFinanceStageDocument.inputType
+  ) {
+    warnings.push(
+      `tax_notes_finance.fallback_input=${taxNotesFinancePdfFallbackStageDocument.inputType}`,
+    );
+  }
   warnings.push(
     `tax_notes_finance.primary_request_timeout_ms=${stageTimeouts.taxNotesFinance.primaryRequestTimeoutMs}`,
     `tax_notes_finance.retry_request_timeout_ms=${stageTimeouts.taxNotesFinance.retryRequestTimeoutMs}`,
@@ -4940,6 +4989,7 @@ export async function executeAnnualReportAnalysisV1(
         ...materializeRelevantNotesFromLocatorV1({
           blocks: blockChunk,
           output: relevantNotesResult.output,
+          warnings,
         }),
       );
     }
@@ -4950,6 +5000,113 @@ export async function executeAnnualReportAnalysisV1(
         next: mergedRelevantNotes,
       });
     }
+  };
+  const executeFinanceNotesStageV1 = async (modelSelection: {
+    fallbackModelTier: "fast" | "thinking";
+    primaryModelTier: "fast" | "thinking";
+  }): Promise<
+    | {
+        ok: true;
+        output: AnnualReportAiTaxNotesFinanceAndOtherResultV1;
+      }
+    | {
+        ok: false;
+        error: {
+          code:
+            | "MODEL_EXECUTION_FAILED"
+            | "MODEL_RESPONSE_INVALID"
+            | "CONFIG_INVALID";
+          context: Record<string, unknown>;
+          message: string;
+        };
+      }
+  > => {
+    const runFinanceStageAttemptV1 = async (stageDocument: {
+      document: AnnualReportPreparedDocumentV1;
+      inputType: "compact_text" | "text" | "pdf";
+    }) =>
+      executeAnnualReportStageWithChunkFallbackV1<AnnualReportAiTaxNotesFinanceAndOtherResultV1>(
+        {
+          apiKey: input.apiKey,
+          currentStatus: "extracting_tax_notes",
+          chunkLabel: "tax_notes_finance",
+          document: stageDocument.document,
+          modelConfig: input.modelConfig,
+          onProgress: input.onProgress,
+          responseSchema: AnnualReportAiTaxNotesFinanceAndOtherResultV1Schema,
+          stageInstruction: ANNUAL_REPORT_STAGE_INSTRUCTIONS_V1.taxNotesFinance,
+          focusRanges: taxNotesFinanceFocusRanges,
+          primaryModelTier: modelSelection.primaryModelTier,
+          fallbackModelTier: modelSelection.fallbackModelTier,
+          useResponseJsonSchema: false,
+          primaryRequestTimeoutMs:
+            stageTimeouts.taxNotesFinance.primaryRequestTimeoutMs,
+          retryRequestTimeoutMs:
+            stageTimeouts.taxNotesFinance.retryRequestTimeoutMs,
+          stageBudgetMs: stageTimeouts.taxNotesFinance.stageBudgetMs,
+          totalDeadlineMs: extractionDeadlineMs,
+          minimumRetryBudgetMs:
+            stageTimeouts.taxNotesFinance.minimumRetryBudgetMs,
+          primaryMaxCharsPerChunk: runtimeMode === "ai_overdrive" ? 12_000 : 6_000,
+          fallbackMaxCharsPerChunk:
+            runtimeMode === "ai_overdrive" ? 8_000 : 4_000,
+          warnings,
+          primaryChunkPages: stageChunking.taxNotesPrimary,
+          fallbackChunkPages: stageChunking.taxNotesFallback,
+          skipWhenMissingRanges: true,
+        },
+      );
+
+    const primaryResult = await runFinanceStageAttemptV1(
+      taxNotesFinanceStageDocument,
+    );
+    const canRetryOnPdf =
+      taxNotesFinancePdfFallbackStageDocument !== null &&
+      taxNotesFinancePdfFallbackStageDocument.inputType !==
+        taxNotesFinanceStageDocument.inputType;
+
+    if (!primaryResult.ok) {
+      if (!canRetryOnPdf) {
+        return primaryResult;
+      }
+      warnings.push(
+        "tax_notes_finance.pdf_fallback reason=primary_attempt_unavailable",
+      );
+      const pdfFallbackResult = await runFinanceStageAttemptV1(
+        taxNotesFinancePdfFallbackStageDocument,
+      );
+      if (!pdfFallbackResult.ok) {
+        return pdfFallbackResult;
+      }
+      return {
+        ok: true as const,
+        output: mergeFinanceOutputsV1(pdfFallbackResult.outputs),
+      };
+    }
+
+    const mergedPrimary = mergeFinanceOutputsV1(primaryResult.outputs);
+    if (!canRetryOnPdf || hasMeaningfulFinanceStageOutputV1(mergedPrimary)) {
+      return {
+        ok: true as const,
+        output: mergedPrimary,
+      };
+    }
+
+    warnings.push("tax_notes_finance.pdf_fallback reason=text_output_unusable");
+    const pdfFallbackResult = await runFinanceStageAttemptV1(
+      taxNotesFinancePdfFallbackStageDocument,
+    );
+    if (!pdfFallbackResult.ok) {
+      return pdfFallbackResult;
+    }
+
+    return {
+      ok: true as const,
+      output: mergeFinanceOutputsV1([
+        mergedPrimary,
+        ...pdfFallbackResult.outputs,
+      ]),
+    };
   };
   if (executionProfile === "extractable_text_pdf") {
     if (input.onProgress) {
@@ -5008,10 +5165,7 @@ export async function executeAnnualReportAnalysisV1(
         minimumRetryBudgetMs: stageTimeouts.combined.minimumRetryBudgetMs,
         primaryMaxCharsPerChunk: runtimeMode === "ai_overdrive" ? 18_000 : 10_000,
         fallbackMaxCharsPerChunk: runtimeMode === "ai_overdrive" ? 12_000 : 6_000,
-        useResponseJsonSchema: shouldUseProviderJsonSchemaV1({
-          chunkLabel: "combined_extractable",
-          executionProfile,
-        }),
+        useResponseJsonSchema: false,
         warnings,
         primaryChunkPages: stageChunking.combinedTextPrimary,
         fallbackChunkPages: stageChunking.combinedTextFallback,
@@ -5036,17 +5190,13 @@ export async function executeAnnualReportAnalysisV1(
         }
 
         shouldRunStatementsFollowUp = !hasStatementsContentV1(merged);
-        shouldRunAssetsFollowUp = taxNotesAssetsFocusRanges.length > 0;
-        shouldRunFinanceFollowUp = taxNotesFinanceFocusRanges.length > 0;
-        if (
-          shouldRunStatementsFollowUp ||
-          shouldRunAssetsFollowUp ||
-          shouldRunFinanceFollowUp
-        ) {
-          warnings.push(
-            `combined_extractable.follow_up_required=1 statements=${shouldRunStatementsFollowUp ? 1 : 0} assets=${shouldRunAssetsFollowUp ? 1 : 0} finance=${shouldRunFinanceFollowUp ? 1 : 0}`,
-          );
-        }
+        shouldRunAssetsFollowUp =
+          taxNotesAssetsFocusRanges.length > 0 && !hasAssetsContentV1(merged);
+        shouldRunFinanceFollowUp =
+          taxNotesFinanceFocusRanges.length > 0 && !hasFinanceContentV1(merged);
+        warnings.push(
+          `combined_extractable.follow_up_required=${shouldRunStatementsFollowUp || shouldRunAssetsFollowUp || shouldRunFinanceFollowUp ? 1 : 0} statements=${shouldRunStatementsFollowUp ? 1 : 0} assets=${shouldRunAssetsFollowUp ? 1 : 0} finance=${shouldRunFinanceFollowUp ? 1 : 0}`,
+        );
       } else {
         const stageError = formatAnnualReportStageErrorV1({
           stage: ANNUAL_REPORT_STAGE_LABELS_V1.combinedTextExtraction,
@@ -5084,10 +5234,7 @@ export async function executeAnnualReportAnalysisV1(
             preferred: "fast",
             runtimeMode,
           }),
-          useResponseJsonSchema: shouldUseProviderJsonSchemaV1({
-            chunkLabel: "statements",
-            executionProfile,
-          }),
+          useResponseJsonSchema: false,
           primaryRequestTimeoutMs: stageTimeouts.statements.primaryRequestTimeoutMs,
           retryRequestTimeoutMs: stageTimeouts.statements.retryRequestTimeoutMs,
           stageBudgetMs: stageTimeouts.statements.stageBudgetMs,
@@ -5142,10 +5289,7 @@ export async function executeAnnualReportAnalysisV1(
           preferred: "fast",
           runtimeMode,
         }),
-        useResponseJsonSchema: shouldUseProviderJsonSchemaV1({
-          chunkLabel: "tax_notes_assets",
-          executionProfile,
-        }),
+        useResponseJsonSchema: false,
         primaryRequestTimeoutMs: stageTimeouts.taxNotesAssets.primaryRequestTimeoutMs,
         retryRequestTimeoutMs: stageTimeouts.taxNotesAssets.retryRequestTimeoutMs,
         stageBudgetMs: stageTimeouts.taxNotesAssets.stageBudgetMs,
@@ -5175,16 +5319,7 @@ export async function executeAnnualReportAnalysisV1(
     }
 
     if (shouldRunFinanceFollowUp) {
-      const financeResult = await executeAnnualReportStageWithChunkFallbackV1<AnnualReportAiTaxNotesFinanceAndOtherResultV1>({
-        apiKey: input.apiKey,
-        currentStatus: "extracting_tax_notes",
-        chunkLabel: "tax_notes_finance",
-        document: taxNotesFinanceStageDocument.document,
-        modelConfig: input.modelConfig,
-        onProgress: input.onProgress,
-        responseSchema: AnnualReportAiTaxNotesFinanceAndOtherResultV1Schema,
-        stageInstruction: ANNUAL_REPORT_STAGE_INSTRUCTIONS_V1.taxNotesFinance,
-        focusRanges: taxNotesFinanceFocusRanges,
+      const financeResult = await executeFinanceNotesStageV1({
         primaryModelTier: resolveAnnualReportModelTierV1({
           preferred: "fast",
           runtimeMode,
@@ -5193,28 +5328,12 @@ export async function executeAnnualReportAnalysisV1(
           preferred: "fast",
           runtimeMode,
         }),
-        useResponseJsonSchema: shouldUseProviderJsonSchemaV1({
-          chunkLabel: "tax_notes_finance",
-          executionProfile,
-        }),
-        primaryRequestTimeoutMs: stageTimeouts.taxNotesFinance.primaryRequestTimeoutMs,
-        retryRequestTimeoutMs: stageTimeouts.taxNotesFinance.retryRequestTimeoutMs,
-        stageBudgetMs: stageTimeouts.taxNotesFinance.stageBudgetMs,
-        totalDeadlineMs: extractionDeadlineMs,
-        minimumRetryBudgetMs: stageTimeouts.taxNotesFinance.minimumRetryBudgetMs,
-        primaryMaxCharsPerChunk: runtimeMode === "ai_overdrive" ? 12_000 : 6_000,
-        fallbackMaxCharsPerChunk: runtimeMode === "ai_overdrive" ? 8_000 : 4_000,
-        warnings,
-        primaryChunkPages: stageChunking.taxNotesPrimary,
-        fallbackChunkPages: stageChunking.taxNotesFallback,
-        skipWhenMissingRanges: true,
       });
 
       if (financeResult.ok) {
-        const merged = mergeFinanceOutputsV1(financeResult.outputs);
         mergeFinanceContextIntoTaxDeepV1({
           taxDeep,
-          next: merged,
+          next: financeResult.output,
         });
       } else {
         const stageError = formatAnnualReportStageErrorV1({
@@ -5320,42 +5439,27 @@ export async function executeAnnualReportAnalysisV1(
       warnings.push(`degraded.tax_notes_assets.unavailable:${stageError.message}`);
     }
 
-    const financeResult = await executeAnnualReportStageWithChunkFallbackV1<AnnualReportAiTaxNotesFinanceAndOtherResultV1>({
-      apiKey: input.apiKey,
-      currentStatus: "extracting_tax_notes",
-      chunkLabel: "tax_notes_finance",
-      document: taxNotesFinanceStageDocument.document,
-      modelConfig: input.modelConfig,
-      onProgress: input.onProgress,
-      responseSchema: AnnualReportAiTaxNotesFinanceAndOtherResultV1Schema,
-      stageInstruction: ANNUAL_REPORT_STAGE_INSTRUCTIONS_V1.taxNotesFinance,
-      focusRanges: taxNotesFinanceFocusRanges,
+    const financeResult = await executeFinanceNotesStageV1({
       primaryModelTier: "fast",
       fallbackModelTier: resolveAnnualReportModelTierV1({
         preferred: "thinking",
         runtimeMode,
       }),
-      primaryRequestTimeoutMs: stageTimeouts.taxNotesFinance.primaryRequestTimeoutMs,
-      retryRequestTimeoutMs: stageTimeouts.taxNotesFinance.retryRequestTimeoutMs,
-      stageBudgetMs: stageTimeouts.taxNotesFinance.stageBudgetMs,
-      totalDeadlineMs: extractionDeadlineMs,
-      minimumRetryBudgetMs: stageTimeouts.taxNotesFinance.minimumRetryBudgetMs,
-      warnings,
-      primaryChunkPages: stageChunking.taxNotesPrimary,
-      fallbackChunkPages: stageChunking.taxNotesFallback,
-      skipWhenMissingRanges: true,
     });
 
     if (financeResult.ok) {
-      const merged = mergeFinanceOutputsV1(financeResult.outputs);
-      taxDeep.netInterestContext = merged.netInterestContext;
-      taxDeep.pensionContext = merged.pensionContext;
-      taxDeep.leasingContext = merged.leasingContext;
-      taxDeep.groupContributionContext = merged.groupContributionContext;
-      taxDeep.shareholdingContext = merged.shareholdingContext;
+      taxDeep.netInterestContext = financeResult.output.netInterestContext;
+      taxDeep.pensionContext = financeResult.output.pensionContext;
+      taxDeep.leasingContext = financeResult.output.leasingContext;
+      taxDeep.groupContributionContext =
+        financeResult.output.groupContributionContext;
+      taxDeep.shareholdingContext = financeResult.output.shareholdingContext;
 
-      if (merged.taxExpenseContext && (!taxDeep.taxExpenseContext || taxDeep.taxExpenseContext.notes.length === 0)) {
-        taxDeep.taxExpenseContext = merged.taxExpenseContext;
+      if (
+        financeResult.output.taxExpenseContext &&
+        (!taxDeep.taxExpenseContext || taxDeep.taxExpenseContext.notes.length === 0)
+      ) {
+        taxDeep.taxExpenseContext = financeResult.output.taxExpenseContext;
       }
     } else {
       const stageError = formatAnnualReportStageErrorV1({

@@ -4,6 +4,7 @@ import { NavLink } from "react-router-dom";
 export type SidebarSectionItemV1 = {
   id: string;
   label: string;
+  prefix?: string;
   exact?: boolean;
   to: string;
 };
@@ -84,6 +85,14 @@ export function SidebarNavV1({
                           : "sidebar-v1-link"
                       }
                     >
+                      {item.prefix ? (
+                        <span
+                          className="sidebar-v1-link-prefix"
+                          aria-hidden="true"
+                        >
+                          {item.prefix}
+                        </span>
+                      ) : null}
                       <span className="sidebar-v1-link-label">
                         {item.label}
                       </span>
@@ -104,7 +113,10 @@ export function SidebarNavV1({
           <h3 id={pinnedHeadingId} className="sidebar-v1-section-title">
             {pinnedTitle}
           </h3>
-          <ul className="sidebar-v1-link-list" aria-labelledby={pinnedHeadingId}>
+          <ul
+            className="sidebar-v1-link-list"
+            aria-labelledby={pinnedHeadingId}
+          >
             {pinnedItems.map((item) => (
               <li key={item.id}>
                 <NavLink
@@ -115,6 +127,11 @@ export function SidebarNavV1({
                     isActive ? "is-active sidebar-v1-link" : "sidebar-v1-link"
                   }
                 >
+                  {item.prefix ? (
+                    <span className="sidebar-v1-link-prefix" aria-hidden="true">
+                      {item.prefix}
+                    </span>
+                  ) : null}
                   <span className="sidebar-v1-link-label">{item.label}</span>
                 </NavLink>
               </li>

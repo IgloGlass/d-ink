@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "tax-adjustments-trial-balance-to-local-gaap",
+  "moduleVersion": "v1",
+  "promptVersion": "tax-adjustments-trial-balance-to-local-gaap.prompts.v1",
+  "runtime": {
+    "provider": "gemini",
+    "modelTier": "thinking"
+  },
+  "policy": {
+    "basePolicyVersion": "tax-adjustments-trial-balance-to-local-gaap.v1",
+    "activePatchVersions": []
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "tax-adjustments-partnership-interest-n3b",
+  "moduleVersion": "v1",
+  "promptVersion": "tax-adjustments-partnership-interest-n3b.prompts.v1",
+  "runtime": {
+    "provider": "gemini",
+    "modelTier": "thinking"
+  },
+  "policy": {
+    "basePolicyVersion": "tax-adjustments-partnership-interest-n3b.v1",
+    "activePatchVersions": []
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "tax-adjustments-notional-income-on-tax-allocation-reserve",
+  "moduleVersion": "v1",
+  "promptVersion": "tax-adjustments-notional-income-on-tax-allocation-reserve.prompts.v1",
+  "runtime": {
+    "provider": "gemini",
+    "modelTier": "thinking"
+  },
+  "policy": {
+    "basePolicyVersion": "tax-adjustments-notional-income-on-tax-allocation-reserve.v1",
+    "activePatchVersions": []
+  }
+}

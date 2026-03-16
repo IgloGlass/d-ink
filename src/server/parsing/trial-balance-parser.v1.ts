@@ -5,6 +5,7 @@ import {
   type ParseTrialBalanceFailureV1,
   ParseTrialBalanceRequestV1Schema,
   type ParseTrialBalanceResultV1,
+  type TrialBalanceBalanceColumnKeyV1,
   type TrialBalanceColumnKeyV1,
   type TrialBalanceColumnMappingV1,
   type TrialBalanceFileTypeV1,
@@ -63,8 +64,8 @@ type CompoundAccountPartsV1 = {
 
 type ParsedRowDraftV1 = {
   accountName: string;
-  closingBalance: number;
-  openingBalance: number;
+  closingBalance: number | null;
+  openingBalance: number | null;
   rawValues: Record<string, TrialBalanceRawCellValueV1>;
   rowNumber: number;
   sourceAccountNumber: string;
@@ -465,11 +466,26 @@ function hasRequiredColumnSupportV1(input: {
   accountCompoundMapping: InternalColumnMappingV1 | null;
   columnMappingsByKey: Map<TrialBalanceColumnKeyV1, InternalColumnMappingV1>;
 }): boolean {
-  const hasOpening = input.columnMappingsByKey.has("opening_balance");
-  const hasClosing = input.columnMappingsByKey.has("closing_balance");
   const hasAccountIdentity = hasAccountIdentitySupportV1(input);
+  const availableBalanceColumns = listAvailableBalanceColumnsForMappingsV1(
+    input.columnMappingsByKey,
+  );
 
-  return hasOpening && hasClosing && hasAccountIdentity;
+  return availableBalanceColumns.length > 0 && hasAccountIdentity;
+}
+
+function listAvailableBalanceColumnsForMappingsV1(
+  columnMappingsByKey: Map<TrialBalanceColumnKeyV1, InternalColumnMappingV1>,
+): TrialBalanceBalanceColumnKeyV1[] {
+  const available: TrialBalanceBalanceColumnKeyV1[] = [];
+  if (columnMappingsByKey.has("opening_balance")) {
+    available.push("opening_balance");
+  }
+  if (columnMappingsByKey.has("closing_balance")) {
+    available.push("closing_balance");
+  }
+
+  return available;
 }
 
 function detectHeaderCandidateForRowV1(input: {
@@ -979,8 +995,10 @@ function parseRowsFromSelectedSheetV1(input: {
   rawRows: unknown[][];
   textRows: unknown[][];
 }): {
+  blankBalanceZeroDefaultCount: number;
   candidateRows: number;
   draftRows: ParsedRowDraftV1[];
+  inferredAccountNameCount: number;
   rejectedRows: Array<{
     message: string;
     rawValues: Record<string, TrialBalanceRawCellValueV1>;
@@ -997,6 +1015,8 @@ function parseRowsFromSelectedSheetV1(input: {
   }> = [];
 
   let candidateRows = 0;
+  let inferredAccountNameCount = 0;
+  let blankBalanceZeroDefaultCount = 0;
   const rowCount = Math.max(input.rawRows.length, input.textRows.length);
 
   const accountNameMapping = input.columnMappingsByKey.get("account_name");
@@ -1005,16 +1025,21 @@ function parseRowsFromSelectedSheetV1(input: {
     input.columnMappingsByKey.get("opening_balance");
   const closingBalanceMapping =
     input.columnMappingsByKey.get("closing_balance");
+  const availableBalanceColumns = listAvailableBalanceColumnsForMappingsV1(
+    input.columnMappingsByKey,
+  );
 
-  if (!openingBalanceMapping || !closingBalanceMapping) {
-    return {
-      candidateRows,
-      draftRows,
-      rejectedRows: [
-        {
+  if (availableBalanceColumns.length === 0) {
+      return {
+        blankBalanceZeroDefaultCount,
+        candidateRows,
+        draftRows,
+        inferredAccountNameCount,
+        rejectedRows: [
+          {
           reasonCode: "NON_DATA_ROW",
           message:
-            "Required mapped columns are missing for row parsing in selected sheet.",
+            "No mapped balance columns were detected for row parsing in the selected sheet.",
           rowNumber: input.headerRowNumber,
           rawValues: {},
         },
@@ -1027,11 +1052,13 @@ function parseRowsFromSelectedSheetV1(input: {
     !accountNumberMapping &&
     !input.accountCompoundMapping
   ) {
-    return {
-      candidateRows,
-      draftRows,
-      rejectedRows: [
-        {
+      return {
+        blankBalanceZeroDefaultCount,
+        candidateRows,
+        draftRows,
+        inferredAccountNameCount,
+        rejectedRows: [
+          {
           reasonCode: "ACCOUNT_COMBINED_PARSE_FAILED",
           message:
             "No account identity columns were detected (account name/account number or combined account column).",
@@ -1151,63 +1178,85 @@ function parseRowsFromSelectedSheetV1(input: {
     }
 
     if (accountName.length === 0) {
-      rejectedRows.push({
-        reasonCode: "ACCOUNT_NAME_MISSING",
-        message:
-          "Account name is required for deterministic row normalization.",
-        rowNumber,
-        rawValues,
-      });
-      continue;
+      accountName = `Account ${sourceAccountNumber}`;
+      inferredAccountNameCount += 1;
     }
 
-    const openingBalanceResult = parseNumericCellValueV1(
-      rawRow[openingBalanceMapping.sourceColumnIndex],
-    );
-    if (!openingBalanceResult.ok) {
-      rejectedRows.push({
-        reasonCode: openingBalanceResult.wasBlank
-          ? "OPENING_BALANCE_MISSING"
-          : "OPENING_BALANCE_INVALID",
-        message: openingBalanceResult.wasBlank
-          ? "Opening balance is required and cannot be blank."
-          : "Opening balance could not be parsed as a deterministic numeric value.",
-        rowNumber,
-        rawValues,
-      });
-      continue;
+    let openingBalance: number | null = null;
+    if (openingBalanceMapping) {
+      const openingBalanceResult = parseNumericCellValueV1(
+        rawRow[openingBalanceMapping.sourceColumnIndex],
+      );
+      if (!openingBalanceResult.ok) {
+        if (
+          openingBalanceResult.wasBlank &&
+          availableBalanceColumns.length === 1
+        ) {
+          openingBalance = 0;
+          blankBalanceZeroDefaultCount += 1;
+        } else {
+          rejectedRows.push({
+            reasonCode: openingBalanceResult.wasBlank
+              ? "OPENING_BALANCE_MISSING"
+              : "OPENING_BALANCE_INVALID",
+            message: openingBalanceResult.wasBlank
+              ? "Opening balance column was detected but this row is blank."
+              : "Opening balance could not be parsed as a deterministic numeric value.",
+            rowNumber,
+            rawValues,
+          });
+          continue;
+        }
+      } else {
+        openingBalance = openingBalanceResult.value;
+      }
     }
 
-    const closingBalanceResult = parseNumericCellValueV1(
-      rawRow[closingBalanceMapping.sourceColumnIndex],
-    );
-    if (!closingBalanceResult.ok) {
-      rejectedRows.push({
-        reasonCode: closingBalanceResult.wasBlank
-          ? "CLOSING_BALANCE_MISSING"
-          : "CLOSING_BALANCE_INVALID",
-        message: closingBalanceResult.wasBlank
-          ? "Closing balance is required and cannot be blank."
-          : "Closing balance could not be parsed as a deterministic numeric value.",
-        rowNumber,
-        rawValues,
-      });
-      continue;
+    let closingBalance: number | null = null;
+    if (closingBalanceMapping) {
+      const closingBalanceResult = parseNumericCellValueV1(
+        rawRow[closingBalanceMapping.sourceColumnIndex],
+      );
+      if (!closingBalanceResult.ok) {
+        if (
+          closingBalanceResult.wasBlank &&
+          availableBalanceColumns.length === 1
+        ) {
+          closingBalance = 0;
+          blankBalanceZeroDefaultCount += 1;
+        } else {
+          rejectedRows.push({
+            reasonCode: closingBalanceResult.wasBlank
+              ? "CLOSING_BALANCE_MISSING"
+              : "CLOSING_BALANCE_INVALID",
+            message: closingBalanceResult.wasBlank
+              ? "Closing balance column was detected but this row is blank."
+              : "Closing balance could not be parsed as a deterministic numeric value.",
+            rowNumber,
+            rawValues,
+          });
+          continue;
+        }
+      } else {
+        closingBalance = closingBalanceResult.value;
+      }
     }
 
     draftRows.push({
       accountName,
       sourceAccountNumber,
-      openingBalance: openingBalanceResult.value,
-      closingBalance: closingBalanceResult.value,
+      openingBalance,
+      closingBalance,
       rowNumber,
       rawValues,
     });
   }
 
   return {
+    blankBalanceZeroDefaultCount,
     candidateRows,
     draftRows,
+    inferredAccountNameCount,
     rejectedRows,
   };
 }
@@ -1217,8 +1266,8 @@ function applyDuplicateAccountNumberSuffixesV1(draftRows: ParsedRowDraftV1[]): {
   normalizedRows: Array<{
     accountName: string;
     accountNumber: string;
-    closingBalance: number;
-    openingBalance: number;
+    closingBalance: number | null;
+    openingBalance: number | null;
     rawValues: Record<string, TrialBalanceRawCellValueV1>;
     rowNumber: number;
     sourceAccountNumber: string;
@@ -1298,13 +1347,40 @@ function isApproximatelyEqualV1(
   return Math.abs(left - right) <= epsilon;
 }
 
+function doSummaryTotalsMatchAvailableBalancesV1(input: {
+  availableBalanceColumns: TrialBalanceBalanceColumnKeyV1[];
+  closing: number | null;
+  closingBalanceTotal: number | null;
+  opening: number | null;
+  openingBalanceTotal: number | null;
+}): boolean {
+  return input.availableBalanceColumns.every((columnKey) => {
+    if (columnKey === "opening_balance") {
+      return (
+        input.opening !== null &&
+        input.openingBalanceTotal !== null &&
+        isApproximatelyEqualV1(input.opening, input.openingBalanceTotal)
+      );
+    }
+
+    return (
+      input.closing !== null &&
+      input.closingBalanceTotal !== null &&
+      isApproximatelyEqualV1(input.closing, input.closingBalanceTotal)
+    );
+  });
+}
+
 function buildVerificationSummaryV1(input: {
+  availableBalanceColumns: TrialBalanceBalanceColumnKeyV1[];
+  blankBalanceZeroDefaultCount: number;
   candidateRows: number;
-  closingBalanceTotal: number;
+  closingBalanceTotal: number | null;
   duplicateAccountNumberGroups: number;
   hasRequiredColumnSupport: boolean;
+  inferredAccountNameCount: number;
   normalizedRows: number;
-  openingBalanceTotal: number;
+  openingBalanceTotal: number | null;
   rejectedRows: Array<{
     rawValues: Record<string, TrialBalanceRawCellValueV1>;
     reasonCode: TrialBalanceRejectedRowReasonCodeV1;
@@ -1329,9 +1405,16 @@ function buildVerificationSummaryV1(input: {
   );
   const summaryRowsWithNumericTotals = summaryRows
     .map((row) => {
-      const opening = parseNumericCellValueV1(row.rawValues.opening_balance);
-      const closing = parseNumericCellValueV1(row.rawValues.closing_balance);
-      if (!opening.ok || !closing.ok) {
+      const opening = input.availableBalanceColumns.includes("opening_balance")
+        ? parseNumericCellValueV1(row.rawValues.opening_balance)
+        : null;
+      const closing = input.availableBalanceColumns.includes("closing_balance")
+        ? parseNumericCellValueV1(row.rawValues.closing_balance)
+        : null;
+      if (
+        (opening !== null && !opening.ok) ||
+        (closing !== null && !closing.ok)
+      ) {
         return null;
       }
 
@@ -1341,8 +1424,8 @@ function buildVerificationSummaryV1(input: {
 
       return {
         label,
-        opening: opening.value,
-        closing: closing.value,
+        opening: opening?.value ?? null,
+        closing: closing?.value ?? null,
       };
     })
     .filter((row) => row !== null);
@@ -1351,8 +1434,13 @@ function buildVerificationSummaryV1(input: {
   );
   const hasMatchingGrandTotal = grandTotalRows.some(
     (row) =>
-      isApproximatelyEqualV1(row.opening, input.openingBalanceTotal) &&
-      isApproximatelyEqualV1(row.closing, input.closingBalanceTotal),
+      doSummaryTotalsMatchAvailableBalancesV1({
+        availableBalanceColumns: input.availableBalanceColumns,
+        opening: row.opening,
+        openingBalanceTotal: input.openingBalanceTotal,
+        closing: row.closing,
+        closingBalanceTotal: input.closingBalanceTotal,
+      }),
   );
 
   const requiredColumnsCheckStatus = input.hasRequiredColumnSupport
@@ -1384,12 +1472,13 @@ function buildVerificationSummaryV1(input: {
       status: requiredColumnsCheckStatus,
       message:
         requiredColumnsCheckStatus === "pass"
-          ? "All required columns were matched deterministically."
-          : "One or more required columns were not matched.",
+          ? "Account identity and at least one balance column were matched deterministically."
+          : "The parser could not confirm account identity plus at least one balance column.",
       context: {
         requiredColumnsMatched: input.requiredColumnsMatched,
         requiredColumnsExpected: REQUIRED_COLUMN_KEYS_V1.length,
         hasRequiredColumnSupport: input.hasRequiredColumnSupport,
+        availableBalanceColumns: input.availableBalanceColumns,
       },
     },
     {
@@ -1446,6 +1535,23 @@ function buildVerificationSummaryV1(input: {
         hasMatchingGrandTotal,
       },
     },
+    {
+      code: "row_inference_review",
+      status:
+        input.inferredAccountNameCount > 0 ||
+        input.blankBalanceZeroDefaultCount > 0
+          ? "warning"
+          : "pass",
+      message:
+        input.inferredAccountNameCount > 0 ||
+        input.blankBalanceZeroDefaultCount > 0
+          ? "Some rows required conservative parser inference and should be reviewed in the mapper."
+          : "No conservative row-level parser inference was required.",
+      context: {
+        inferredAccountNameCount: input.inferredAccountNameCount,
+        blankBalanceZeroDefaultCount: input.blankBalanceZeroDefaultCount,
+      },
+    },
   ] as const;
 
   return {
@@ -1454,6 +1560,7 @@ function buildVerificationSummaryV1(input: {
     normalizedRows: input.normalizedRows,
     rejectedRows: input.rejectedRows.length,
     duplicateAccountNumberGroups: input.duplicateAccountNumberGroups,
+    availableBalanceColumns: input.availableBalanceColumns,
     openingBalanceTotal: input.openingBalanceTotal,
     closingBalanceTotal: input.closingBalanceTotal,
     checks,
@@ -1623,7 +1730,7 @@ export function parseTrialBalanceFileV1(
     return buildFailureV1(
       "REQUIRED_COLUMN_MISSING",
       "Could not detect required headers in any workbook sheet.",
-      "Required trial balance columns were not found. Use the template headers.",
+      "We could not find account columns plus at least one balance column in the uploaded trial balance.",
       {
         requiredColumns: REQUIRED_COLUMN_KEYS_V1,
         sheetAnalyses: sheetCandidates.map((candidate) => ({
@@ -1648,12 +1755,15 @@ export function parseTrialBalanceFileV1(
     return buildFailureV1(
       "REQUIRED_COLUMN_MISSING",
       "Selected sheet did not contain all required headers.",
-      "Required trial balance columns are missing. Use the official template or map the same header names.",
+      "The selected sheet must include account identity columns and at least one balance column.",
       {
         selectedSheetName: selectedSheetCandidate.sheetName,
         requiredColumns: REQUIRED_COLUMN_KEYS_V1,
         requiredColumnsMatched:
           selectedSheetCandidate.headerCandidate.requiredColumnsMatched,
+        availableBalanceColumns: listAvailableBalanceColumnsForMappingsV1(
+          selectedSheetCandidate.headerCandidate.columnMappingsByKey,
+        ),
         detectedMappings: Array.from(
           selectedSheetCandidate.headerCandidate.columnMappingsByKey.values(),
         ).map((mapping) => ({
@@ -1689,20 +1799,30 @@ export function parseTrialBalanceFileV1(
   const duplicateAppliedRows = applyDuplicateAccountNumberSuffixesV1(
     parsedRows.draftRows,
   );
+  const availableBalanceColumns = listAvailableBalanceColumnsForMappingsV1(
+    selectedSheetCandidate.headerCandidate.columnMappingsByKey,
+  );
 
-  const openingBalanceTotal = duplicateAppliedRows.normalizedRows.reduce(
-    (sum, row) => sum + row.openingBalance,
-    0,
-  );
-  const closingBalanceTotal = duplicateAppliedRows.normalizedRows.reduce(
-    (sum, row) => sum + row.closingBalance,
-    0,
-  );
+  const openingBalanceTotal = availableBalanceColumns.includes("opening_balance")
+    ? duplicateAppliedRows.normalizedRows.reduce(
+        (sum, row) => sum + (row.openingBalance ?? 0),
+        0,
+      )
+    : null;
+  const closingBalanceTotal = availableBalanceColumns.includes("closing_balance")
+    ? duplicateAppliedRows.normalizedRows.reduce(
+        (sum, row) => sum + (row.closingBalance ?? 0),
+        0,
+      )
+    : null;
 
   const verification = buildVerificationSummaryV1({
+    availableBalanceColumns,
+    blankBalanceZeroDefaultCount: parsedRows.blankBalanceZeroDefaultCount,
     totalRowsRead: selectedRawRows.length,
     candidateRows: parsedRows.candidateRows,
     normalizedRows: duplicateAppliedRows.normalizedRows.length,
+    inferredAccountNameCount: parsedRows.inferredAccountNameCount,
     rejectedRows: parsedRows.rejectedRows,
     requiredColumnsMatched:
       selectedSheetCandidate.headerCandidate.requiredColumnsMatched,
@@ -1785,45 +1905,80 @@ export function parseTrialBalanceFileV1(
     }
   }
 
-  const successPayload = {
-    schemaVersion: "trial_balance_normalized_v1" as const,
-    fileType: resolvedFileType,
-    selectedSheetName: selectedSheetCandidate.sheetName,
-    headerRowNumber: selectedSheetCandidate.headerCandidate.headerRowNumber,
-    columnMappings: columnMappingsForOutput.sort(
-      (left, right) => left.sourceColumnIndex - right.sourceColumnIndex,
-    ),
-    rows: duplicateAppliedRows.normalizedRows.map((row) => ({
-      accountName: row.accountName,
-      accountNumber: row.accountNumber,
-      sourceAccountNumber: row.sourceAccountNumber,
-      openingBalance: row.openingBalance,
-      closingBalance: row.closingBalance,
-      source: {
-        sheetName: selectedSheetCandidate.sheetName,
-        rowNumber: row.rowNumber,
-      },
-      rawValues: row.rawValues,
-    })),
-    rejectedRows: parsedRows.rejectedRows.map((row) => ({
-      reasonCode: row.reasonCode,
-      message: row.message,
-      source: {
-        sheetName: selectedSheetCandidate.sheetName,
-        rowNumber: row.rowNumber,
-      },
-      rawValues: row.rawValues,
-    })),
-    sheetAnalyses: sheetCandidates.map((candidate) => ({
-      sheetName: candidate.sheetName,
-      headerRowNumber: candidate.headerCandidate?.headerRowNumber ?? null,
-      requiredColumnsMatched:
-        candidate.headerCandidate?.requiredColumnsMatched ?? 0,
-      candidateDataRows: candidate.candidateDataRows,
-      score: candidate.score,
-    })),
-    verification,
+  const normalizedRowsForOutput = duplicateAppliedRows.normalizedRows.map((row) => ({
+    accountName: row.accountName,
+    accountNumber: row.accountNumber,
+    sourceAccountNumber: row.sourceAccountNumber,
+    openingBalance: row.openingBalance,
+    closingBalance: row.closingBalance,
+    source: {
+      sheetName: selectedSheetCandidate.sheetName,
+      rowNumber: row.rowNumber,
+    },
+    rawValues: row.rawValues,
+  }));
+  const rejectedRowsForOutput = parsedRows.rejectedRows.map((row) => ({
+    reasonCode: row.reasonCode,
+    message: row.message,
+    source: {
+      sheetName: selectedSheetCandidate.sheetName,
+      rowNumber: row.rowNumber,
+    },
+    rawValues: row.rawValues,
+  }));
+  const sheetAnalysesForOutput = sheetCandidates.map((candidate) => ({
+    sheetName: candidate.sheetName,
+    headerRowNumber: candidate.headerCandidate?.headerRowNumber ?? null,
+    requiredColumnsMatched:
+      candidate.headerCandidate?.requiredColumnsMatched ?? 0,
+    candidateDataRows: candidate.candidateDataRows,
+    score: candidate.score,
+  }));
+  const sortedColumnMappings = columnMappingsForOutput.sort(
+    (left, right) => left.sourceColumnIndex - right.sourceColumnIndex,
+  );
+  const hasFullBalanceSupport =
+    availableBalanceColumns.includes("opening_balance") &&
+    availableBalanceColumns.includes("closing_balance");
+  const verificationForV1 = {
+    totalRowsRead: verification.totalRowsRead,
+    candidateRows: verification.candidateRows,
+    normalizedRows: verification.normalizedRows,
+    rejectedRows: verification.rejectedRows,
+    duplicateAccountNumberGroups: verification.duplicateAccountNumberGroups,
+    openingBalanceTotal: openingBalanceTotal ?? 0,
+    closingBalanceTotal: closingBalanceTotal ?? 0,
+    checks: verification.checks,
   };
+
+  const successPayload = hasFullBalanceSupport
+    ? {
+        schemaVersion: "trial_balance_normalized_v1" as const,
+        fileType: resolvedFileType,
+        selectedSheetName: selectedSheetCandidate.sheetName,
+        headerRowNumber: selectedSheetCandidate.headerCandidate.headerRowNumber,
+        columnMappings: sortedColumnMappings,
+        rows: normalizedRowsForOutput.map((row) => ({
+          ...row,
+          openingBalance: row.openingBalance ?? 0,
+          closingBalance: row.closingBalance ?? 0,
+        })),
+        rejectedRows: rejectedRowsForOutput,
+        sheetAnalyses: sheetAnalysesForOutput,
+        verification: verificationForV1,
+      }
+    : {
+        schemaVersion: "trial_balance_normalized_v2" as const,
+        fileType: resolvedFileType,
+        selectedSheetName: selectedSheetCandidate.sheetName,
+        headerRowNumber: selectedSheetCandidate.headerCandidate.headerRowNumber,
+        columnMappings: sortedColumnMappings,
+        availableBalanceColumns,
+        rows: normalizedRowsForOutput,
+        rejectedRows: rejectedRowsForOutput,
+        sheetAnalyses: sheetAnalysesForOutput,
+        verification,
+      };
 
   return parseParseTrialBalanceResultV1({
     ok: true,

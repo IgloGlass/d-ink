@@ -5,6 +5,7 @@ import type { TbPipelineArtifactRepositoryV1 } from "../../db/repositories/tb-pi
 import type { WorkspaceArtifactRepositoryV1 } from "../../db/repositories/workspace-artifact.repository.v1";
 import type { WorkspaceRepositoryV1 } from "../../db/repositories/workspace.repository.v1";
 import { AUDIT_EVENT_TYPES_V1 } from "../../shared/audit/audit-event-catalog.v1";
+import type { AnnualReportDownstreamTaxContextV1 } from "../../shared/contracts/annual-report-tax-context.v1";
 import { parseAuditEventV2 } from "../../shared/contracts/audit-event.v2";
 import {
   CreatePdfExportRequestV1Schema,
@@ -25,12 +26,12 @@ import {
   parseRunInk2FormResultV1,
 } from "../../shared/contracts/ink2-form.v1";
 import {
-  type TaxAdjustmentDecisionSetPayloadV1,
   ApplyTaxAdjustmentOverridesRequestV1Schema,
   type ApplyTaxAdjustmentOverridesResultV1,
   type GetActiveTaxAdjustmentsResultV1,
   RunTaxAdjustmentRequestV1Schema,
   type RunTaxAdjustmentResultV1,
+  type TaxAdjustmentDecisionSetPayloadV1,
   parseApplyTaxAdjustmentOverridesResultV1,
   parseGetActiveTaxAdjustmentsResultV1,
   parseRunTaxAdjustmentResultV1,
@@ -57,7 +58,7 @@ export interface TaxCoreWorkflowDepsV1 {
     tenantId: string;
     workspaceId: string;
     annualReportExtraction: GenerateTaxAdjustmentsInputV1["annualReportExtraction"];
-    annualReportTaxContext?: import("../../shared/contracts/annual-report-tax-context.v1").AnnualReportDownstreamTaxContextV1;
+    annualReportTaxContext?: AnnualReportDownstreamTaxContextV1;
     annualReportExtractionArtifactId: string;
     mapping: GenerateTaxAdjustmentsInputV1["mapping"];
     mappingArtifactId: string;
@@ -924,7 +925,7 @@ export async function runInk2FormV1(
         tenantId: request.tenantId,
         workspaceId: request.workspaceId,
       });
-    if (!extraction?.payload.confirmation.isConfirmed) {
+    if (!extraction) {
       return parseRunInk2FormResultV1(
         buildInk2FailureV1({
           code: "EXTRACTION_NOT_CONFIRMED",
@@ -948,30 +949,14 @@ export async function runInk2FormV1(
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
     });
-    if (!adjustments || !summary) {
-      return parseRunInk2FormResultV1(
-        buildInk2FailureV1({
-          code: "SUMMARY_NOT_FOUND",
-          message:
-            "Active summary and adjustments are required before INK2 draft.",
-          userMessage:
-            "Run adjustments and summary before generating INK2 draft.",
-          context: {
-            reason: "summary_or_adjustments_missing",
-            hasAdjustments: !!adjustments,
-            hasSummary: !!summary,
-          },
-        }),
-      );
-    }
 
     const populated = populateInk2FormDraftV1({
       extractionArtifactId: extraction.id,
-      adjustmentsArtifactId: adjustments.id,
-      summaryArtifactId: summary.id,
+      adjustmentsArtifactId: adjustments?.id,
+      summaryArtifactId: summary?.id,
       extraction: extraction.payload,
-      adjustments: adjustments.payload,
-      summary: summary.payload,
+      adjustments: adjustments?.payload,
+      summary: summary?.payload,
     });
     if (!populated.ok) {
       return parseRunInk2FormResultV1(

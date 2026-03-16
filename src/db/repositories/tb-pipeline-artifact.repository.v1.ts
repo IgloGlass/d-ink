@@ -1,13 +1,13 @@
 import {
-  type MappingDecisionSetPayloadV1,
-  MappingDecisionSetPayloadV1Schema,
+  type MappingDecisionSetArtifactV1,
+  parseMappingDecisionSetArtifactV1,
 } from "../../shared/contracts/mapping.v1";
 import {
   type ReconciliationResultPayloadV1,
   parseReconciliationResultPayloadV1,
 } from "../../shared/contracts/reconciliation.v1";
 import {
-  type TrialBalanceNormalizedV1,
+  type TrialBalanceNormalizedArtifactV1,
   parseTrialBalanceNormalizedV1,
 } from "../../shared/contracts/trial-balance.v1";
 import type { D1Database } from "../../shared/types/d1";
@@ -21,9 +21,9 @@ export type TbPipelineArtifactTypeV1 =
   | "mapping";
 
 type TbPipelineArtifactPayloadByTypeV1 = {
-  mapping: MappingDecisionSetPayloadV1;
+  mapping: MappingDecisionSetArtifactV1;
   reconciliation: ReconciliationResultPayloadV1;
-  trial_balance: TrialBalanceNormalizedV1;
+  trial_balance: TrialBalanceNormalizedArtifactV1;
 };
 
 /**
@@ -55,7 +55,7 @@ type AppendArtifactInputBaseV1 = {
  * Append request for a parsed trial balance artifact.
  */
 export type AppendTrialBalanceArtifactInputV1 = AppendArtifactInputBaseV1 & {
-  trialBalance: TrialBalanceNormalizedV1;
+  trialBalance: TrialBalanceNormalizedArtifactV1;
 };
 
 /**
@@ -69,7 +69,7 @@ export type AppendReconciliationArtifactInputV1 = AppendArtifactInputBaseV1 & {
  * Append request for a deterministic mapping artifact.
  */
 export type AppendMappingArtifactInputV1 = AppendArtifactInputBaseV1 & {
-  mapping: MappingDecisionSetPayloadV1;
+  mapping: MappingDecisionSetArtifactV1;
 };
 
 /**
@@ -105,6 +105,21 @@ export type TbPipelineArtifactWriteResultV1<
   TType extends TbPipelineArtifactTypeV1,
 > = TbPipelineArtifactWriteSuccessV1<TType> | TbPipelineArtifactWriteFailureV1;
 
+export type TbPipelineArtifactClearFailureCodeV1 =
+  | "WORKSPACE_NOT_FOUND"
+  | "PERSISTENCE_ERROR";
+
+export type TbPipelineArtifactClearResultV1 =
+  | {
+      ok: true;
+      clearedArtifactTypes: TbPipelineArtifactTypeV1[];
+    }
+  | {
+      ok: false;
+      code: TbPipelineArtifactClearFailureCodeV1;
+      message: string;
+    };
+
 /**
  * Persistence contract for immutable TB pipeline artifacts.
  */
@@ -130,6 +145,11 @@ export interface TbPipelineArtifactRepositoryV1 {
     tenantId: string;
     workspaceId: string;
   }): Promise<TbPipelineArtifactVersionRecordV1<"trial_balance"> | null>;
+  clearActiveArtifacts(input: {
+    tenantId: string;
+    workspaceId: string;
+    artifactTypes: TbPipelineArtifactTypeV1[];
+  }): Promise<TbPipelineArtifactClearResultV1>;
   listMappingVersions(input: {
     tenantId: string;
     workspaceId: string;
@@ -249,6 +269,13 @@ WHERE tenant_id = ?1
 ORDER BY version DESC, id ASC
 `;
 
+const DELETE_ACTIVE_ARTIFACT_SQL_V1 = `
+DELETE FROM tb_pipeline_active_artifacts
+WHERE tenant_id = ?1
+  AND workspace_id = ?2
+  AND artifact_type = ?3
+`;
+
 const MAX_VERSION_INSERT_RETRIES_V1 = 3;
 
 function toErrorMessage(error: unknown): string {
@@ -293,7 +320,7 @@ function parseArtifactPayloadByTypeV1<TType extends TbPipelineArtifactTypeV1>(
         input,
       ) as TbPipelineArtifactPayloadByTypeV1[TType];
     case "mapping":
-      return MappingDecisionSetPayloadV1Schema.parse(
+      return parseMappingDecisionSetArtifactV1(
         input,
       ) as TbPipelineArtifactPayloadByTypeV1[TType];
     default: {
@@ -528,6 +555,65 @@ export function createD1TbPipelineArtifactRepositoryV1(
     );
   }
 
+  async function clearActiveArtifactsInternalV1(input: {
+    tenantId: string;
+    workspaceId: string;
+    artifactTypes: TbPipelineArtifactTypeV1[];
+  }): Promise<TbPipelineArtifactClearResultV1> {
+    const uniqueArtifactTypes = [...new Set(input.artifactTypes)];
+    const workspaceRow = await db
+      .prepare(SELECT_WORKSPACE_EXISTS_SQL_V1)
+      .bind(input.tenantId, input.workspaceId)
+      .first<WorkspaceExistsRowV1>();
+    if (!workspaceRow) {
+      return {
+        ok: false,
+        code: "WORKSPACE_NOT_FOUND",
+        message: "Workspace does not exist for tenant and workspace ID.",
+      };
+    }
+
+    try {
+      if (uniqueArtifactTypes.length === 0) {
+        return {
+          ok: true,
+          clearedArtifactTypes: [],
+        };
+      }
+
+      const operations = uniqueArtifactTypes.map((artifactType) =>
+        db
+          .prepare(DELETE_ACTIVE_ARTIFACT_SQL_V1)
+          .bind(input.tenantId, input.workspaceId, artifactType),
+      );
+      const results = await db.batch(operations);
+      const clearedArtifactTypes = uniqueArtifactTypes.filter(
+        (_, index) =>
+          results[index]?.success &&
+          Number(results[index]?.meta.changes ?? 0) > 0,
+      );
+
+      if (results.some((result) => !result.success)) {
+        return {
+          ok: false,
+          code: "PERSISTENCE_ERROR",
+          message: "Failed to clear one or more active TB pipeline pointers.",
+        };
+      }
+
+      return {
+        ok: true,
+        clearedArtifactTypes,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        code: "PERSISTENCE_ERROR",
+        message: toErrorMessage(error),
+      };
+    }
+  }
+
   return {
     appendTrialBalanceAndSetActive(
       input: AppendTrialBalanceArtifactInputV1,
@@ -602,6 +688,14 @@ export function createD1TbPipelineArtifactRepositoryV1(
         tenantId: input.tenantId,
         workspaceId: input.workspaceId,
       });
+    },
+
+    clearActiveArtifacts(input: {
+      tenantId: string;
+      workspaceId: string;
+      artifactTypes: TbPipelineArtifactTypeV1[];
+    }): Promise<TbPipelineArtifactClearResultV1> {
+      return clearActiveArtifactsInternalV1(input);
     },
 
     listTrialBalanceVersions(input: {

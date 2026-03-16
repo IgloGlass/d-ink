@@ -1,15 +1,15 @@
 import { z } from "zod";
 
 import { UuidV4Schema } from "./common.v1";
-import { MappingDecisionSetPayloadV1Schema } from "./mapping.v1";
+import { MappingDecisionSetArtifactV1Schema } from "./mapping.v1";
 import { ReconciliationResultPayloadV1Schema } from "./reconciliation.v1";
 import {
   TrialBalanceFileTypeV1Schema,
-  TrialBalanceNormalizedV1Schema,
+  TrialBalanceNormalizedArtifactV1Schema,
 } from "./trial-balance.v1";
 
 /**
- * Canonical artifact types emitted by the deterministic trial-balance pipeline.
+ * Canonical artifact types emitted by the trial-balance pipeline.
  */
 export const TbPipelineArtifactTypeV1Schema = z.enum([
   "trial_balance",
@@ -44,7 +44,7 @@ export type TbPipelineArtifactVersionRefV1 = z.infer<
 >;
 
 /**
- * Request payload for deterministic TB pipeline execution.
+ * Request payload for TB pipeline execution.
  */
 export const ExecuteTrialBalancePipelineRequestV1Schema = z
   .object({
@@ -66,7 +66,7 @@ export type ExecuteTrialBalancePipelineRequestV1 = z.infer<
 >;
 
 /**
- * Deterministic TB pipeline success payload.
+ * TB pipeline success payload.
  */
 export const TrialBalancePipelineRunPayloadV1Schema = z
   .object({
@@ -85,9 +85,9 @@ export const TrialBalancePipelineRunPayloadV1Schema = z
         }),
       })
       .strict(),
-    trialBalance: TrialBalanceNormalizedV1Schema,
+    trialBalance: TrialBalanceNormalizedArtifactV1Schema,
     reconciliation: ReconciliationResultPayloadV1Schema,
-    mapping: MappingDecisionSetPayloadV1Schema,
+    mapping: MappingDecisionSetArtifactV1Schema,
   })
   .strict();
 
@@ -99,7 +99,7 @@ export type TrialBalancePipelineRunPayloadV1 = z.infer<
 >;
 
 /**
- * Structured deterministic TB pipeline error codes.
+ * Structured TB pipeline error codes.
  */
 export const TrialBalancePipelineErrorCodeV1Schema = z.enum([
   "INPUT_INVALID",
@@ -118,8 +118,64 @@ export type TrialBalancePipelineErrorCodeV1 = z.infer<
   typeof TrialBalancePipelineErrorCodeV1Schema
 >;
 
+export const ClearTrialBalancePipelineDataRequestV1Schema = z
+  .object({
+    tenantId: UuidV4Schema,
+    workspaceId: UuidV4Schema,
+    clearedByUserId: UuidV4Schema.optional(),
+  })
+  .strict();
+
+export type ClearTrialBalancePipelineDataRequestV1 = z.infer<
+  typeof ClearTrialBalancePipelineDataRequestV1Schema
+>;
+
+export const ClearTrialBalancePipelineDataSuccessV1Schema = z
+  .object({
+    ok: z.literal(true),
+    clearedArtifactTypes: z.array(TbPipelineArtifactTypeV1Schema),
+    clearedDependentArtifactTypes: z.array(
+      z.enum(["tax_adjustments", "tax_summary", "ink2_form", "export_package"]),
+    ),
+  })
+  .strict();
+
+export type ClearTrialBalancePipelineDataSuccessV1 = z.infer<
+  typeof ClearTrialBalancePipelineDataSuccessV1Schema
+>;
+
+export const ClearTrialBalancePipelineDataFailureV1Schema = z
+  .object({
+    ok: z.literal(false),
+    error: z
+      .object({
+        code: z.enum(["INPUT_INVALID", "WORKSPACE_NOT_FOUND", "PERSISTENCE_ERROR"]),
+        message: z.string().trim().min(1),
+        user_message: z.string().trim().min(1),
+        context: z.record(z.string(), z.unknown()),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type ClearTrialBalancePipelineDataFailureV1 = z.infer<
+  typeof ClearTrialBalancePipelineDataFailureV1Schema
+>;
+
+export const ClearTrialBalancePipelineDataResultV1Schema = z.discriminatedUnion(
+  "ok",
+  [
+    ClearTrialBalancePipelineDataSuccessV1Schema,
+    ClearTrialBalancePipelineDataFailureV1Schema,
+  ],
+);
+
+export type ClearTrialBalancePipelineDataResultV1 = z.infer<
+  typeof ClearTrialBalancePipelineDataResultV1Schema
+>;
+
 /**
- * Structured failure payload for deterministic TB pipeline execution.
+ * Structured failure payload for TB pipeline execution.
  */
 export const ExecuteTrialBalancePipelineFailureV1Schema = z
   .object({
@@ -143,7 +199,7 @@ export type ExecuteTrialBalancePipelineFailureV1 = z.infer<
 >;
 
 /**
- * Structured success payload for deterministic TB pipeline execution.
+ * Structured success payload for TB pipeline execution.
  */
 export const ExecuteTrialBalancePipelineSuccessV1Schema = z
   .object({
@@ -160,7 +216,7 @@ export type ExecuteTrialBalancePipelineSuccessV1 = z.infer<
 >;
 
 /**
- * Discriminated result contract for deterministic TB pipeline execution.
+ * Discriminated result contract for TB pipeline execution.
  */
 export const ExecuteTrialBalancePipelineResultV1Schema = z.discriminatedUnion(
   "ok",
@@ -178,7 +234,7 @@ export type ExecuteTrialBalancePipelineResultV1 = z.infer<
 >;
 
 /**
- * Parses unknown input into deterministic TB pipeline execution requests.
+ * Parses unknown input into TB pipeline execution requests.
  */
 export function parseExecuteTrialBalancePipelineRequestV1(
   input: unknown,
@@ -187,7 +243,7 @@ export function parseExecuteTrialBalancePipelineRequestV1(
 }
 
 /**
- * Safely validates unknown input as deterministic TB pipeline execution requests.
+ * Safely validates unknown input as TB pipeline execution requests.
  */
 export function safeParseExecuteTrialBalancePipelineRequestV1(
   input: unknown,
@@ -196,7 +252,7 @@ export function safeParseExecuteTrialBalancePipelineRequestV1(
 }
 
 /**
- * Parses unknown input into deterministic TB pipeline execution results.
+ * Parses unknown input into TB pipeline execution results.
  */
 export function parseExecuteTrialBalancePipelineResultV1(
   input: unknown,
@@ -205,10 +261,34 @@ export function parseExecuteTrialBalancePipelineResultV1(
 }
 
 /**
- * Safely validates unknown input as deterministic TB pipeline execution results.
+ * Safely validates unknown input as TB pipeline execution results.
  */
 export function safeParseExecuteTrialBalancePipelineResultV1(
   input: unknown,
 ): z.SafeParseReturnType<unknown, ExecuteTrialBalancePipelineResultV1> {
   return ExecuteTrialBalancePipelineResultV1Schema.safeParse(input);
+}
+
+export function parseClearTrialBalancePipelineDataRequestV1(
+  input: unknown,
+): ClearTrialBalancePipelineDataRequestV1 {
+  return ClearTrialBalancePipelineDataRequestV1Schema.parse(input);
+}
+
+export function safeParseClearTrialBalancePipelineDataRequestV1(
+  input: unknown,
+): z.SafeParseReturnType<unknown, ClearTrialBalancePipelineDataRequestV1> {
+  return ClearTrialBalancePipelineDataRequestV1Schema.safeParse(input);
+}
+
+export function parseClearTrialBalancePipelineDataResultV1(
+  input: unknown,
+): ClearTrialBalancePipelineDataResultV1 {
+  return ClearTrialBalancePipelineDataResultV1Schema.parse(input);
+}
+
+export function safeParseClearTrialBalancePipelineDataResultV1(
+  input: unknown,
+): z.SafeParseReturnType<unknown, ClearTrialBalancePipelineDataResultV1> {
+  return ClearTrialBalancePipelineDataResultV1Schema.safeParse(input);
 }

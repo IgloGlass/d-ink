@@ -11,17 +11,17 @@ import {
   parseRunAnnualReportExtractionResultV1,
 } from "../../../shared/contracts/annual-report-extraction.v1";
 import {
-  type GetActiveAnnualReportTaxAnalysisResultV1,
-  type RunAnnualReportTaxAnalysisResultV1,
-  parseGetActiveAnnualReportTaxAnalysisResultV1,
-  parseRunAnnualReportTaxAnalysisResultV1,
-} from "../../../shared/contracts/annual-report-tax-analysis.v1";
-import {
   type CreateAnnualReportProcessingRunResultV1,
   type GetLatestAnnualReportProcessingRunResultV1,
   parseCreateAnnualReportProcessingRunResultV1,
   parseGetLatestAnnualReportProcessingRunResultV1,
 } from "../../../shared/contracts/annual-report-processing-run.v1";
+import {
+  type GetActiveAnnualReportTaxAnalysisResultV1,
+  type RunAnnualReportTaxAnalysisResultV1,
+  parseGetActiveAnnualReportTaxAnalysisResultV1,
+  parseRunAnnualReportTaxAnalysisResultV1,
+} from "../../../shared/contracts/annual-report-tax-analysis.v1";
 import {
   type CreateAnnualReportUploadSessionResultV1,
   MAX_ANNUAL_REPORT_UPLOAD_BYTES_V1,
@@ -55,6 +55,10 @@ import {
   parseRunInk2FormResultV1,
 } from "../../../shared/contracts/ink2-form.v1";
 import {
+  type RunMappingAiEnrichmentResultV1,
+  parseRunMappingAiEnrichmentResultV1,
+} from "../../../shared/contracts/mapping-ai-enrichment.v1";
+import {
   type ApplyMappingOverridesResultV1,
   type GetActiveMappingDecisionsResultV1,
   type MappingOverrideInstructionV1,
@@ -82,7 +86,9 @@ import {
   parseRunTaxSummaryResultV1,
 } from "../../../shared/contracts/tax-summary.v1";
 import {
+  type ClearTrialBalancePipelineDataResultV1,
   type ExecuteTrialBalancePipelineResultV1,
+  parseClearTrialBalancePipelineDataResultV1,
   parseExecuteTrialBalancePipelineResultV1,
 } from "../../../shared/contracts/tb-pipeline-run.v1";
 import type { TrialBalanceFileTypeV1 } from "../../../shared/contracts/trial-balance.v1";
@@ -302,6 +308,16 @@ export type ClearAnnualReportDataResponseV1 = Extract<
   { ok: true }
 >;
 
+export type ClearTrialBalancePipelineDataInputV1 = {
+  tenantId: string;
+  workspaceId: string;
+};
+
+export type ClearTrialBalancePipelineDataResponseV1 = Extract<
+  ClearTrialBalancePipelineDataResultV1,
+  { ok: true }
+>;
+
 export type RunTaxAdjustmentsInputV1 = {
   policyVersion: string;
   tenantId: string;
@@ -376,15 +392,7 @@ export type ApplyInk2OverridesInputV1 = {
   };
   overrides: Array<{
     amount: number;
-    fieldId:
-      | "INK2R.profit_before_tax"
-      | "INK2S.corporate_tax"
-      | "INK2S.depreciation_adjustment"
-      | "INK2S.non_deductible_expenses"
-      | "INK2S.other_manual_adjustments"
-      | "INK2S.representation_non_deductible"
-      | "INK2S.taxable_income"
-      | "INK2S.total_adjustments";
+    fieldId: string;
     reason: string;
   }>;
   tenantId: string;
@@ -454,6 +462,18 @@ export type RunTrialBalancePipelineInputV1 = {
 
 export type RunTrialBalancePipelineResponseV1 = Extract<
   ExecuteTrialBalancePipelineResultV1,
+  { ok: true }
+>;
+export type RunMappingAiEnrichmentInputV1 = {
+  tenantId: string;
+  workspaceId: string;
+  expectedActiveMapping: {
+    artifactId: string;
+    version: number;
+  };
+};
+export type RunMappingAiEnrichmentResponseV1 = Extract<
+  RunMappingAiEnrichmentResultV1,
   { ok: true }
 >;
 
@@ -547,6 +567,20 @@ function parseRunTrialBalancePipelineHttpResponseV1(
   return expectSuccessResultV1(
     parseExecuteTrialBalancePipelineResultV1(payload),
   );
+}
+
+function parseClearTrialBalancePipelineDataHttpResponseV1(
+  payload: unknown,
+): ClearTrialBalancePipelineDataResponseV1 {
+  return expectSuccessResultV1(
+    parseClearTrialBalancePipelineDataResultV1(payload),
+  );
+}
+
+function parseRunMappingAiEnrichmentHttpResponseV1(
+  payload: unknown,
+): RunMappingAiEnrichmentResponseV1 {
+  return expectSuccessResultV1(parseRunMappingAiEnrichmentResultV1(payload));
 }
 
 function parseRunAnnualReportExtractionHttpResponseV1(
@@ -898,7 +932,36 @@ export async function runTrialBalancePipelineV1(
       fileType: input.fileType,
       policyVersion: input.policyVersion,
     },
+    timeoutMs: 1_200_000,
     parseResponse: parseRunTrialBalancePipelineHttpResponseV1,
+  });
+}
+
+export async function clearTrialBalancePipelineDataV1(
+  input: ClearTrialBalancePipelineDataInputV1,
+): Promise<ClearTrialBalancePipelineDataResponseV1> {
+  return apiRequest<ClearTrialBalancePipelineDataResponseV1>({
+    path: `/v1/workspaces/${input.workspaceId}/tb-pipeline-runs/clear`,
+    method: "POST",
+    body: {
+      tenantId: input.tenantId,
+    },
+    parseResponse: parseClearTrialBalancePipelineDataHttpResponseV1,
+  });
+}
+
+export async function runMappingAiEnrichmentV1(
+  input: RunMappingAiEnrichmentInputV1,
+): Promise<RunMappingAiEnrichmentResponseV1> {
+  return apiRequest<RunMappingAiEnrichmentResponseV1>({
+    path: `/v1/workspaces/${input.workspaceId}/mapping-decisions/ai-enrichment`,
+    method: "POST",
+    body: {
+      tenantId: input.tenantId,
+      expectedActiveMapping: input.expectedActiveMapping,
+    },
+    timeoutMs: 1_200_000,
+    parseResponse: parseRunMappingAiEnrichmentHttpResponseV1,
   });
 }
 

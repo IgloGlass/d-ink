@@ -3,7 +3,7 @@
   "moduleId": "mapping-decisions",
   "policyVersion": "mapping-decisions.v1",
   "batching": {
-    "maxRowsPerBatch": 75,
+    "maxRowsPerBatch": 40,
     "minRowsPerChunk": 10
   },
   "retries": {
@@ -11,7 +11,13 @@
     "maxAttempts": 2
   },
   "timeouts": {
-    "requestTimeoutMs": 45000
+    "requestTimeoutMs": 90000
+  },
+  "classificationStrategy": {
+    "mode": "ai_primary",
+    "deterministicFallback": "conservative_only",
+    "preferSemanticSignalsOverAccountNumbers": true,
+    "useAnnualReportContext": true
   },
   "reviewThresholds": {
     "fastConfidenceBelow": 0.82

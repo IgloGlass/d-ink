@@ -9,12 +9,12 @@ function createGoldenMappingPayloadV1() {
     schemaVersion: "mapping_decisions_v1",
     policyVersion: "deterministic-bas.v1",
     summary: {
-      totalRows: 3,
+      totalRows: 4,
       deterministicDecisions: 3,
       manualReviewRequired: 1,
       fallbackDecisions: 0,
       matchedByAccountNumber: 1,
-      matchedByAccountName: 2,
+      matchedByAccountName: 3,
       unmatchedRows: 0,
     },
     decisions: [
@@ -71,6 +71,33 @@ function createGoldenMappingPayloadV1() {
         reviewFlag: true,
         status: "proposed",
         source: "deterministic",
+      },
+      {
+        id: "decision-bs-building-accumulated-depreciation",
+        accountNumber: "1119",
+        sourceAccountNumber: "1119",
+        accountName: "Ackumulerade avskrivningar pa byggnader",
+        proposedCategory: {
+          code: "102000",
+          name: "Tangible and acquired intangible assets - opening/closing balance",
+          statementType: "balance_sheet",
+        },
+        selectedCategory: {
+          code: "102000",
+          name: "Tangible and acquired intangible assets - opening/closing balance",
+          statementType: "balance_sheet",
+        },
+        confidence: 0.9,
+        evidence: [
+          {
+            type: "tb_row",
+            reference: "Trial Balance:5",
+          },
+        ],
+        policyRuleReference: "mapping.ai.rule.accumulated-depreciation.v1",
+        reviewFlag: false,
+        status: "proposed",
+        source: "ai",
       },
       {
         id: "decision-is-partially-deductible-representation",
@@ -133,7 +160,7 @@ describe("mapping review executor golden v1", () => {
       return;
     }
 
-    expect(result.suggestions).toHaveLength(3);
+    expect(result.suggestions).toHaveLength(4);
 
     const suggestionsByDecisionId = new Map(
       result.suggestions.map((suggestion) => [
@@ -144,6 +171,11 @@ describe("mapping review executor golden v1", () => {
     expect(
       suggestionsByDecisionId.get("decision-bs-group-receivable")
         ?.selectedCategoryCode,
+    ).toBe("100000");
+    expect(
+      suggestionsByDecisionId.get(
+        "decision-bs-building-accumulated-depreciation",
+      )?.selectedCategoryCode,
     ).toBe("100000");
     expect(
       suggestionsByDecisionId.get("decision-is-it-consulting")

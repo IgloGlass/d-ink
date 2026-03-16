@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "tax-adjustments-general-client-information",
+  "moduleVersion": "v1",
+  "promptVersion": "tax-adjustments-general-client-information.prompts.v1",
+  "runtime": {
+    "provider": "gemini",
+    "modelTier": "thinking"
+  },
+  "policy": {
+    "basePolicyVersion": "tax-adjustments-general-client-information.v1",
+    "activePatchVersions": []
+  }
+}

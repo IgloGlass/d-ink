@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   getSilverfinTaxCategoryByCodeV1,
+  safeParseGenerateMappingDecisionsRequestArtifactV1,
   safeParseGenerateMappingDecisionsRequestV1,
   safeParseGenerateMappingDecisionsResultV1,
   safeParseMappingDecisionV1,
@@ -159,6 +160,63 @@ describe("mapping contracts v1", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts v2 mapping decisions with stable trial-balance row identity", () => {
+    const category = getSilverfinTaxCategoryByCodeV1("607200");
+    const result = safeParseGenerateMappingDecisionsResultV1({
+      ok: true,
+      mapping: {
+        schemaVersion: "mapping_decisions_v2",
+        policyVersion: "mapping-ai.v1",
+        executionMetadata: {
+          requestedStrategy: "ai_primary",
+          actualStrategy: "ai",
+          degraded: false,
+          annualReportContextAvailable: true,
+          usedAiRunFallback: false,
+        },
+        summary: {
+          totalRows: 1,
+          deterministicDecisions: 0,
+          manualReviewRequired: 0,
+          fallbackDecisions: 0,
+          matchedByAccountNumber: 0,
+          matchedByAccountName: 1,
+          unmatchedRows: 0,
+        },
+        decisions: [
+          {
+            id: "Trial Balance:2",
+            trialBalanceRowIdentity: {
+              rowKey: "Trial Balance:2",
+              source: {
+                sheetName: "Trial Balance",
+                rowNumber: 2,
+              },
+            },
+            accountNumber: "6072",
+            sourceAccountNumber: "6072",
+            accountName: "External representation",
+            proposedCategory: category,
+            selectedCategory: category,
+            confidence: 0.92,
+            evidence: [
+              {
+                type: "tb_row",
+                reference: "Trial Balance:2",
+              },
+            ],
+            policyRuleReference: "mapping.ai.representation.v1",
+            reviewFlag: false,
+            status: "proposed",
+            source: "ai",
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("rejects category references with mismatched canonical name", () => {
     const result = safeParseSilverfinTaxCategoryReferenceV1({
       code: "607200",
@@ -241,6 +299,146 @@ describe("mapping contracts v1", () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it("accepts v2 mapping requests with confirmed annual-report context lineage", () => {
+    const result = safeParseGenerateMappingDecisionsRequestArtifactV1({
+      schemaVersion: "generate_mapping_decisions_request_v2",
+      trialBalance: createBaseTrialBalanceV1(),
+      reconciliation: createPassReconciliationV1(),
+      policyVersion: "mapping-ai.v1",
+      annualReportInput: {
+        status: "confirmed",
+        extractionArtifactId: "a0000000-0000-4000-8000-000000000001",
+        extractionSchemaVersion: "annual_report_extraction_v1",
+        extractionConfirmed: true,
+        taxAnalysisArtifactId: "a0000000-0000-4000-8000-000000000002",
+        taxAnalysisSchemaVersion: "annual_report_tax_analysis_v1",
+        degraded: false,
+        degradedReasons: [],
+        mappingContext: {
+          schemaVersion: "annual_report_mapping_context_v1",
+          incomeStatementAnchors: [],
+          balanceSheetAnchors: [],
+          depreciationContext: {
+            assetAreas: [],
+            evidence: [],
+          },
+          assetMovements: {
+            lines: [],
+            evidence: [],
+          },
+          taxExpenseContext: {
+            notes: [],
+            evidence: [],
+          },
+          pensionContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+          },
+          leasingContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+          },
+          reserveContext: {
+            movements: [],
+            notes: [],
+            evidence: [],
+          },
+          netInterestContext: {
+            notes: [],
+            evidence: [],
+          },
+          groupContributionContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+          },
+          shareholdingContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+          },
+          priorYearComparatives: [],
+          selectedRiskFindings: [],
+          missingInformation: [],
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects v2 mapping requests that pass unconfirmed annual-report context downstream", () => {
+    const result = safeParseGenerateMappingDecisionsRequestArtifactV1({
+      schemaVersion: "generate_mapping_decisions_request_v2",
+      trialBalance: createBaseTrialBalanceV1(),
+      reconciliation: createPassReconciliationV1(),
+      policyVersion: "mapping-ai.v1",
+      annualReportInput: {
+        status: "unconfirmed_omitted",
+        extractionArtifactId: "a0000000-0000-4000-8000-000000000001",
+        extractionSchemaVersion: "annual_report_extraction_v1",
+        extractionConfirmed: false,
+        degraded: true,
+        degradedReasons: [
+          "Active annual-report extraction is not confirmed, so mapper context was omitted.",
+        ],
+        mappingContext: {
+          schemaVersion: "annual_report_mapping_context_v1",
+          incomeStatementAnchors: [],
+          balanceSheetAnchors: [],
+          depreciationContext: {
+            assetAreas: [],
+            evidence: [],
+          },
+          assetMovements: {
+            lines: [],
+            evidence: [],
+          },
+          taxExpenseContext: {
+            notes: [],
+            evidence: [],
+          },
+          pensionContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+          },
+          leasingContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+          },
+          reserveContext: {
+            movements: [],
+            notes: [],
+            evidence: [],
+          },
+          netInterestContext: {
+            notes: [],
+            evidence: [],
+          },
+          groupContributionContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+          },
+          shareholdingContext: {
+            flags: [],
+            notes: [],
+            evidence: [],
+          },
+          priorYearComparatives: [],
+          selectedRiskFindings: [],
+          missingInformation: [],
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
   });
 
   it("accepts valid mapping generation failure payload", () => {

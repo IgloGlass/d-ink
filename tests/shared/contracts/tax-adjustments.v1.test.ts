@@ -26,14 +26,14 @@ describe("tax adjustments contracts v1", () => {
       decisions: [
         {
           id: "adj-1",
-          module: "non_deductible_expenses",
+          module: "disallowed_expenses",
           amount: 1000,
           direction: "increase_taxable_income",
           targetField: "INK2S.non_deductible_expenses",
           status: "proposed",
           confidence: 0.95,
           reviewFlag: false,
-          policyRuleReference: "adj.non_deductible_expenses.v1",
+          policyRuleReference: "adj.disallowed_expenses.v1",
           rationale: "Non-deductible expense mapped from BAS category.",
           evidence: [{ type: "mapping_category", reference: "607200" }],
         },
@@ -113,5 +113,41 @@ describe("tax adjustments contracts v1", () => {
         appliedCount: 0,
       }).ok,
     ).toBe(true);
+  });
+
+  it("accepts scaffolded module codes in adjustment decisions", () => {
+    const result = TaxAdjustmentDecisionSetPayloadV1Schema.safeParse({
+      schemaVersion: "tax_adjustments_v1",
+      policyVersion: "tax-adjustments.v1",
+      generatedFrom: {
+        mappingArtifactId: "98000000-0000-4000-8000-000000000001",
+        annualReportExtractionArtifactId:
+          "98000000-0000-4000-8000-000000000002",
+      },
+      summary: {
+        totalDecisions: 1,
+        manualReviewRequired: 1,
+        totalPositiveAdjustments: 0,
+        totalNegativeAdjustments: 0,
+        totalNetAdjustments: 0,
+      },
+      decisions: [
+        {
+          id: "adj-scaffold-1",
+          module: "group_contributions",
+          amount: 0,
+          direction: "informational",
+          targetField: "INK2S.other_manual_adjustments",
+          status: "manual_review_required",
+          confidence: 0.5,
+          reviewFlag: true,
+          policyRuleReference: "adj.group_contributions.scaffold.v1",
+          rationale: "Scaffolded module code should be accepted by the contract.",
+          evidence: [{ type: "mapping_category", reference: "882000" }],
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
   });
 });

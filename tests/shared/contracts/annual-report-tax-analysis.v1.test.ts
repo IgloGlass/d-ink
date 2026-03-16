@@ -84,6 +84,12 @@ describe("annual-report tax analysis contracts v1", () => {
         status: "aligned",
         rationale: "K3 references are explicit in the report.",
       },
+      reviewState: {
+        mode: "full_ai",
+        reasons: [],
+        sourceDocumentAvailable: true,
+        sourceDocumentUsed: true,
+      },
       findings: [
         {
           id: "finding-1",

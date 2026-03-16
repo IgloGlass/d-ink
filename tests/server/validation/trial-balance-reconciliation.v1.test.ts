@@ -149,11 +149,11 @@ function updateVerificationFromRowsV1(
   trialBalance.verification.normalizedRows = trialBalance.rows.length;
   trialBalance.verification.rejectedRows = trialBalance.rejectedRows.length;
   trialBalance.verification.openingBalanceTotal = trialBalance.rows.reduce(
-    (sum, row) => sum + row.openingBalance,
+    (sum, row) => sum + (row.openingBalance ?? 0),
     0,
   );
   trialBalance.verification.closingBalanceTotal = trialBalance.rows.reduce(
-    (sum, row) => sum + row.closingBalance,
+    (sum, row) => sum + (row.closingBalance ?? 0),
     0,
   );
   trialBalance.verification.duplicateAccountNumberGroups = Array.from(
@@ -384,7 +384,8 @@ describe("trial balance reconciliation v1", () => {
   it("returns fail when parser verification totals are inconsistent", () => {
     const trialBalance = createBaseTrialBalanceV1();
     updateVerificationFromRowsV1(trialBalance);
-    trialBalance.verification.openingBalanceTotal += 1;
+    trialBalance.verification.openingBalanceTotal =
+      (trialBalance.verification.openingBalanceTotal ?? 0) + 1;
 
     const result = evaluateTrialBalanceReconciliationV1({
       trialBalance,
@@ -433,6 +434,111 @@ describe("trial balance reconciliation v1", () => {
         "summary_row_total_consistency",
       ),
     ).toBe("warning");
+  });
+
+  it("allows closing-balance-only trial balances to proceed without opening-balance checks", () => {
+    const trialBalance = parseTrialBalanceNormalizedV1({
+      schemaVersion: "trial_balance_normalized_v2",
+      fileType: "xlsx",
+      selectedSheetName: "Trial Balance",
+      headerRowNumber: 1,
+      columnMappings: [
+        {
+          key: "account_name",
+          required: true,
+          sourceHeader: "Account Name",
+          normalizedSourceHeader: "account name",
+          sourceColumnIndex: 0,
+          sourceColumnLetter: "A",
+          matchType: "exact_synonym",
+        },
+        {
+          key: "account_number",
+          required: true,
+          sourceHeader: "Account Number",
+          normalizedSourceHeader: "account number",
+          sourceColumnIndex: 1,
+          sourceColumnLetter: "B",
+          matchType: "exact_synonym",
+        },
+        {
+          key: "closing_balance",
+          required: true,
+          sourceHeader: "Closing Balance",
+          normalizedSourceHeader: "closing balance",
+          sourceColumnIndex: 2,
+          sourceColumnLetter: "C",
+          matchType: "exact_synonym",
+        },
+      ],
+      availableBalanceColumns: ["closing_balance"],
+      rows: [
+        {
+          accountName: "Cash",
+          accountNumber: "1000",
+          sourceAccountNumber: "1000",
+          openingBalance: null,
+          closingBalance: 150,
+          source: {
+            sheetName: "Trial Balance",
+            rowNumber: 2,
+          },
+          rawValues: {
+            account_name: "Cash",
+            account_number: "1000",
+            closing_balance: "150",
+          },
+        },
+      ],
+      rejectedRows: [],
+      sheetAnalyses: [
+        {
+          sheetName: "Trial Balance",
+          headerRowNumber: 1,
+          requiredColumnsMatched: 3,
+          candidateDataRows: 1,
+          score: 3000,
+        },
+      ],
+      verification: {
+        totalRowsRead: 2,
+        candidateRows: 1,
+        normalizedRows: 1,
+        rejectedRows: 0,
+        duplicateAccountNumberGroups: 0,
+        availableBalanceColumns: ["closing_balance"],
+        openingBalanceTotal: null,
+        closingBalanceTotal: 150,
+        checks: [
+          {
+            code: "required_columns_present",
+            status: "pass",
+            message: "ok",
+            context: {},
+          },
+        ],
+      },
+    });
+
+    const result = evaluateTrialBalanceReconciliationV1({
+      trialBalance,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.reconciliation.status).toBe("pass");
+    expect(result.reconciliation.summary.availableBalanceColumns).toEqual([
+      "closing_balance",
+    ]);
+    expect(
+      getCheckStatusByCodeV1(
+        result.reconciliation.checks,
+        "verification_total_consistency",
+      ),
+    ).toBe("pass");
   });
 
   it("returns fail when grand total summary rows do not match normalized totals", () => {

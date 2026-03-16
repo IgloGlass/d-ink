@@ -4,7 +4,7 @@
   "moduleVersion": "v1",
   "status": "active",
   "owner": "team-tax-engine",
-  "purpose": "Propose structured mapping overrides for deterministic mapping decisions that require review.",
+  "purpose": "Propose structured mapping overrides for active mapping decisions that require review.",
   "contracts": {
     "inputSchemaRef": "GetActiveMappingDecisionsResultV1(ok=true) + ReconciliationResultPayloadV1",
     "outputSchemaRef": "MappingReviewSuggestionSetV1",
@@ -15,7 +15,7 @@
     "advisoryOnly": true,
     "autoApplyAllowed": false,
     "notes": [
-      "Deterministic mapper remains source of truth for initial decisions.",
+      "The active mapping artifact remains source of truth until a reviewer applies overrides.",
       "This module can only propose override instructions for human review.",
       "Final persisted override application must use applyMappingOverridesV1 workflow."
     ]
@@ -36,7 +36,7 @@
       },
       {
         "id": "active_mapping_present",
-        "expression": "input.mapping.schemaVersion == 'mapping_decisions_v1'",
+        "expression": "input.mapping.schemaVersion == 'mapping_decisions_v1' || input.mapping.schemaVersion == 'mapping_decisions_v2'",
         "onFailureErrorCode": "MAPPING_NOT_FOUND"
       }
     ]

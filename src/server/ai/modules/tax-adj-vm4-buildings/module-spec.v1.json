@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "tax-adjustments-avskrivning-pa-byggnader-vm4",
+  "moduleVersion": "v1",
+  "promptVersion": "tax-adjustments-avskrivning-pa-byggnader-vm4.prompts.v1",
+  "runtime": {
+    "provider": "gemini",
+    "modelTier": "thinking"
+  },
+  "policy": {
+    "basePolicyVersion": "tax-adjustments-avskrivning-pa-byggnader-vm4.v1",
+    "activePatchVersions": []
+  }
+}

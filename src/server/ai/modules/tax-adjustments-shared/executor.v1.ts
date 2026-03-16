@@ -3,20 +3,26 @@ import {
   TaxAdjustmentAiProposalResultV1Schema,
   type TaxAdjustmentAiProposalDecisionV1,
 } from "../../../../shared/contracts/tax-adjustment-ai.v1";
-import type { AnnualReportDownstreamTaxContextV1 } from "../../../../shared/contracts/annual-report-tax-context.v1";
-import type { MappingDecisionSetPayloadV1 } from "../../../../shared/contracts/mapping.v1";
+import type { MappingDecisionSetArtifactV1 } from "../../../../shared/contracts/mapping.v1";
+import type {
+  MappedAdjustmentCandidateV1,
+  TaxAdjustmentModuleContextV1,
+} from "../../../../shared/contracts/tax-adjustment-routing.v1";
 import type { GeminiModelConfigV1 } from "../../providers/gemini-client.v1";
 import { generateGeminiStructuredOutputV1 } from "../../providers/gemini-client.v1";
 import type { AiModuleSpecV1 } from "../../runtime/module-config.v1";
 import { executeChunksWithRetryAndSplitV1 } from "../../runtime/chunk-retry.v1";
 
 type CandidateRowV1 = {
-  sourceMappingDecisionId: string;
-  sourceAccountNumber: string;
-  accountName: string;
-  selectedCategoryCode: string;
-  closingBalance: number;
-  mappingReviewFlag: boolean;
+  mappingDecisionId: MappedAdjustmentCandidateV1["mappingDecisionId"];
+  sourceAccountNumber: MappedAdjustmentCandidateV1["sourceAccountNumber"];
+  accountNumber: MappedAdjustmentCandidateV1["accountNumber"];
+  accountName: MappedAdjustmentCandidateV1["accountName"];
+  moduleCode?: MappedAdjustmentCandidateV1["moduleCode"];
+  openingBalance?: MappedAdjustmentCandidateV1["openingBalance"];
+  selectedCategory: MappedAdjustmentCandidateV1["selectedCategory"];
+  closingBalance: MappedAdjustmentCandidateV1["closingBalance"];
+  mappingReviewFlag: MappedAdjustmentCandidateV1["mappingReviewFlag"];
 };
 
 export type TaxAdjustmentModuleRuntimeConfigV1<TPolicy> = {
@@ -41,7 +47,7 @@ type TaxAdjustmentPolicyRuntimeV1 = {
 
 export type ExecuteTaxAdjustmentSubmoduleInputV1<TPolicy> = {
   apiKey?: string;
-  annualReportTaxContext: AnnualReportDownstreamTaxContextV1;
+  annualReportTaxContext: TaxAdjustmentModuleContextV1;
   candidates: CandidateRowV1[];
   config: TaxAdjustmentModuleRuntimeConfigV1<TPolicy & TaxAdjustmentPolicyRuntimeV1>;
   generateId: () => string;
@@ -72,7 +78,7 @@ export type ExecuteTaxAdjustmentSubmoduleResultV1 =
     };
 
 export function projectTaxAdjustmentCandidatesV1(input: {
-  mapping: MappingDecisionSetPayloadV1;
+  mapping: MappingDecisionSetArtifactV1;
   allowedCategoryCodes: string[];
   closingBalanceBySourceAccount: Map<string, number>;
 }): CandidateRowV1[] {
@@ -81,10 +87,13 @@ export function projectTaxAdjustmentCandidatesV1(input: {
       input.allowedCategoryCodes.includes(decision.selectedCategory.code),
     )
     .map((decision) => ({
-      sourceMappingDecisionId: decision.id,
+      mappingDecisionId: decision.id,
+      accountNumber: decision.accountNumber,
       sourceAccountNumber: decision.sourceAccountNumber,
       accountName: decision.accountName,
-      selectedCategoryCode: decision.selectedCategory.code,
+      moduleCode: undefined,
+      openingBalance: undefined,
+      selectedCategory: decision.selectedCategory,
       closingBalance:
         input.closingBalanceBySourceAccount.get(decision.sourceAccountNumber) ?? 0,
       mappingReviewFlag: decision.reviewFlag,
@@ -180,7 +189,7 @@ export async function executeTaxAdjustmentSubmoduleV1<TPolicy>(
     );
     decisions.push(...success.output.decisions);
     for (const candidate of success.chunk) {
-      if (!emittedByMappingDecisionId.has(candidate.sourceMappingDecisionId)) {
+      if (!emittedByMappingDecisionId.has(candidate.mappingDecisionId)) {
         usedFallback = true;
       }
     }

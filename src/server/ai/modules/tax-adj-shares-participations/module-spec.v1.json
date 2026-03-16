@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "tax-adjustments-shares-and-participations",
+  "moduleVersion": "v1",
+  "promptVersion": "tax-adjustments-shares-and-participations.prompts.v1",
+  "runtime": {
+    "provider": "gemini",
+    "modelTier": "thinking"
+  },
+  "policy": {
+    "basePolicyVersion": "tax-adjustments-shares-and-participations.v1",
+    "activePatchVersions": []
+  }
+}

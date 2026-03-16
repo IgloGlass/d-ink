@@ -12,6 +12,7 @@ import { AUDIT_EVENT_TYPES_V1 } from "../../shared/audit/audit-event-catalog.v1"
 import {
   type AnnualReportExtractionPayloadV1,
   type AnnualReportRuntimeMetadataV1,
+  type AnnualReportSourceLineageV1,
   ApplyAnnualReportExtractionOverridesRequestV1Schema,
   type ApplyAnnualReportExtractionOverridesResultV1,
   ClearAnnualReportDataRequestV1Schema,
@@ -115,6 +116,38 @@ function buildFailureV1(input: {
       user_message: input.userMessage,
       context: input.context,
     },
+  };
+}
+
+function toHexV1(bytes: Uint8Array): string {
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join(
+    "",
+  );
+}
+
+export async function computeSourceContentSha256V1(
+  fileBytes: Uint8Array,
+): Promise<string> {
+  const digestInput =
+    fileBytes.buffer instanceof ArrayBuffer
+      ? fileBytes.buffer.slice(
+          fileBytes.byteOffset,
+          fileBytes.byteOffset + fileBytes.byteLength,
+        )
+      : Uint8Array.from(fileBytes).buffer;
+  const digest = await crypto.subtle.digest("SHA-256", digestInput);
+  return toHexV1(new Uint8Array(digest));
+}
+
+export async function buildAnnualReportSourceLineageV1(input: {
+  fileBytes: Uint8Array;
+  processingRunId?: string;
+  sourceStorageKey?: string;
+}): Promise<AnnualReportSourceLineageV1> {
+  return {
+    processingRunId: input.processingRunId,
+    sourceStorageKey: input.sourceStorageKey,
+    sourceContentSha256: await computeSourceContentSha256V1(input.fileBytes),
   };
 }
 
@@ -657,21 +690,167 @@ function doesProcessingRunMatchActiveExtractionV1(input: {
   );
 }
 
+type AnnualReportTaxAnalysisSourceResolutionV1 =
+  | {
+      kind: "exact";
+      source: {
+        fileBytes: Uint8Array;
+        fileName: string;
+        fileType: "pdf" | "docx";
+      };
+    }
+  | {
+      kind: "legacy_filename_type";
+      source: {
+        fileBytes: Uint8Array;
+        fileName: string;
+        fileType: "pdf" | "docx";
+      };
+      reason: "legacy_extraction_source_lineage_missing";
+    }
+  | {
+      kind: "unavailable";
+      reason:
+        | "processing_infrastructure_unavailable"
+        | "active_extraction_source_lineage_unavailable"
+        | "active_extraction_processing_run_not_found"
+        | "active_extraction_source_storage_key_mismatch"
+        | "active_extraction_source_document_not_found"
+        | "active_extraction_source_document_empty"
+        | "active_extraction_source_hash_mismatch"
+        | "legacy_source_document_not_found";
+    };
+
+async function loadSourceDocumentBytesFromStorageV1(input: {
+  deps: AnnualReportExtractionDepsV1;
+  expectedSha256?: string;
+  fileName: string;
+  fileType: "pdf" | "docx";
+  sourceStorageKey: string;
+}): Promise<
+  | {
+      ok: true;
+      source: {
+        fileBytes: Uint8Array;
+        fileName: string;
+        fileType: "pdf" | "docx";
+      };
+    }
+  | {
+      ok: false;
+      reason:
+        | "active_extraction_source_document_not_found"
+        | "active_extraction_source_document_empty"
+        | "active_extraction_source_hash_mismatch";
+    }
+> {
+  try {
+    const sourceObject = await input.deps.sourceStore?.get(input.sourceStorageKey);
+    if (!sourceObject) {
+      return {
+        ok: false,
+        reason: "active_extraction_source_document_not_found",
+      };
+    }
+
+    const fileBytes = new Uint8Array(await sourceObject.arrayBuffer());
+    if (fileBytes.byteLength === 0) {
+      return {
+        ok: false,
+        reason: "active_extraction_source_document_empty",
+      };
+    }
+
+    if (input.expectedSha256) {
+      const actualSha256 = await computeSourceContentSha256V1(fileBytes);
+      if (actualSha256 !== input.expectedSha256) {
+        return {
+          ok: false,
+          reason: "active_extraction_source_hash_mismatch",
+        };
+      }
+    }
+
+    return {
+      ok: true,
+      source: {
+        fileBytes,
+        fileName: input.fileName,
+        fileType: input.fileType,
+      },
+    };
+  } catch {
+    return {
+      ok: false,
+      reason: "active_extraction_source_document_not_found",
+    };
+  }
+}
+
 async function loadSourceDocumentForTaxAnalysisV1(input: {
   activeExtraction: WorkspaceArtifactVersionRecordV1<"annual_report_extraction">;
   deps: AnnualReportExtractionDepsV1;
   tenantId: string;
   workspaceId: string;
-}): Promise<
-  | {
-      fileBytes: Uint8Array;
-      fileName: string;
-      fileType: "pdf" | "docx";
-    }
-  | undefined
-> {
+}): Promise<AnnualReportTaxAnalysisSourceResolutionV1> {
   if (!input.deps.processingRunRepository || !input.deps.sourceStore) {
-    return undefined;
+    return {
+      kind: "unavailable",
+      reason: "processing_infrastructure_unavailable",
+    };
+  }
+
+  const sourceLineage = input.activeExtraction.payload.sourceLineage;
+  if (sourceLineage) {
+    let resolvedStorageKey = sourceLineage.sourceStorageKey;
+    if (sourceLineage.processingRunId) {
+      const run = await input.deps.processingRunRepository.getById({
+        runId: sourceLineage.processingRunId,
+        tenantId: input.tenantId,
+        workspaceId: input.workspaceId,
+      });
+      if (!run) {
+        return {
+          kind: "unavailable",
+          reason: "active_extraction_processing_run_not_found",
+        };
+      }
+
+      if (resolvedStorageKey && run.sourceStorageKey !== resolvedStorageKey) {
+        return {
+          kind: "unavailable",
+          reason: "active_extraction_source_storage_key_mismatch",
+        };
+      }
+
+      resolvedStorageKey = resolvedStorageKey ?? run.sourceStorageKey;
+    }
+
+    if (!resolvedStorageKey) {
+      return {
+        kind: "unavailable",
+        reason: "active_extraction_source_lineage_unavailable",
+      };
+    }
+
+    const sourceResult = await loadSourceDocumentBytesFromStorageV1({
+      deps: input.deps,
+      expectedSha256: sourceLineage.sourceContentSha256,
+      fileName: input.activeExtraction.payload.sourceFileName,
+      fileType: input.activeExtraction.payload.sourceFileType,
+      sourceStorageKey: resolvedStorageKey,
+    });
+    if (!sourceResult.ok) {
+      return {
+        kind: "unavailable",
+        reason: sourceResult.reason,
+      };
+    }
+
+    return {
+      kind: "exact",
+      source: sourceResult.source,
+    };
   }
 
   const latestRun =
@@ -687,29 +866,77 @@ async function loadSourceDocumentForTaxAnalysisV1(input: {
       sourceFileType: latestRun.sourceFileType,
     })
   ) {
-    return undefined;
+    return {
+      kind: "unavailable",
+      reason: "active_extraction_source_lineage_unavailable",
+    };
   }
 
-  try {
-    const sourceObject = await input.deps.sourceStore.get(
-      latestRun.sourceStorageKey,
-    );
-    if (!sourceObject) {
-      return undefined;
-    }
-
-    const fileBytes = new Uint8Array(await sourceObject.arrayBuffer());
-    if (fileBytes.byteLength === 0) {
-      return undefined;
-    }
-
+  const sourceResult = await loadSourceDocumentBytesFromStorageV1({
+    deps: input.deps,
+    fileName: latestRun.sourceFileName,
+    fileType: latestRun.sourceFileType,
+    sourceStorageKey: latestRun.sourceStorageKey,
+  });
+  if (!sourceResult.ok) {
     return {
-      fileBytes,
-      fileName: latestRun.sourceFileName,
-      fileType: latestRun.sourceFileType,
+      kind: "unavailable",
+      reason:
+        sourceResult.reason === "active_extraction_source_document_not_found"
+          ? "legacy_source_document_not_found"
+          : sourceResult.reason,
     };
-  } catch {
-    return undefined;
+  }
+
+  return {
+    kind: "legacy_filename_type",
+    reason: "legacy_extraction_source_lineage_missing",
+    source: sourceResult.source,
+  };
+}
+
+function appendUniqueTextV1(values: string[], value: string): string[] {
+  return values.includes(value) ? values : [...values, value];
+}
+
+function annotateTaxAnalysisSourceResolutionV1(input: {
+  resolution: AnnualReportTaxAnalysisSourceResolutionV1;
+  taxAnalysis: AnnualReportTaxAnalysisPayloadV1;
+}): AnnualReportTaxAnalysisPayloadV1 {
+  switch (input.resolution.kind) {
+    case "exact":
+      return input.taxAnalysis;
+    case "legacy_filename_type":
+      return {
+        ...input.taxAnalysis,
+        reviewState: {
+          mode: input.taxAnalysis.reviewState?.mode ?? "full_ai",
+          reasons: appendUniqueTextV1(
+            input.taxAnalysis.reviewState?.reasons ?? [],
+            "Source document was loaded via legacy filename/type matching because extraction source lineage was unavailable.",
+          ),
+          sourceDocumentAvailable:
+            input.taxAnalysis.reviewState?.sourceDocumentAvailable ?? true,
+          sourceDocumentUsed:
+            input.taxAnalysis.reviewState?.sourceDocumentUsed ?? true,
+        },
+      };
+    case "unavailable":
+      return {
+        ...input.taxAnalysis,
+        reviewState: {
+          mode:
+            input.taxAnalysis.reviewState?.mode === "deterministic_fallback"
+              ? "deterministic_fallback"
+              : "extraction_only",
+          reasons: appendUniqueTextV1(
+            input.taxAnalysis.reviewState?.reasons ?? [],
+            "Source document unavailable for active extraction; forensic review used extraction-only context.",
+          ),
+          sourceDocumentAvailable: false,
+          sourceDocumentUsed: false,
+        },
+      };
   }
 }
 
@@ -866,13 +1093,20 @@ export async function runAnnualReportExtractionV1(
     );
   }
   const runtimeMetadata = resolveRuntimeMetadataV1(deps);
+  const sourceLineage = await buildAnnualReportSourceLineageV1({
+    fileBytes,
+  });
   const extractedPayload: AnnualReportExtractionPayloadV1 =
     runtimeMetadata && !extractionResult.extraction.engineMetadata
       ? {
           ...extractionResult.extraction,
+          sourceLineage,
           engineMetadata: runtimeMetadata,
         }
-      : extractionResult.extraction;
+      : {
+          ...extractionResult.extraction,
+          sourceLineage,
+        };
   const persistedExtraction = finalizeExtractionConfirmationV1({
     extraction: extractedPayload,
     actorUserId: request.createdByUserId,
@@ -1157,7 +1391,7 @@ export async function runAnnualReportTaxAnalysisV1(
     );
   }
 
-  const sourceDocument = await loadSourceDocumentForTaxAnalysisV1({
+  const sourceResolution = await loadSourceDocumentForTaxAnalysisV1({
     activeExtraction,
     deps,
     tenantId: request.tenantId,
@@ -1167,7 +1401,10 @@ export async function runAnnualReportTaxAnalysisV1(
     extraction: activeExtraction.payload,
     extractionArtifactId: activeExtraction.id,
     policyVersion: activeExtraction.payload.policyVersion,
-    sourceDocument,
+    sourceDocument:
+      sourceResolution.kind === "unavailable"
+        ? undefined
+        : sourceResolution.source,
   });
   if (!taxAnalysisResult.ok) {
     await appendAuditEventBestEffortV1({
@@ -1241,7 +1478,10 @@ export async function runAnnualReportTaxAnalysisV1(
     actorUserId: request.requestedByUserId,
     deps,
     sourceExtractionArtifactId: activeExtraction.id,
-    taxAnalysis: taxAnalysisResult.taxAnalysis,
+    taxAnalysis: annotateTaxAnalysisSourceResolutionV1({
+      resolution: sourceResolution,
+      taxAnalysis: taxAnalysisResult.taxAnalysis,
+    }),
     tenantId: request.tenantId,
     workspaceId: request.workspaceId,
   });

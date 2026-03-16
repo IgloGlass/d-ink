@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "tax-adjustments-group-contributions",
+  "moduleVersion": "v1",
+  "promptVersion": "tax-adjustments-group-contributions.prompts.v1",
+  "runtime": {
+    "provider": "gemini",
+    "modelTier": "thinking"
+  },
+  "policy": {
+    "basePolicyVersion": "tax-adjustments-group-contributions.v1",
+    "activePatchVersions": []
+  }
+}

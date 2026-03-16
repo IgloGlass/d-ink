@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ai_module_spec_v1",
+  "moduleId": "tax-adjustments-yield-risk-and-renewable-energy-taxes",
+  "moduleVersion": "v1",
+  "promptVersion": "tax-adjustments-yield-risk-and-renewable-energy-taxes.prompts.v1",
+  "runtime": {
+    "provider": "gemini",
+    "modelTier": "thinking"
+  },
+  "policy": {
+    "basePolicyVersion": "tax-adjustments-yield-risk-and-renewable-energy-taxes.v1",
+    "activePatchVersions": []
+  }
+}

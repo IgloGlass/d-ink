@@ -5,6 +5,7 @@ import {
   AnnualReportEvidenceReferenceV1Schema,
   AnnualReportTaxDeepExtractionV1Schema,
 } from "./annual-report-extraction.v1";
+import { AnnualReportProcessingRunV1Schema } from "./annual-report-processing-run.v1";
 import { UuidV4Schema } from "./common.v1";
 
 export const AnnualReportTaxRiskSeverityV1Schema = z.enum([
@@ -33,6 +34,27 @@ export type AnnualReportTaxAnalysisFindingV1 = z.infer<
   typeof AnnualReportTaxAnalysisFindingV1Schema
 >;
 
+export const AnnualReportTaxAnalysisReviewModeV1Schema = z.enum([
+  "full_ai",
+  "deterministic_fallback",
+  "extraction_only",
+]);
+export type AnnualReportTaxAnalysisReviewModeV1 = z.infer<
+  typeof AnnualReportTaxAnalysisReviewModeV1Schema
+>;
+
+export const AnnualReportTaxAnalysisReviewStateV1Schema = z
+  .object({
+    mode: AnnualReportTaxAnalysisReviewModeV1Schema,
+    reasons: z.array(z.string().trim().min(1)).default([]),
+    sourceDocumentAvailable: z.boolean(),
+    sourceDocumentUsed: z.boolean(),
+  })
+  .strict();
+export type AnnualReportTaxAnalysisReviewStateV1 = z.infer<
+  typeof AnnualReportTaxAnalysisReviewStateV1Schema
+>;
+
 export const AnnualReportTaxAnalysisPayloadV1Schema = z
   .object({
     schemaVersion: z.literal("annual_report_tax_analysis_v1"),
@@ -46,6 +68,7 @@ export const AnnualReportTaxAnalysisPayloadV1Schema = z
         rationale: z.string().trim().min(1),
       })
       .strict(),
+    reviewState: AnnualReportTaxAnalysisReviewStateV1Schema.optional(),
     findings: z.array(AnnualReportTaxAnalysisFindingV1Schema),
     missingInformation: z.array(z.string().trim().min(1)).default([]),
     recommendedNextActions: z.array(z.string().trim().min(1)).default([]),
@@ -114,8 +137,9 @@ export type AnnualReportTaxAnalysisFailureV1 = z.infer<
 export const RunAnnualReportTaxAnalysisSuccessV1Schema = z
   .object({
     ok: z.literal(true),
-    active: ActiveAnnualReportTaxAnalysisRefV1Schema,
-    taxAnalysis: AnnualReportTaxAnalysisPayloadV1Schema,
+    run: AnnualReportProcessingRunV1Schema.optional(),
+    active: ActiveAnnualReportTaxAnalysisRefV1Schema.optional(),
+    taxAnalysis: AnnualReportTaxAnalysisPayloadV1Schema.optional(),
   })
   .strict();
 export type RunAnnualReportTaxAnalysisSuccessV1 = z.infer<

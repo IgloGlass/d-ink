@@ -779,6 +779,14 @@ export async function executeAnnualReportTaxAnalysisV1(
       executiveSummary: normalizedOutput.executiveSummary,
       accountingStandardAssessment:
         normalizedOutput.accountingStandardAssessment,
+      reviewState: {
+        mode: input.document ? "full_ai" : "extraction_only",
+        reasons: input.document
+          ? []
+          : ["Source document was not provided to the forensic AI review."],
+        sourceDocumentAvailable: Boolean(input.document),
+        sourceDocumentUsed: Boolean(input.document),
+      },
       findings: normalizedOutput.findings,
       missingInformation: normalizedOutput.missingInformation,
       recommendedNextActions: normalizedOutput.recommendedNextActions,

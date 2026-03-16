@@ -190,7 +190,7 @@ export function WorkspaceDetailPage() {
   const [toStatus, setToStatus] = useState<WorkspaceStatusV1>("in_review");
   const [statusReason, setStatusReason] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [policyVersion, setPolicyVersion] = useState("deterministic-bas.v1");
+  const [policyVersion, setPolicyVersion] = useState("mapping-ai.v1");
   const [annualPolicyVersion, setAnnualPolicyVersion] = useState(
     "annual-report-manual-first.v1",
   );
@@ -877,7 +877,7 @@ export function WorkspaceDetailPage() {
         <p className="eyebrow">Tax workspace</p>
         <h1>Mapping cockpit</h1>
         <p className="hint-text">
-          Upload trial balance files, run deterministic mapping, apply
+          Upload trial balance files, run AI-first mapping, apply
           overrides, and test advisory review suggestions.
         </p>
         <p>
@@ -1082,7 +1082,7 @@ export function WorkspaceDetailPage() {
               <p className="hint-text">
                 Active extraction v{activeAnnualReportData.active.version} ·{" "}
                 {activeAnnualReportData.extraction.confirmation.isConfirmed
-                  ? "Extracted and usable"
+                  ? "Extracted and ready for workflow"
                   : "Incomplete extraction"}
               </p>
               <div className="table-wrap">

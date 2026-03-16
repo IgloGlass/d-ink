@@ -21,12 +21,13 @@ import {
   parseGetActiveMappingDecisionsResultV1,
 } from "../../shared/contracts/mapping-override.v1";
 import {
-  type MappingDecisionSetPayloadV1,
+  type MappingDecisionRecordV1,
+  type MappingDecisionSetArtifactV1,
   type MappingDecisionSummaryV1,
-  type MappingDecisionV1,
+  type MappingDecisionV2,
   type SilverfinTaxCategoryCodeV1,
   getSilverfinTaxCategoryByCodeV1,
-  parseMappingDecisionV1,
+  parseMappingDecisionRecordV1,
 } from "../../shared/contracts/mapping.v1";
 
 /**
@@ -83,7 +84,7 @@ function normalizePreferenceKeyV1(input: {
 }
 
 function mapOverrideToPreferenceEntryV1(input: {
-  decision: MappingDecisionV1;
+  decision: MappingDecisionRecordV1;
   override: MappingOverrideInstructionV1;
   workspaceId: string;
   actorUserId: string;
@@ -130,11 +131,11 @@ function dedupePreferenceEntriesV1(
 }
 
 function appendManualEvidenceV1(input: {
-  decision: MappingDecisionV1;
+  decision: MappingDecisionRecordV1;
   evidenceReference: string;
   reason: string;
   selectedCategoryCode: SilverfinTaxCategoryCodeV1;
-}): MappingDecisionV1["evidence"] {
+}): MappingDecisionRecordV1["evidence"] {
   return [
     ...input.decision.evidence,
     {
@@ -147,13 +148,13 @@ function appendManualEvidenceV1(input: {
 }
 
 function applyManualSelectionToDecisionV1(input: {
-  decision: MappingDecisionV1;
+  decision: MappingDecisionRecordV1;
   scope: MappingPreferenceScopeV1;
   reason: string;
   selectedCategoryCode: SilverfinTaxCategoryCodeV1;
   authorUserId?: string;
   evidenceReference: string;
-}): MappingDecisionV1 {
+}): MappingDecisionRecordV1 {
   const selectedCategory = getSilverfinTaxCategoryByCodeV1(
     input.selectedCategoryCode,
   );
@@ -166,7 +167,7 @@ function applyManualSelectionToDecisionV1(input: {
     );
   }
 
-  return parseMappingDecisionV1({
+  return parseMappingDecisionRecordV1({
     ...input.decision,
     selectedCategory,
     reviewFlag: false,
@@ -190,9 +191,10 @@ function applyManualSelectionToDecisionV1(input: {
  * Recomputes mapping summary counters from decision evidence and states.
  */
 export function recomputeMappingDecisionSummaryV1(
-  decisions: MappingDecisionV1[],
+  decisions: MappingDecisionRecordV1[],
 ): MappingDecisionSummaryV1 {
   const fallbackDecisions = decisions.filter((decision) =>
+    decision.policyRuleReference.startsWith("mapping.ai.fallback.") ||
     decision.evidence.some((evidence) => evidence.type === "fallback_category"),
   ).length;
 
@@ -225,20 +227,20 @@ export function recomputeMappingDecisionSummaryV1(
 }
 
 /**
- * Applies persisted preferences to a deterministic mapping decision set.
+ * Applies persisted preferences to an existing mapping decision set.
  *
  * Safety boundary:
- * - Keeps mapping deterministic and code-first.
  * - Preference matching is exact by `sourceAccountNumber + statementType`.
+ * - This workflow mutates selection only; it never re-runs mapping generation.
  */
 export function applyMappingPreferencesToDecisionSetV1(input: {
-  mapping: MappingDecisionSetPayloadV1;
+  mapping: MappingDecisionSetArtifactV1;
   preferences: MappingPreferenceRecordV1[];
   authorUserId?: string;
 }): {
   appliedCount: number;
   appliedPreferenceCount: number;
-  mapping: MappingDecisionSetPayloadV1;
+  mapping: MappingDecisionSetArtifactV1;
 } {
   const preferenceByKey = new Map<string, MappingPreferenceRecordV1>();
   for (const preference of input.preferences) {
@@ -283,14 +285,23 @@ export function applyMappingPreferencesToDecisionSetV1(input: {
     });
   });
 
+  const nextSummary = recomputeMappingDecisionSummaryV1(nextDecisions);
+
   return {
     appliedCount,
     appliedPreferenceCount: appliedPreferenceKeys.size,
-    mapping: {
-      ...input.mapping,
-      summary: recomputeMappingDecisionSummaryV1(nextDecisions),
-      decisions: nextDecisions,
-    },
+    mapping:
+      input.mapping.schemaVersion === "mapping_decisions_v2"
+        ? ({
+            ...input.mapping,
+            summary: nextSummary,
+            decisions: nextDecisions as MappingDecisionV2[],
+          } as MappingDecisionSetArtifactV1)
+        : ({
+            ...input.mapping,
+            summary: nextSummary,
+            decisions: nextDecisions,
+          } as MappingDecisionSetArtifactV1),
   };
 }
 
@@ -546,11 +557,19 @@ export async function applyMappingOverridesV1(
       });
     });
 
-    const nextMappingPayload: MappingDecisionSetPayloadV1 = {
-      ...activeMapping.payload,
-      summary: recomputeMappingDecisionSummaryV1(nextDecisions),
-      decisions: nextDecisions,
-    };
+    const nextMappingSummary = recomputeMappingDecisionSummaryV1(nextDecisions);
+    const nextMappingPayload: MappingDecisionSetArtifactV1 =
+      activeMapping.payload.schemaVersion === "mapping_decisions_v2"
+        ? {
+            ...activeMapping.payload,
+            summary: nextMappingSummary,
+            decisions: nextDecisions as MappingDecisionV2[],
+          }
+        : {
+            ...activeMapping.payload,
+            summary: nextMappingSummary,
+            decisions: nextDecisions,
+          };
 
     const persistedMapping =
       await deps.artifactRepository.appendMappingAndSetActive({
@@ -583,7 +602,9 @@ export async function applyMappingOverridesV1(
     const preferenceEntries = dedupePreferenceEntriesV1(
       request.overrides.map((override) =>
         mapOverrideToPreferenceEntryV1({
-          decision: decisionsById.get(override.decisionId) as MappingDecisionV1,
+          decision: decisionsById.get(
+            override.decisionId,
+          ) as MappingDecisionRecordV1,
           override,
           workspaceId: request.workspaceId,
           actorUserId: actor.actorUserId,

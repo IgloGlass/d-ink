@@ -4,8 +4,8 @@ import {
 } from "../../shared/contracts/annual-report-extraction.v1";
 import type { AnnualReportDownstreamTaxContextV1 } from "../../shared/contracts/annual-report-tax-context.v1";
 import {
-  type MappingDecisionSetPayloadV1,
-  MappingDecisionSetPayloadV1Schema,
+  type MappingDecisionSetArtifactV1,
+  parseMappingDecisionSetArtifactV1,
 } from "../../shared/contracts/mapping.v1";
 import {
   type TaxAdjustmentDecisionSetPayloadV1,
@@ -15,18 +15,21 @@ import {
 import type { TaxAdjustmentAiProposalDecisionV1 } from "../../shared/contracts/tax-adjustment-ai.v1";
 import type { AiRunMetadataV1 } from "../../shared/contracts/ai-run.v1";
 import {
-  type TrialBalanceNormalizedV1,
+  type TrialBalanceNormalizedArtifactV1,
   parseTrialBalanceNormalizedV1,
 } from "../../shared/contracts/trial-balance.v1";
+import {
+  projectRoutedTaxAdjustmentCandidatesV1,
+} from "./tax-adjustment-submodule-routing.v1";
 
 export type GenerateTaxAdjustmentsInputV1 = {
   annualReportExtraction: AnnualReportExtractionPayloadV1;
   annualReportTaxContext?: AnnualReportDownstreamTaxContextV1;
   annualReportExtractionArtifactId: string;
-  mapping: MappingDecisionSetPayloadV1;
+  mapping: MappingDecisionSetArtifactV1;
   mappingArtifactId: string;
   policyVersion: string;
-  trialBalance: TrialBalanceNormalizedV1;
+  trialBalance: TrialBalanceNormalizedArtifactV1;
 };
 
 export type GenerateTaxAdjustmentsResultV1 =
@@ -44,23 +47,6 @@ export type GenerateTaxAdjustmentsResultV1 =
       ok: false;
     };
 
-const NON_DEDUCTIBLE_CATEGORY_CODES_V1 = new Set([
-  "607200",
-  "698200",
-  "699300",
-  "762300",
-  "634200",
-  "690000",
-]);
-
-const DEPRECIATION_CATEGORY_CODES_V1 = new Set([
-  "885000",
-  "397000",
-  "777000",
-  "782400",
-  "784000",
-]);
-
 function roundToMinorUnitV1(value: number): number {
   return Math.round(value * 100) / 100;
 }
@@ -70,27 +56,36 @@ function toPositiveAdjustmentAmountV1(value: number): number {
 }
 
 function buildManualReviewDecisionV1(input: {
+  accountName: string;
+  accountNumber: string;
+  closingBalance: number;
   decisionId: string;
+  direction: TaxAdjustmentDecisionV1["direction"];
+  module: TaxAdjustmentDecisionV1["module"];
   moduleReason: string;
   sourceAccountNumber: string;
+  targetField: TaxAdjustmentDecisionV1["targetField"];
   decisionCategoryCode: string;
+  rowResolutionReason?: string;
 }): TaxAdjustmentDecisionSetPayloadV1["decisions"][number] {
   return {
     id: `adj-manual-${input.decisionId}`,
-    module: "manual_review_bucket",
+    module: input.module,
     amount: 0,
-    direction: "informational",
-    targetField: "INK2S.other_manual_adjustments",
+    direction: input.direction,
+    targetField: input.targetField,
     status: "manual_review_required",
     confidence: 1,
     reviewFlag: true,
-    policyRuleReference: "adj.manual_review_bucket.v1",
-    rationale: input.moduleReason,
+    policyRuleReference: `adj.${input.module}.manual_review.v1`,
+    rationale: input.rowResolutionReason
+      ? `${input.moduleReason} ${input.rowResolutionReason}`
+      : input.moduleReason,
     evidence: [
       {
         type: "mapping_decision",
         reference: input.decisionId,
-        snippet: `${input.sourceAccountNumber} -> ${input.decisionCategoryCode}`,
+        snippet: `${input.accountNumber} ${input.accountName} (${input.closingBalance}) -> ${input.decisionCategoryCode}`,
       },
     ],
   };
@@ -100,7 +95,7 @@ function buildDecisionFromAiProposalV1(input: {
   proposal: TaxAdjustmentAiProposalDecisionV1;
   sourceAmount: number;
 }): TaxAdjustmentDecisionV1 {
-  if (input.proposal.module === "representation_entertainment") {
+  if (input.proposal.targetField === "INK2S.representation_non_deductible") {
     return {
       id: input.proposal.decisionId,
       module: input.proposal.module,
@@ -124,7 +119,11 @@ function buildDecisionFromAiProposalV1(input: {
     };
   }
 
-  if (input.proposal.module === "depreciation_differences_basic") {
+  if (
+    input.proposal.direction === "informational" ||
+    input.proposal.targetField === "INK2S.depreciation_adjustment" ||
+    input.proposal.targetField === "INK2S.other_manual_adjustments"
+  ) {
     return {
       id: input.proposal.decisionId,
       module: input.proposal.module,
@@ -140,7 +139,7 @@ function buildDecisionFromAiProposalV1(input: {
         {
           type: "mapping_decision",
           reference: input.proposal.sourceMappingDecisionId,
-          snippet: "AI proposal routed to deterministic depreciation review bucket.",
+          snippet: "AI proposal routed to a reviewable canonical adjustment module.",
         },
       ],
     };
@@ -165,6 +164,15 @@ function buildDecisionFromAiProposalV1(input: {
       },
     ],
   };
+}
+
+function getSourceMappingDecisionIdFromAdjustmentV1(
+  decision: TaxAdjustmentDecisionV1,
+): string | null {
+  return (
+    decision.evidence.find((evidence) => evidence.type === "mapping_decision")
+      ?.reference ?? null
+  );
 }
 
 /**
@@ -209,11 +217,11 @@ export function generateTaxAdjustmentsV1(
     };
   }
 
-  let mapping: MappingDecisionSetPayloadV1;
-  let trialBalance: TrialBalanceNormalizedV1;
+  let mapping: MappingDecisionSetArtifactV1;
+  let trialBalance: TrialBalanceNormalizedArtifactV1;
   let annualExtraction: AnnualReportExtractionPayloadV1;
   try {
-    mapping = MappingDecisionSetPayloadV1Schema.parse(candidate.mapping);
+    mapping = parseMappingDecisionSetArtifactV1(candidate.mapping);
     trialBalance = parseTrialBalanceNormalizedV1(candidate.trialBalance);
     annualExtraction = parseAnnualReportExtractionPayloadV1(
       candidate.annualReportExtraction,
@@ -247,104 +255,118 @@ export function generateTaxAdjustmentsV1(
     };
   }
 
-  const closingBalanceBySourceAccount = new Map<string, number>();
-  for (const row of trialBalance.rows) {
-    closingBalanceBySourceAccount.set(
-      row.sourceAccountNumber,
-      (closingBalanceBySourceAccount.get(row.sourceAccountNumber) ?? 0) +
-        row.closingBalance,
-    );
-  }
-
+  const routedCandidates = projectRoutedTaxAdjustmentCandidatesV1({
+    mapping,
+    trialBalance,
+  });
+  const routedCandidateByDecisionId = new Map(
+    routedCandidates.map((candidate) => [candidate.mappingDecisionId, candidate]),
+  );
   const decisions: TaxAdjustmentDecisionSetPayloadV1["decisions"] = [];
   for (const mappingDecision of mapping.decisions) {
     const selectedCode = mappingDecision.selectedCategory.code;
-    const sourceAmount = closingBalanceBySourceAccount.get(
-      mappingDecision.sourceAccountNumber,
-    );
-    const amount = typeof sourceAmount === "number" ? sourceAmount : 0;
+    const routedCandidate = routedCandidateByDecisionId.get(mappingDecision.id);
+    if (routedCandidate) {
+      if (
+        routedCandidate.rowResolutionStatus !== "matched" ||
+        mappingDecision.reviewFlag ||
+        routedCandidate.decisionMode === "manual_review"
+      ) {
+        decisions.push(
+          buildManualReviewDecisionV1({
+            accountName: routedCandidate.accountName,
+            accountNumber: routedCandidate.accountNumber,
+            closingBalance: routedCandidate.closingBalance,
+            decisionId: mappingDecision.id,
+            direction: routedCandidate.direction,
+            module: routedCandidate.moduleCode,
+            moduleReason:
+              routedCandidate.rowResolutionStatus !== "matched"
+                ? "The mapped row could not be re-linked to a unique active trial-balance row, so downstream routing is blocked pending review."
+                : mappingDecision.reviewFlag
+                ? "Mapping decision was flagged for review and has been routed into its canonical tax-adjustment submodule."
+                : "This canonical tax-adjustment submodule is wired for review routing in V1 but still requires manual treatment.",
+            rowResolutionReason: routedCandidate.rowResolutionReason,
+            sourceAccountNumber: routedCandidate.sourceAccountNumber,
+            targetField: routedCandidate.targetField,
+            decisionCategoryCode: selectedCode,
+          }),
+        );
+        continue;
+      }
 
-    if (NON_DEDUCTIBLE_CATEGORY_CODES_V1.has(selectedCode)) {
-      decisions.push({
-        id: `adj-non-deductible-${mappingDecision.id}`,
-        module: "non_deductible_expenses",
-        amount: toPositiveAdjustmentAmountV1(amount),
-        direction: "increase_taxable_income",
-        targetField: "INK2S.non_deductible_expenses",
-        status: "proposed",
-        confidence: 1,
-        reviewFlag: false,
-        policyRuleReference: "adj.non_deductible_expenses.v1",
-        rationale: "Mapped BAS category is configured as non-deductible in V1.",
-        evidence: [
-          {
-            type: "mapping_decision",
-            reference: mappingDecision.id,
-            snippet: `${mappingDecision.sourceAccountNumber} -> ${selectedCode}`,
-          },
-        ],
-      });
-      continue;
-    }
+      if (routedCandidate.decisionMode === "full_amount") {
+        decisions.push({
+          id: `adj-${routedCandidate.moduleCode}-${mappingDecision.id}`,
+          module: routedCandidate.moduleCode,
+          amount: toPositiveAdjustmentAmountV1(routedCandidate.closingBalance),
+          direction: routedCandidate.direction,
+          targetField: routedCandidate.targetField,
+          status: "proposed",
+          confidence: 1,
+          reviewFlag: false,
+          policyRuleReference: `adj.${routedCandidate.moduleCode}.full_amount.v1`,
+          rationale:
+            "Canonical routing marks this mapped category as a full-amount adjustment in V1.",
+          evidence: [
+            {
+              type: "mapping_decision",
+              reference: mappingDecision.id,
+              snippet: `${routedCandidate.sourceAccountNumber} -> ${selectedCode}`,
+            },
+          ],
+        });
+        continue;
+      }
 
-    if (selectedCode === "607100") {
-      decisions.push({
-        id: `adj-representation-${mappingDecision.id}`,
-        module: "representation_entertainment",
-        amount: roundToMinorUnitV1(toPositiveAdjustmentAmountV1(amount) * 0.1),
-        direction: "increase_taxable_income",
-        targetField: "INK2S.representation_non_deductible",
-        status: "proposed",
-        confidence: 0.9,
-        reviewFlag: false,
-        policyRuleReference: "adj.representation_entertainment.v1",
-        rationale:
-          "Representation adjustment uses deterministic V1 baseline rate (10%) pending policy expansion.",
-        evidence: [
-          {
-            type: "mapping_decision",
-            reference: mappingDecision.id,
-            snippet: `${mappingDecision.sourceAccountNumber} -> 607100`,
-          },
-        ],
-      });
-      continue;
-    }
-
-    if (DEPRECIATION_CATEGORY_CODES_V1.has(selectedCode)) {
-      decisions.push({
-        id: `adj-depreciation-${mappingDecision.id}`,
-        module: "depreciation_differences_basic",
-        amount: 0,
-        direction: "informational",
-        targetField: "INK2S.depreciation_adjustment",
-        status: "manual_review_required",
-        confidence: 0.7,
-        reviewFlag: true,
-        policyRuleReference: "adj.depreciation_differences_basic.v1",
-        rationale:
-          "Depreciation differences need manual review in V1 unless full tax-vs-book basis is supplied.",
-        evidence: [
-          {
-            type: "mapping_decision",
-            reference: mappingDecision.id,
-            snippet: `${mappingDecision.sourceAccountNumber} -> ${selectedCode}`,
-          },
-        ],
-      });
-      continue;
+      if (routedCandidate.decisionMode === "representation_10_percent") {
+        decisions.push({
+          id: `adj-${routedCandidate.moduleCode}-${mappingDecision.id}`,
+          module: routedCandidate.moduleCode,
+          amount: roundToMinorUnitV1(
+            toPositiveAdjustmentAmountV1(routedCandidate.closingBalance) * 0.1,
+          ),
+          direction: routedCandidate.direction,
+          targetField: routedCandidate.targetField,
+          status: "proposed",
+          confidence: 0.9,
+          reviewFlag: false,
+          policyRuleReference: `adj.${routedCandidate.moduleCode}.representation_10_percent.v1`,
+          rationale:
+            "Canonical routing marks deductible representation for the V1 10 percent baseline adjustment.",
+          evidence: [
+            {
+              type: "mapping_decision",
+              reference: mappingDecision.id,
+              snippet: `${routedCandidate.sourceAccountNumber} -> ${selectedCode}`,
+            },
+          ],
+        });
+        continue;
+      }
     }
 
     if (mappingDecision.reviewFlag) {
-      decisions.push(
-        buildManualReviewDecisionV1({
-          decisionId: mappingDecision.id,
-          sourceAccountNumber: mappingDecision.sourceAccountNumber,
-          decisionCategoryCode: selectedCode,
-          moduleReason:
-            "Mapping decision was already flagged for review and requires manual tax treatment.",
-        }),
-      );
+      decisions.push({
+        id: `adj-manual-${mappingDecision.id}`,
+        module: "manual_review_bucket",
+        amount: 0,
+        direction: "informational",
+        targetField: "INK2S.other_manual_adjustments",
+        status: "manual_review_required",
+        confidence: 1,
+        reviewFlag: true,
+        policyRuleReference: "adj.manual_review_bucket.v1",
+        rationale:
+          "This mapped row does not route to a canonical adjustment submodule and remains in the manual review bucket.",
+        evidence: [
+          {
+            type: "mapping_decision",
+            reference: mappingDecision.id,
+            snippet: `${mappingDecision.sourceAccountNumber} -> ${selectedCode}`,
+          },
+        ],
+      });
     }
   }
 
@@ -404,11 +426,11 @@ export function generateTaxAdjustmentsFromAiProposalsV1(input: {
   aiRuns: AiRunMetadataV1[];
   annualReportExtraction: AnnualReportExtractionPayloadV1;
   annualReportExtractionArtifactId: string;
-  mapping: MappingDecisionSetPayloadV1;
+  mapping: MappingDecisionSetArtifactV1;
   mappingArtifactId: string;
   policyVersion: string;
   proposals: TaxAdjustmentAiProposalDecisionV1[];
-  trialBalance: TrialBalanceNormalizedV1;
+  trialBalance: TrialBalanceNormalizedArtifactV1;
 }): GenerateTaxAdjustmentsResultV1 {
   const base = generateTaxAdjustmentsV1({
     annualReportExtraction: input.annualReportExtraction,
@@ -422,28 +444,33 @@ export function generateTaxAdjustmentsFromAiProposalsV1(input: {
     return base;
   }
 
-  const closingBalanceBySourceAccount = new Map<string, number>();
-  for (const row of input.trialBalance.rows) {
-    closingBalanceBySourceAccount.set(
-      row.sourceAccountNumber,
-      (closingBalanceBySourceAccount.get(row.sourceAccountNumber) ?? 0) +
-        row.closingBalance,
-    );
-  }
+  const routedCandidates = projectRoutedTaxAdjustmentCandidatesV1({
+    mapping: input.mapping,
+    trialBalance: input.trialBalance,
+  });
+  const candidateByDecisionId = new Map(
+    routedCandidates.map((candidate) => [candidate.mappingDecisionId, candidate]),
+  );
+  const proposalDecisionIds = new Set(
+    input.proposals.map((proposal) => proposal.sourceMappingDecisionId),
+  );
 
   const nextDecisions = [
-    ...base.adjustments.decisions.filter(
-      (decision) => decision.module === "manual_review_bucket",
-    ),
+    ...base.adjustments.decisions.filter((decision) => {
+      const sourceMappingDecisionId = getSourceMappingDecisionIdFromAdjustmentV1(
+        decision,
+      );
+      return (
+        sourceMappingDecisionId === null ||
+        !proposalDecisionIds.has(sourceMappingDecisionId)
+      );
+    }),
     ...input.proposals.map((proposal) =>
       buildDecisionFromAiProposalV1({
         proposal,
         sourceAmount:
-          closingBalanceBySourceAccount.get(
-            input.mapping.decisions.find(
-              (decision) => decision.id === proposal.sourceMappingDecisionId,
-            )?.sourceAccountNumber ?? "",
-          ) ?? 0,
+          candidateByDecisionId.get(proposal.sourceMappingDecisionId)
+            ?.closingBalance ?? 0,
       }),
     ),
   ];

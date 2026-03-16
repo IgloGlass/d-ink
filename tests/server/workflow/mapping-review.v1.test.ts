@@ -160,6 +160,16 @@ class InMemoryArtifactRepositoryV1 implements TbPipelineArtifactRepositoryV1 {
     return null;
   }
 
+  async clearActiveArtifacts(
+    input: Parameters<TbPipelineArtifactRepositoryV1["clearActiveArtifacts"]>[0],
+  ) {
+    void input;
+    return {
+      ok: true as const,
+      clearedArtifactTypes: [],
+    };
+  }
+
   async listMappingVersions(
     input: Parameters<TbPipelineArtifactRepositoryV1["listMappingVersions"]>[0],
   ) {

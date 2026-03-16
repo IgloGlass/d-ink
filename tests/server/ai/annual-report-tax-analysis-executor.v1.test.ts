@@ -184,6 +184,12 @@ describe("executeAnnualReportTaxAnalysisV1", () => {
       ),
     ).toContain("full annual report PDF is attached");
     expect(result.taxAnalysis.aiRun?.usedFallback).toBe(false);
+    expect(result.taxAnalysis.reviewState).toEqual({
+      mode: "full_ai",
+      reasons: [],
+      sourceDocumentAvailable: true,
+      sourceDocumentUsed: true,
+    });
   });
 
   it("normalizes loose AI output into the saved tax-analysis contract", async () => {
@@ -246,6 +252,12 @@ describe("executeAnnualReportTaxAnalysisV1", () => {
       "Prioritize Restructuring: Obtain and review the merger documents.",
       "Reconcile Fixed Assets: Review the tax fixed asset register.",
     ]);
+    expect(result.taxAnalysis.reviewState).toEqual({
+      mode: "extraction_only",
+      reasons: ["Source document was not provided to the forensic AI review."],
+      sourceDocumentAvailable: false,
+      sourceDocumentUsed: false,
+    });
   });
 
   it("synthesizes minimum forensic coverage when the AI returns an empty review but extraction signals exist", async () => {

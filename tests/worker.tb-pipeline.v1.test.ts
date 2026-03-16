@@ -156,6 +156,30 @@ function createWorkbookBase64V1(): string {
   return btoa(binary);
 }
 
+function createBalanceSheetWorkbookBase64V1(): string {
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet([
+    ["Account Name", "Account Number", "Opening Balance", "Closing Balance"],
+    ["Software platform", "1012", "1000", "1500"],
+    ["Consulting revenue", "3010", "0", "400"],
+  ]);
+  XLSX.utils.book_append_sheet(workbook, sheet, "Trial Balance");
+
+  const bytes = new Uint8Array(
+    XLSX.write(workbook, {
+      bookType: "xlsx",
+      type: "array",
+    }),
+  );
+
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return btoa(binary);
+}
+
 describe("worker TB pipeline route v1", () => {
   beforeEach(async () => {
     await applyWorkspaceAuditSchemaForTests();
@@ -211,7 +235,11 @@ describe("worker TB pipeline route v1", () => {
           trialBalance: { version: number };
         };
         mapping: {
-          decisions: Array<{ selectedCategory: { code: string } }>;
+          decisions: Array<{
+            reviewFlag: boolean;
+            selectedCategory: { code: string };
+            source: string;
+          }>;
         };
       };
     };
@@ -222,8 +250,10 @@ describe("worker TB pipeline route v1", () => {
     expect(payload.pipeline.artifacts.reconciliation.version).toBe(1);
     expect(payload.pipeline.artifacts.mapping.version).toBe(1);
     expect(payload.pipeline.mapping.decisions[0]?.selectedCategory.code).toBe(
-      "607200",
+      "950000",
     );
+    expect(payload.pipeline.mapping.decisions[0]?.source).toBe("ai");
+    expect(payload.pipeline.mapping.decisions[0]?.reviewFlag).toBe(true);
 
     const versionsCount = await env.DB.prepare(
       `
@@ -246,6 +276,46 @@ describe("worker TB pipeline route v1", () => {
 
     expect(versionsCount?.count).toBe(3);
     expect(activeCount?.count).toBe(3);
+  });
+
+  it("POST /v1/workspaces/:id/tb-pipeline-runs keeps balance-sheet rows in balance-sheet fallback categories", async () => {
+    const response = await worker.fetch(
+      buildJsonRequest({
+        method: "POST",
+        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/tb-pipeline-runs`,
+        cookie: buildSessionCookie(SESSION_TOKEN),
+        body: {
+          tenantId: TENANT_ID,
+          fileName: "tb-balance-sheet.xlsx",
+          fileBytesBase64: createBalanceSheetWorkbookBase64V1(),
+          policyVersion: "mapping-ai.v1",
+        },
+      }),
+      buildWorkerEnv(),
+    );
+    const payload = (await response.json()) as {
+      ok: true;
+      pipeline: {
+        mapping: {
+          decisions: Array<{
+            sourceAccountNumber: string;
+            selectedCategory: { code: string; statementType: string };
+          }>;
+        };
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.ok).toBe(true);
+
+    const balanceSheetDecision = payload.pipeline.mapping.decisions.find(
+      (decision) => decision.sourceAccountNumber === "1012",
+    );
+
+    expect(balanceSheetDecision?.selectedCategory.code).toBe("100000");
+    expect(balanceSheetDecision?.selectedCategory.statementType).toBe(
+      "balance_sheet",
+    );
   });
 
   it("POST /v1/workspaces/:id/tb-pipeline-runs increments artifact versions across reruns", async () => {

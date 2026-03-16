@@ -5,6 +5,7 @@ import {
   AnnualReportAiExtractionResultV1Schema,
   AnnualReportAiMovementsResultV1Schema,
   AnnualReportAiNarrativeResultV1Schema,
+  AnnualReportAiRelevantNoteLocatorResultV1Schema,
   AnnualReportAiStatementsResultV1Schema,
 } from "../../../src/shared/contracts/annual-report-ai.v1";
 import { parseAnnualReportTaxAnalysisAiResultV1 } from "../../../src/shared/contracts/annual-report-tax-analysis-ai.v1";
@@ -272,5 +273,21 @@ describe("annual report AI contracts v1", () => {
     expect(result.fields.profitBeforeTax.normalizedValue).toBeUndefined();
     expect(result.taxSignals).toEqual([]);
     expect(result.documentWarnings).toEqual([]);
+  });
+
+  it("keeps uncategorized relevant-note locator entries uncategorized instead of coercing them to tax expense", () => {
+    const result = AnnualReportAiRelevantNoteLocatorResultV1Schema.parse({
+      relevantNotes: [
+        {
+          blockId: "note-1",
+          title: "Uncategorized note",
+          notes: ["Some disclosure text."],
+          evidence: [{ snippet: "Some disclosure text.", page: 12 }],
+        },
+      ],
+    });
+
+    expect(result.relevantNotes[0]?.blockId).toBe("note-1");
+    expect(result.relevantNotes[0]?.category).toBeUndefined();
   });
 });
