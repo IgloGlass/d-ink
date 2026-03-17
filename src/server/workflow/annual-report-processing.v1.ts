@@ -1061,11 +1061,11 @@ async function createInlineProcessingRunV1(input: {
 
   if (input.deps.scheduleBackgroundTask) {
     // Fire-and-forget: return the queued run immediately so the client can poll.
-    // Wrap with a hard 25-second deadline so the run is always marked "failed"
-    // before Cloudflare's ~30-second waitUntil wall-clock limit kills the Worker
-    // (free plan). Without this, an abrupt process kill leaves runs permanently
-    // stuck in an open status.
-    const INLINE_FALLBACK_DEADLINE_MS = 25_000;
+    // Wrap with a safety deadline so if Cloudflare kills the Worker mid-run
+    // (e.g. plan CPU/wall-clock limits), the run is marked "failed" rather than
+    // left permanently stuck. Set to 6 minutes — Gemini processing for a typical
+    // annual report takes 1-3 minutes, and the internal budget is 7 minutes.
+    const INLINE_FALLBACK_DEADLINE_MS = 360_000;
     const timeoutPromise = new Promise<void>((_, reject) => {
       globalThis.setTimeout(() => {
         reject(
