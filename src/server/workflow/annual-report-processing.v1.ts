@@ -1520,6 +1520,24 @@ export async function uploadAnnualReportSourceV1(
   });
 }
 
+/** Non-terminal statuses that a background Worker can get stuck in if
+ *  Cloudflare kills the process before it can write a final status. */
+const STUCK_PROCESSING_STATUSES_V1 = new Set([
+  "queued",
+  "uploading_source",
+  "locating_sections",
+  "extracting_core_facts",
+  "extracting_statements",
+  "extracting_tax_notes",
+  "running_tax_analysis",
+] as const);
+
+/** Mark a run as failed when it has been in a non-terminal status for longer
+ *  than this threshold without any progress update. Chosen to be comfortably
+ *  above the Gemini round-trip time (~30-90 s) while still giving the user
+ *  timely feedback when the background Worker is killed by Cloudflare. */
+const STUCK_RUN_TIMEOUT_MS_V1 = 3 * 60 * 1000; // 3 minutes
+
 export async function getLatestAnnualReportProcessingRunV1(
   input: {
     tenantId: string;
@@ -1541,6 +1559,29 @@ export async function getLatestAnnualReportProcessingRunV1(
         },
       }),
     );
+  }
+
+  // Detect runs that were killed mid-processing by the hosting environment
+  // (e.g. Cloudflare's wall-clock limit on waitUntil background tasks).
+  // When that happens the background promise is terminated without any catch
+  // handler running, leaving the run permanently stuck in an open status.
+  // We detect this on every poll and write the failure status here — inside a
+  // normal HTTP request — so the frontend can stop spinning and offer a retry.
+  if (
+    (STUCK_PROCESSING_STATUSES_V1 as Set<string>).has(run.status) &&
+    Date.now() - new Date(run.updatedAt).getTime() > STUCK_RUN_TIMEOUT_MS_V1
+  ) {
+    const failedRun = await markRunFailedForRuntimeIssueV1({
+      deps,
+      run,
+      technicalDetail: "processing.runtime.stuck_run_detected_on_poll",
+      technicalMessage:
+        "The processing background task was terminated by the hosting environment before it could finish. The run was detected as stuck during a status poll.",
+    });
+    return parseGetLatestAnnualReportProcessingRunResultV1({
+      ok: true,
+      run: projectRunV1(failedRun),
+    });
   }
 
   return parseGetLatestAnnualReportProcessingRunResultV1({
