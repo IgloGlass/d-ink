@@ -149,11 +149,16 @@ async function withAbortTimeoutV1<TValue>(input: {
     );
   }, input.timeoutMs);
 
+  // Create the execute promise and immediately attach a no-op rejection handler.
+  // This prevents an unhandled-rejection crash if Promise.race settles via the
+  // abort path first (i.e. on timeout) and the underlying SDK fetch later
+  // rejects — an unobserved rejection that can crash the Worker runtime
+  // (fatal with recent compatibility_date values).
+  const executePromise = input.execute(abortController.signal);
+  executePromise.catch(() => {});
+
   try {
-    return await Promise.race([
-      input.execute(abortController.signal),
-      abortPromise,
-    ]);
+    return await Promise.race([executePromise, abortPromise]);
   } finally {
     globalThis.clearTimeout(timeoutHandle);
   }

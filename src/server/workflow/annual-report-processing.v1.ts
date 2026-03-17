@@ -862,6 +862,16 @@ async function executeProcessingRunFromSourceBytesV1(input: {
       return;
     }
 
+    // Diagnostic: all AI stages done, about to compute source lineage then
+    // persist the extraction artifact.  If the run ends up stuck after this
+    // entry the crash is in the persistence path, not in an AI stage.
+    let runBeforePersist = await markRunStatusV1({
+      deps,
+      run: currentRun,
+      status: currentRun.status,
+      technicalDetails: ["persistence.stage=computing_source_lineage"],
+    });
+
     const extractionWithSourceLineage = {
       ...finalizedExtraction,
       sourceLineage: await buildAnnualReportSourceLineageV1({
@@ -870,6 +880,14 @@ async function executeProcessingRunFromSourceBytesV1(input: {
         sourceStorageKey: currentRun.sourceStorageKey,
       }),
     };
+
+    // Diagnostic: lineage computed, now writing artifact to D1.
+    runBeforePersist = await markRunStatusV1({
+      deps,
+      run: runBeforePersist,
+      status: currentRun.status,
+      technicalDetails: ["persistence.stage=writing_artifact"],
+    });
 
     const persistedExtraction = await persistAnnualReportExtractionArtifactV1({
       actorType: currentRun.createdByUserId ? "user" : "system",
@@ -884,7 +902,7 @@ async function executeProcessingRunFromSourceBytesV1(input: {
     if (!persistedExtraction.ok) {
       await markRunStatusV1({
         deps,
-        run: currentRun,
+        run: runBeforePersist,
         status: "failed",
         error: {
           code: persistedExtraction.code,
@@ -900,7 +918,7 @@ async function executeProcessingRunFromSourceBytesV1(input: {
 
     run = await markRunStatusV1({
       deps,
-      run: currentRun,
+      run: runBeforePersist,
       status: extractionIsPartial ? "partial" : "completed",
       previewExtraction: finalizedExtraction,
       technicalDetails: [
