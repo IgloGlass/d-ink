@@ -4774,6 +4774,7 @@ export function createAnnualReportExtractionDepsV1(
 
 export function createAnnualReportProcessingDepsV1(
   env: Env,
+  options?: { scheduleBackgroundTask?: (promise: Promise<unknown>) => void },
 ): AnnualReportProcessingDepsV1 {
   const runtime = resolveAnnualReportProcessingRuntimeV1(env);
   const processingConfigError =
@@ -4794,6 +4795,7 @@ export function createAnnualReportProcessingDepsV1(
     sourceStore: env.ANNUAL_REPORT_FILES,
     processingConfigError,
     allowInlineFallbackInDev: runtime.mode === "inline_fallback",
+    scheduleBackgroundTask: options?.scheduleBackgroundTask,
     enqueueProcessingRun: async (message) => {
       if (!env.ANNUAL_REPORT_QUEUE) {
         return {

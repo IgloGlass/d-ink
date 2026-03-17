@@ -1149,6 +1149,7 @@ async function handleAnnualReportProcessingRunRouteV1(
   env: Env,
   appBaseUrl: URL,
   workspaceId: string,
+  executionContext?: WorkerExecutionContextV1,
 ): Promise<Response> {
   const originValidationError = validateOriginForPostV1({
     request,
@@ -1223,7 +1224,11 @@ async function handleAnnualReportProcessingRunRouteV1(
       policyVersion: fieldsParse.data.policyVersion,
       createdByUserId: sessionGuardResult.principal.userId,
     },
-    createAnnualReportProcessingDepsV1(env),
+    createAnnualReportProcessingDepsV1(env, {
+      scheduleBackgroundTask: executionContext
+        ? executionContext.waitUntil.bind(executionContext)
+        : undefined,
+    }),
   );
   if (!result.ok) {
     return mapAnnualReportProcessingFailureToResponseV1(result);
@@ -2882,6 +2887,7 @@ export async function handleWorkspaceRoutesV1(
       env,
       appBaseUrl,
       routeSegments[0],
+      executionContext,
     );
   }
 

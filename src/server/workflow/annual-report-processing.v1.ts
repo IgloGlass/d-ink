@@ -76,6 +76,7 @@ export interface AnnualReportProcessingDepsV1 {
   sourceStore?: AnnualReportSourceStoreV1;
   processingConfigError?: string;
   allowInlineFallbackInDev?: boolean;
+  scheduleBackgroundTask?: (promise: Promise<unknown>) => void;
   enqueueProcessingRun?: (
     message: AnnualReportProcessingQueueMessageV1,
   ) => Promise<
@@ -1052,34 +1053,23 @@ async function createInlineProcessingRunV1(input: {
     );
   }
 
-  await executeProcessingRunFromSourceBytesV1({
+  const executionPromise = executeProcessingRunFromSourceBytesV1({
     deps: input.deps,
     run: persistedRun.value,
     sourceBytes: input.fileBytes,
   });
-  const finalRun = await input.deps.processingRunRepository.getById({
-    runId,
-    tenantId: input.tenantId,
-    workspaceId: input.workspaceId,
-  });
-  if (!finalRun) {
-    return parseCreateAnnualReportProcessingRunResultV1(
-      buildFailureV1({
-        code: "PERSISTENCE_ERROR",
-        message:
-          "Processed annual-report run could not be loaded after completion.",
-        userMessage:
-          "The annual report was processed, but the result could not be loaded.",
-        context: {
-          runId,
-        },
-      }),
-    );
+
+  if (input.deps.scheduleBackgroundTask) {
+    // Fire-and-forget: return the queued run immediately so the client can poll.
+    input.deps.scheduleBackgroundTask(executionPromise);
+  } else {
+    // Fallback for local dev without ctx.waitUntil — await synchronously.
+    await executionPromise;
   }
 
   return parseCreateAnnualReportProcessingRunResultV1({
     ok: true,
-    run: projectRunV1(finalRun),
+    run: projectRunV1(persistedRun.value),
   });
 }
 
