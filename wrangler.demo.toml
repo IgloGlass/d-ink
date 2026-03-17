@@ -1,0 +1,32 @@
+# Standalone Worker for the D.ink demo deployment.
+#
+# This Worker handles all /v1/* API traffic for d-ink-demo.pages.dev.
+# Pages Functions proxy requests here via a Service Binding, so the Worker
+# gets proper R2 + Queue bindings and Queue consumers run without the
+# Pages Functions 30-second wall-clock limit.
+#
+# Deploy:  wrangler deploy --config wrangler.demo.toml
+# Secrets: wrangler secret put <NAME> --config wrangler.demo.toml
+
+name = "d-ink-demo-api"
+main = "src/worker.ts"
+compatibility_date = "2026-03-17"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "d-ink-demo"
+database_id = "ef085ed7-e620-4590-a6d1-72e7edfce068"
+
+[[r2_buckets]]
+binding = "ANNUAL_REPORT_FILES"
+bucket_name = "d-ink-demo-annual-reports"
+
+[[queues.producers]]
+binding = "ANNUAL_REPORT_QUEUE"
+queue = "d-ink-demo-annual-report-processing"
+
+[[queues.consumers]]
+queue = "d-ink-demo-annual-report-processing"
+max_batch_size = 1
+max_batch_timeout = 5
+max_retries = 2

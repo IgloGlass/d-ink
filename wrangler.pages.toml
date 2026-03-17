@@ -2,8 +2,17 @@ name = "d-ink-demo"
 compatibility_date = "2026-03-16"
 pages_build_output_dir = "dist"
 
+# D1 kept here so Pages Function can fall back if the Service Binding is
+# not yet deployed (e.g. first deploy, local dev).
 [[d1_databases]]
 binding = "DB"
 database_name = "d-ink-demo"
 database_id = "ef085ed7-e620-4590-a6d1-72e7edfce068"
 migrations_dir = "src/db/migrations"
+
+# Service Binding: Pages Functions proxy all /v1/* requests to the
+# standalone d-ink-demo-api Worker, which has R2 + Queue bindings and
+# runs Queue consumers without the Pages wall-clock limit.
+[[services]]
+binding = "API_WORKER"
+service = "d-ink-demo-api"
