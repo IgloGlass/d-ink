@@ -1061,7 +1061,41 @@ async function createInlineProcessingRunV1(input: {
 
   if (input.deps.scheduleBackgroundTask) {
     // Fire-and-forget: return the queued run immediately so the client can poll.
-    input.deps.scheduleBackgroundTask(executionPromise);
+    // Wrap with a hard 25-second deadline so the run is always marked "failed"
+    // before Cloudflare's ~30-second waitUntil wall-clock limit kills the Worker
+    // (free plan). Without this, an abrupt process kill leaves runs permanently
+    // stuck in an open status.
+    const INLINE_FALLBACK_DEADLINE_MS = 25_000;
+    const timeoutPromise = new Promise<void>((_, reject) => {
+      globalThis.setTimeout(() => {
+        reject(
+          new Error(
+            "Inline fallback processing deadline exceeded. Upload the annual report again.",
+          ),
+        );
+      }, INLINE_FALLBACK_DEADLINE_MS);
+    });
+    const guardedExecution = Promise.race([executionPromise, timeoutPromise]).catch(
+      async (error) => {
+        // Timeout (or any unhandled error from execution): mark the run failed
+        // so the frontend stops polling and can offer a retry.
+        try {
+          await markRunFailedForRuntimeIssueV1({
+            deps: input.deps,
+            run: persistedRun.value,
+            technicalDetail:
+              "processing.runtime.inline_fallback_deadline_exceeded",
+            technicalMessage:
+              error instanceof Error
+                ? error.message
+                : "Inline fallback processing timed out.",
+          });
+        } catch {
+          // Best-effort cleanup — swallow to avoid crashing the waitUntil promise.
+        }
+      },
+    );
+    input.deps.scheduleBackgroundTask(guardedExecution);
   } else {
     // Fallback for local dev without ctx.waitUntil — await synchronously.
     await executionPromise;
