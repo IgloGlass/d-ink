@@ -141,18 +141,11 @@ export function resolveAnnualReportProcessingRuntimeV1(env: Env): {
     missingBindings.push("ANNUAL_REPORT_QUEUE");
   }
 
+  const rawBypass = (env.DEV_AUTH_BYPASS_ENABLED ?? "").trim().toLowerCase();
   const devAuthBypassEnabled =
-    (env.DEV_AUTH_BYPASS_ENABLED ?? "").trim().toLowerCase() === "true";
-  let localAppBaseUrl = false;
-  try {
-    const host = new URL(env.APP_BASE_URL).hostname.toLowerCase();
-    localAppBaseUrl =
-      host === "localhost" || host === "127.0.0.1" || host === "[::1]";
-  } catch {
-    localAppBaseUrl = false;
-  }
+    rawBypass === "1" || rawBypass === "true" || rawBypass === "yes";
 
-  const inlineFallbackEnabled = devAuthBypassEnabled && localAppBaseUrl;
+  const inlineFallbackEnabled = devAuthBypassEnabled;
   const queuedAvailable = missingBindings.length === 0;
   const mode: AnnualReportProcessingRuntimeModeV1 = queuedAvailable
     ? "queued"
