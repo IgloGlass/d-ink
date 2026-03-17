@@ -88,8 +88,7 @@ export function SessionGate() {
     queryFn: fetchCurrentSessionV1,
   });
 
-  const shouldAutoDevLogin =
-    isLocalDevHostV1() || shouldEnableOnlineDemoAutoSigninV1();
+  const shouldAutoDevLogin = true;
   const isSessionApiError =
     sessionQuery.isError && sessionQuery.error instanceof ApiClientError;
   const sessionApiError = isSessionApiError
@@ -205,9 +204,6 @@ export function SessionGate() {
           tone="error"
           role="alert"
         />
-      ) : null}
-      {!shouldAutoDevLogin ? (
-        <p>Demo auto sign-in is available on localhost or with `?demo=1`.</p>
       ) : null}
     </CardV1>
   );

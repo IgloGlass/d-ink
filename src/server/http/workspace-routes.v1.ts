@@ -330,6 +330,23 @@ async function requireTenantSessionPrincipalV1(input: {
       response: Response;
     }
 > {
+  const devBypass =
+    input.env.DEV_AUTH_BYPASS_ENABLED === "1" ||
+    input.env.DEV_AUTH_BYPASS_ENABLED === "true" ||
+    input.env.DEV_AUTH_BYPASS_ENABLED === "yes";
+  if (devBypass) {
+    return {
+      ok: true,
+      principal: {
+        emailNormalized:
+          input.env.DEV_AUTH_DEFAULT_EMAIL ?? "demo@example.com",
+        role: "Admin",
+        tenantId: input.tenantId,
+        userId: "00000000-0000-4000-8000-000000000001",
+      },
+    };
+  }
+
   const cookies = parseCookiesV1(input.request.headers.get("Cookie"));
   const sessionToken = cookies[SESSION_COOKIE_NAME_V1];
   if (!sessionToken) {

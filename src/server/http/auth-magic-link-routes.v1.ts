@@ -220,6 +220,23 @@ async function requireSessionPrincipalV1(input: {
   request: Request;
   env: Env;
 }): Promise<SessionPrincipalGuardSuccessV1 | SessionPrincipalGuardFailureV1> {
+  if (isDevAuthBypassEnabledV1(input.env)) {
+    const tenantId =
+      normalizeDevTenantIdV1(input.env.DEV_AUTH_DEFAULT_TENANT_ID) ??
+      "00000000-0000-4000-8000-000000000001";
+    return {
+      ok: true,
+      principal: {
+        emailNormalized:
+          input.env.DEV_AUTH_DEFAULT_EMAIL ?? "demo@example.com",
+        role: "Admin",
+        tenantId,
+        userId: "00000000-0000-4000-8000-000000000001",
+      },
+      sessionToken: "dev-bypass-token",
+    };
+  }
+
   const cookies = parseCookiesV1(input.request.headers.get("Cookie"));
   const sessionToken = cookies[SESSION_COOKIE_NAME_V1];
   if (!sessionToken) {
@@ -787,6 +804,16 @@ export async function handleAuthMagicLinkRoutesV1(
   request: Request,
   env: Env,
 ): Promise<Response> {
+  const pathname = new URL(request.url).pathname;
+
+  if (pathname === CURRENT_SESSION_ROUTE_PATH_V1) {
+    if (request.method !== "GET") {
+      return createMethodNotAllowedResponseV1("GET");
+    }
+
+    return handleCurrentSessionRouteV1(request, env);
+  }
+
   let appBaseUrl: URL;
   try {
     appBaseUrl = new URL(env.APP_BASE_URL);
@@ -797,8 +824,6 @@ export async function handleAuthMagicLinkRoutesV1(
       message: "APP_BASE_URL must be a valid absolute URL.",
     });
   }
-
-  const pathname = new URL(request.url).pathname;
 
   if (pathname === INVITE_ROUTE_PATH_V1) {
     if (request.method !== "POST") {
@@ -830,14 +855,6 @@ export async function handleAuthMagicLinkRoutesV1(
     }
 
     return handleDevLoginRouteV1(request, env, appBaseUrl);
-  }
-
-  if (pathname === CURRENT_SESSION_ROUTE_PATH_V1) {
-    if (request.method !== "GET") {
-      return createMethodNotAllowedResponseV1("GET");
-    }
-
-    return handleCurrentSessionRouteV1(request, env);
   }
 
   if (pathname === LOGOUT_ROUTE_PATH_V1) {
