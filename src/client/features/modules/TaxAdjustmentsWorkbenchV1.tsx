@@ -21,6 +21,7 @@ import {
   getTaxAdjustmentSubmoduleGroupTitleV1,
   listTaxAdjustmentSubmodulesV1,
 } from "./tax-adjustment-submodules.v1";
+import { resolveTaxAdjSubmoduleContentV1 } from "./tax-adjustment-submodule-content-map.v1";
 
 function formatOptionalCurrencyV1(value: number | undefined): string {
   if (value === undefined) {
@@ -39,6 +40,7 @@ function isArtifactNotFoundErrorV1(
 
 export function TaxAdjustmentsWorkbenchV1({
   workspaceId,
+  tenantId,
   subModule,
   taxAdjustmentsQuery,
   taxSummaryQuery,
@@ -48,6 +50,7 @@ export function TaxAdjustmentsWorkbenchV1({
   generateLabel,
 }: {
   workspaceId: string;
+  tenantId: string;
   subModule?: string;
   taxAdjustmentsQuery: UseQueryResult<GetActiveTaxAdjustmentsResponseV1, Error>;
   taxSummaryQuery: UseQueryResult<GetActiveTaxSummaryResponseV1, Error>;
@@ -261,58 +264,72 @@ export function TaxAdjustmentsWorkbenchV1({
           )}
         </CardV1>
 
-        <CardV1 className="tax-adjustments-placeholder-card card-v1--brand">
-          <div className="tax-adjustments-placeholder-card__header">
-            <div>
-              <div className="tax-adjustments-placeholder-card__eyebrow">
-                Reserved build surface
+        {(() => {
+          const SubmoduleContent = resolveTaxAdjSubmoduleContentV1(
+            selectedSubmodule.ordinal,
+          );
+
+          if (SubmoduleContent) {
+            return (
+              <SubmoduleContent workspaceId={workspaceId} tenantId={tenantId} />
+            );
+          }
+
+          return (
+            <CardV1 className="tax-adjustments-placeholder-card card-v1--brand">
+              <div className="tax-adjustments-placeholder-card__header">
+                <div>
+                  <div className="tax-adjustments-placeholder-card__eyebrow">
+                    Reserved build surface
+                  </div>
+                  <h2>{selectedSubmodule.title}</h2>
+                </div>
+                <div className="tax-adjustments-placeholder-card__badge">
+                  Under construction
+                </div>
               </div>
-              <h2>{selectedSubmodule.title}</h2>
-            </div>
-            <div className="tax-adjustments-placeholder-card__badge">
-              Under construction
-            </div>
-          </div>
-          <p>
-            The shell is now locked so each future submodule can drop into a
-            stable review surface without forcing another navigation redesign.
-          </p>
-          <div className="tax-adjustments-placeholder-card__grid">
-            <section className="tax-adjustments-placeholder-panel">
-              <h3>What will render here</h3>
-              <ul className="tax-adjustments-placeholder-card__list">
-                <li>
-                  Mapped accounts routed into this tax area, ready for review.
-                </li>
-                <li>
-                  Annual-report note context and supporting evidence beside the
-                  reviewer workflow.
-                </li>
-                <li>
-                  Overrides, audit markers, and deterministic totals attached to
-                  the same decision surface.
-                </li>
-              </ul>
-            </section>
-            <section className="tax-adjustments-placeholder-panel">
-              <h3>What is already live</h3>
-              <ul className="tax-adjustments-placeholder-card__list">
-                <li>
-                  Persistent submodule routing across the full tax-adjustments
-                  sequence.
-                </li>
-                <li>
-                  A unified navigator that carries straight into the calculation
-                  chain.
-                </li>
-                <li>
-                  Live adjustment and tax-summary signals so downstream impact
-                  stays visible while each submodule is built.
-                </li>
-              </ul>
-            </section>
-          </div>
-        </CardV1>
+              <p>
+                The shell is now locked so each future submodule can drop into a
+                stable review surface without forcing another navigation redesign.
+              </p>
+              <div className="tax-adjustments-placeholder-card__grid">
+                <section className="tax-adjustments-placeholder-panel">
+                  <h3>What will render here</h3>
+                  <ul className="tax-adjustments-placeholder-card__list">
+                    <li>
+                      Mapped accounts routed into this tax area, ready for review.
+                    </li>
+                    <li>
+                      Annual-report note context and supporting evidence beside the
+                      reviewer workflow.
+                    </li>
+                    <li>
+                      Overrides, audit markers, and deterministic totals attached to
+                      the same decision surface.
+                    </li>
+                  </ul>
+                </section>
+                <section className="tax-adjustments-placeholder-panel">
+                  <h3>What is already live</h3>
+                  <ul className="tax-adjustments-placeholder-card__list">
+                    <li>
+                      Persistent submodule routing across the full tax-adjustments
+                      sequence.
+                    </li>
+                    <li>
+                      A unified navigator that carries straight into the calculation
+                      chain.
+                    </li>
+                    <li>
+                      Live adjustment and tax-summary signals so downstream impact
+                      stays visible while each submodule is built.
+                    </li>
+                  </ul>
+                </section>
+              </div>
+            </CardV1>
+          );
+        })()}
 
         <CardV1 className="tax-adjustments-stepper-card">
           <div className="tax-adjustments-stepper-card__meta">

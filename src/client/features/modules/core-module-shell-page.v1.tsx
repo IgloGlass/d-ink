@@ -3156,6 +3156,7 @@ export function CoreModuleShellPageV1() {
     moduleBody = (
       <TaxAdjustmentsWorkbenchV1
         workspaceId={resolvedWorkspaceId}
+        tenantId={principal.tenantId}
         subModule={subModule}
         taxAdjustmentsQuery={taxAdjustmentsQuery}
         taxSummaryQuery={taxSummaryQuery}
