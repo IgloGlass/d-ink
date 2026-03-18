@@ -231,6 +231,19 @@ export type AnnualReportPriorYearComparativeV1 = z.infer<
   typeof AnnualReportPriorYearComparativeV1Schema
 >;
 
+export const AnnualReportForeignSubsidiaryV1Schema = z
+  .object({
+    entityName: z.string().trim().min(1).optional(),
+    country: z.string().trim().min(1).optional(),
+    ownershipPercentage: z.number().min(0).max(100).optional(),
+    notes: z.array(z.string().trim().min(1)).default([]),
+    evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
+  })
+  .strict();
+export type AnnualReportForeignSubsidiaryV1 = z.infer<
+  typeof AnnualReportForeignSubsidiaryV1Schema
+>;
+
 export const AnnualReportTaxDeepExtractionV1Schema = z
   .object({
     ink2rExtracted: z
@@ -302,6 +315,15 @@ export const AnnualReportTaxDeepExtractionV1Schema = z
         evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
       })
       .strict(),
+    foreignSubsidiariesContext: z
+      .object({
+        entities: z.array(AnnualReportForeignSubsidiaryV1Schema).default([]),
+        cfcRiskFlag: z.boolean().optional(),
+        notes: z.array(z.string().trim().min(1)).default([]),
+        evidence: z.array(AnnualReportEvidenceReferenceV1Schema).default([]),
+      })
+      .strict()
+      .optional(),
     relevantNotes: z.array(AnnualReportRelevantNoteV1Schema).optional(),
     priorYearComparatives: z
       .array(AnnualReportPriorYearComparativeV1Schema)
