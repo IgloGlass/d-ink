@@ -541,8 +541,8 @@ describe("trial-balance pipeline run workflow v1", () => {
               promptVersion: "mapping-decisions.prompts.v1",
               policyVersion: mappingInput.policyVersion,
               activePatchVersions: [],
-              provider: "gemini",
-              model: "gemini-test",
+              provider: "qwen",
+              model: "qwen-test",
               modelTier: "fast",
               generatedAt: "2026-03-02T12:00:00.000Z",
               usedFallback: fallbackCount > 0,
@@ -748,7 +748,7 @@ describe("trial-balance pipeline run workflow v1", () => {
         degraded: false,
       },
       aiRun: {
-        provider: "gemini",
+        provider: "qwen",
       },
     });
   });
@@ -994,8 +994,8 @@ describe("trial-balance pipeline run workflow v1", () => {
               promptVersion: "mapping-decisions.prompts.v1",
               policyVersion: "mapping-decisions.v1",
               activePatchVersions: [],
-              provider: "gemini",
-              model: "gemini-2.5-flash",
+              provider: "qwen",
+              model: "qwen-plus",
               modelTier: "fast",
               generatedAt: "2026-03-02T12:00:00.000Z",
               usedFallback: false,
@@ -1062,7 +1062,7 @@ describe("trial-balance pipeline run workflow v1", () => {
       return;
     }
 
-    expect(result.pipeline.mapping.aiRun?.provider).toBe("gemini");
+    expect(result.pipeline.mapping.aiRun?.provider).toBe("qwen");
     expect(result.pipeline.mapping.executionMetadata).toMatchObject({
       requestedStrategy: "ai_primary",
       actualStrategy: "ai",

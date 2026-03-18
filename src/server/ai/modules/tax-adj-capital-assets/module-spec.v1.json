@@ -4,7 +4,7 @@
   "moduleVersion": "v1",
   "promptVersion": "tax-adjustments-capital-assets-and-unrealized-changes.prompts.v1",
   "runtime": {
-    "provider": "gemini",
+    "provider": "qwen",
     "modelTier": "thinking"
   },
   "policy": {

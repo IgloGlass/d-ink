@@ -4,7 +4,7 @@
   "moduleVersion": "v1",
   "promptVersion": "tax-adjustments-depreciation-tangible-and-acquired-intangible-assets.prompts.v1",
   "runtime": {
-    "provider": "gemini",
+    "provider": "qwen",
     "modelTier": "thinking"
   },
   "policy": {

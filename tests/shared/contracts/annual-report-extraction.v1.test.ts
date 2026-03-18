@@ -54,7 +54,7 @@ describe("annual report extraction contracts v1", () => {
       engineMetadata: {
         extractionEngineVersion: "annual-report-deep-extraction.v2",
         runtimeFingerprint:
-          "annual-report-deep-extraction.v2|gemini-2.5-flash|gemini-2.5-pro",
+          "annual-report-deep-extraction.v2|qwen-plus|qwen-max",
       },
       confirmation: {
         isConfirmed: true,
@@ -143,7 +143,7 @@ describe("annual report extraction contracts v1", () => {
         engineMetadata: {
           extractionEngineVersion: "annual-report-deep-extraction.v2",
           runtimeFingerprint:
-            "annual-report-deep-extraction.v2|gemini-2.5-flash|gemini-2.5-pro",
+            "annual-report-deep-extraction.v2|qwen-plus|qwen-max",
         },
         confirmation: {
           isConfirmed: true,
@@ -154,7 +154,7 @@ describe("annual report extraction contracts v1", () => {
       runtime: {
         extractionEngineVersion: "annual-report-deep-extraction.v2",
         runtimeFingerprint:
-          "annual-report-deep-extraction.v2|gemini-2.5-flash|gemini-2.5-pro",
+          "annual-report-deep-extraction.v2|qwen-plus|qwen-max",
       },
     };
 

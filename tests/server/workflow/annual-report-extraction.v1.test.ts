@@ -104,7 +104,7 @@ function createDeps(): AnnualReportExtractionDepsV1 {
     getRuntimeMetadata: () => ({
       extractionEngineVersion: "annual-report-deep-extraction.v2",
       runtimeFingerprint:
-        "annual-report-deep-extraction.v2|gemini-2.5-flash|gemini-2.5-pro",
+        "annual-report-deep-extraction.v2|qwen-plus|qwen-max",
     }),
     generateId: () => crypto.randomUUID(),
     nowIsoUtc: () => "2026-03-03T12:10:00.000Z",
@@ -260,7 +260,7 @@ describe("annual report extraction workflow v1", () => {
       "annual-report-deep-extraction.v2",
     );
     expect(runResult.extraction.engineMetadata?.runtimeFingerprint).toBe(
-      "annual-report-deep-extraction.v2|gemini-2.5-flash|gemini-2.5-pro",
+      "annual-report-deep-extraction.v2|qwen-plus|qwen-max",
     );
 
     const overrideResult = await applyAnnualReportExtractionOverridesV1(
@@ -697,8 +697,8 @@ describe("annual report extraction workflow v1", () => {
           promptVersion: "annual-report-analysis.prompts.v1",
           policyVersion: "annual-report-analysis.v1",
           activePatchVersions: [],
-          provider: "gemini",
-          model: "gemini-2.5-flash",
+          provider: "qwen",
+          model: "qwen-plus",
           modelTier: "fast",
           generatedAt: "2026-03-03T12:10:00.000Z",
           usedFallback: false,
@@ -725,7 +725,7 @@ describe("annual report extraction workflow v1", () => {
       return;
     }
 
-    expect(runResult.extraction.aiRun?.provider).toBe("gemini");
+    expect(runResult.extraction.aiRun?.provider).toBe("qwen");
     expect(runResult.extraction.taxSignals).toHaveLength(1);
   });
 

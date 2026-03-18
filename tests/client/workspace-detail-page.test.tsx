@@ -66,7 +66,7 @@ function installAnnualReportUploadXhrMock(input: {
 
     getResponseHeader(name: string): string | null {
       if (name.toLowerCase() === "x-dink-annual-report-runtime") {
-        return "annual-report-deep-extraction.v3|gemini-2.5-flash|gemini-2.5-pro";
+        return "annual-report-deep-extraction.v3|qwen-plus|qwen-max";
       }
       return null;
     }

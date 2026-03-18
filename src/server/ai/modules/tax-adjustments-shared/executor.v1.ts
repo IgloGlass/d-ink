@@ -213,7 +213,7 @@ export async function executeTaxAdjustmentSubmoduleV1<TPolicy>(
             promptVersion: input.config.moduleSpec.promptVersion,
             policyVersion: input.config.policyPack.policyVersion,
             activePatchVersions: input.config.moduleSpec.policy.activePatchVersions,
-            provider: "gemini",
+            provider: "qwen",
             model: modelUsed,
             modelTier: input.config.moduleSpec.runtime.modelTier,
             generatedAt: input.generatedAt,

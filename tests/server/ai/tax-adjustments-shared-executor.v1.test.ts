@@ -78,7 +78,7 @@ describe("tax-adjustment submodule executor reliability v1", () => {
 
       return {
         ok: true,
-        model: "gemini-test",
+        model: "qwen-test",
         output: {
           schemaVersion: "tax_adjustment_ai_proposal_v1",
           decisions: candidates.map((candidate) => ({

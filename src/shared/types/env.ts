@@ -34,7 +34,7 @@ export interface Env {
   DEV_AUTH_DEFAULT_EMAIL?: string;
   DEV_AUTH_DEFAULT_ROLE?: string;
   DEV_AUTH_DEFAULT_TENANT_ID?: string;
-  GEMINI_API_KEY?: string;
-  GEMINI_FAST_MODEL?: string;
-  GEMINI_THINKING_MODEL?: string;
+  QWEN_API_KEY?: string;
+  QWEN_FAST_MODEL?: string;
+  QWEN_THINKING_MODEL?: string;
 }

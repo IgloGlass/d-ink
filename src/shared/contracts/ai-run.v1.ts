@@ -11,7 +11,7 @@ export const AiRunMetadataV1Schema = z
     promptVersion: z.string().trim().min(1),
     policyVersion: z.string().trim().min(1),
     activePatchVersions: z.array(z.string().trim().min(1)),
-    provider: z.literal("gemini"),
+    provider: z.literal("qwen"),
     model: z.string().trim().min(1),
     modelTier: AiModelTierV1Schema,
     generatedAt: z.string().trim().min(1),

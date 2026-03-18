@@ -151,8 +151,8 @@ function createActiveMappingBodyWithExecutionMetadataV1(input: {
               promptVersion: "mapping-decisions.prompts.v1",
               policyVersion: "mapping-decisions.v1",
               activePatchVersions: [],
-              provider: "gemini" as const,
-              model: "gemini-2.5-flash",
+              provider: "qwen" as const,
+              model: "qwen-plus",
               modelTier: "fast" as const,
               generatedAt: input.aiGeneratedAt,
               usedFallback: false,
@@ -437,7 +437,7 @@ function installAnnualReportUploadXhrMock(input: {
 
     getResponseHeader(name: string): string | null {
       if (name.toLowerCase() === "x-dink-annual-report-runtime") {
-        return "annual-report-deep-extraction.v3|gemini-2.5-flash|gemini-2.5-pro";
+        return "annual-report-deep-extraction.v3|qwen-plus|qwen-max";
       }
       return null;
     }
@@ -4671,7 +4671,7 @@ describe("CoreModuleShellPageV1", () => {
             runtime: {
               extractionEngineVersion: "annual-report-deep-extraction.v2",
               runtimeFingerprint:
-                "annual-report-deep-extraction.v2|gemini-2.5-flash|gemini-2.5-pro",
+                "annual-report-deep-extraction.v2|qwen-plus|qwen-max",
             },
             extraction: {
               schemaVersion: "annual_report_extraction_v1",
