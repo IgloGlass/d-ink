@@ -38,8 +38,8 @@ describe("generateGeminiStructuredOutputV1", () => {
     const result = await generateGeminiStructuredOutputV1({
       apiKey: "test-key",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       request: {
         modelTier: "fast",
@@ -79,8 +79,8 @@ describe("generateGeminiStructuredOutputV1", () => {
     const resultPromise = generateGeminiStructuredOutputV1({
       apiKey: "test-key",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       request: {
         modelTier: "fast",
@@ -116,8 +116,8 @@ describe("generateGeminiStructuredOutputV1", () => {
     const result = await generateGeminiStructuredOutputV1({
       apiKey: "test-key",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       request: {
         modelTier: "fast",

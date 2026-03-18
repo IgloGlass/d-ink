@@ -1,11 +1,15 @@
-import {
-  GoogleGenAI,
-  createPartFromBase64,
-  createPartFromUri,
-  createUserContent,
-  type Content,
-  type Part,
-} from "@google/genai";
+/**
+ * AI provider client — Alibaba DashScope (Qwen) via OpenAI-compatible API.
+ *
+ * This file retains its original "gemini-client" filename and all exported
+ * type/function names so that no import sites need updating.  The Gemini SDK
+ * has been replaced with direct fetch calls to the DashScope international
+ * endpoint, which exposes an OpenAI-compatible chat-completions API.
+ *
+ * Limitation vs Gemini: binary PDF documents cannot be passed inline.
+ * The executor already extracts text from PDFs before calling this layer;
+ * any remaining inline-PDF document parts are silently dropped.
+ */
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { ZodTypeAny } from "zod";
 
@@ -74,6 +78,11 @@ export type GeminiStructuredOutputResultV1<TOutput> =
   | GeminiStructuredOutputSuccessV1<TOutput>
   | GeminiStructuredOutputFailureV1;
 
+const DASHSCOPE_BASE_URL =
+  "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
+
+const DEFAULT_GEMINI_TIMEOUT_MS_V1 = 90_000;
+
 function resolveModelNameV1(
   tier: AiModelTierV1,
   config: GeminiModelConfigV1,
@@ -88,25 +97,6 @@ export function toBase64V1(bytes: Uint8Array): string {
   }
   return btoa(binary);
 }
-
-function buildContentsV1(input: {
-  userInstruction: string;
-  documents?: GeminiDocumentPartV1[];
-}): Content {
-  const parts: Array<string | Part> = [input.userInstruction];
-  for (const document of input.documents ?? []) {
-    if ("uri" in document) {
-      parts.push(createPartFromUri(document.uri, document.mimeType));
-      continue;
-    }
-
-    parts.push(createPartFromBase64(document.dataBase64, document.mimeType));
-  }
-
-  return createUserContent(parts);
-}
-
-const DEFAULT_GEMINI_TIMEOUT_MS_V1 = 90_000;
 
 function isAbortErrorV1(error: unknown): boolean {
   return (
@@ -149,11 +139,6 @@ async function withAbortTimeoutV1<TValue>(input: {
     );
   }, input.timeoutMs);
 
-  // Create the execute promise and immediately attach a no-op rejection handler.
-  // This prevents an unhandled-rejection crash if Promise.race settles via the
-  // abort path first (i.e. on timeout) and the underlying SDK fetch later
-  // rejects — an unobserved rejection that can crash the Worker runtime
-  // (fatal with recent compatibility_date values).
   const executePromise = input.execute(abortController.signal);
   executePromise.catch(() => {});
 
@@ -164,34 +149,38 @@ async function withAbortTimeoutV1<TValue>(input: {
   }
 }
 
-function normalizeGeminiFileReferenceV1(file: Partial<GeminiFileReferenceV1>): GeminiFileReferenceV1 {
-  if (
-    typeof file.name !== "string" ||
-    file.name.trim().length === 0 ||
-    typeof file.uri !== "string" ||
-    file.uri.trim().length === 0 ||
-    typeof file.mimeType !== "string" ||
-    file.mimeType.trim().length === 0
-  ) {
-    throw new Error("Gemini file response is missing required file metadata.");
+/**
+ * Appends text-format inline document parts to the user message.
+ * Binary PDF parts (mimeType application/pdf) are dropped — the executor
+ * already includes extracted page text in userInstruction for that case.
+ * URI parts are not supported by DashScope and are also dropped.
+ */
+function buildUserContentV1(input: {
+  userInstruction: string;
+  documents?: GeminiDocumentPartV1[];
+}): string {
+  const parts: string[] = [input.userInstruction];
+
+  for (const doc of input.documents ?? []) {
+    if ("uri" in doc) {
+      // URI references (Gemini Files API) are not supported by DashScope.
+      continue;
+    }
+
+    if (doc.mimeType === "text/plain") {
+      try {
+        const decoded = atob(doc.dataBase64);
+        if (decoded.trim().length > 0) {
+          parts.push(decoded);
+        }
+      } catch {
+        // ignore malformed base64
+      }
+    }
+    // Binary PDF / other binary mimeTypes are dropped intentionally.
   }
 
-  return {
-    name: file.name,
-    uri: file.uri,
-    mimeType: file.mimeType,
-    expirationTime:
-      typeof file.expirationTime === "string"
-        ? file.expirationTime
-        : undefined,
-    state: typeof file.state === "string" ? file.state : undefined,
-  };
-}
-
-export function createGeminiClientV1(apiKey: string): GoogleGenAI {
-  return new GoogleGenAI({
-    apiKey,
-  });
+  return parts.join("\n\n");
 }
 
 function extractJsonPayloadTextV1(value: string): string {
@@ -236,11 +225,59 @@ function summarizeSchemaIssuesV1(
     .join("; ");
 }
 
+type DashScopeChatCompletionResponseV1 = {
+  choices?: Array<{
+    message?: {
+      content?: string;
+    };
+    finish_reason?: string;
+  }>;
+  model?: string;
+  error?: {
+    message?: string;
+    type?: string;
+    code?: string;
+  };
+};
+
+async function callDashScopeV1(input: {
+  apiKey: string;
+  model: string;
+  systemMessage: string;
+  userMessage: string;
+  temperature?: number;
+  maxTokens?: number;
+  abortSignal: AbortSignal;
+}): Promise<DashScopeChatCompletionResponseV1> {
+  const body = JSON.stringify({
+    model: input.model,
+    messages: [
+      { role: "system", content: input.systemMessage },
+      { role: "user", content: input.userMessage },
+    ],
+    response_format: { type: "json_object" },
+    temperature: input.temperature ?? 0.1,
+    max_tokens: input.maxTokens ?? 8192,
+  });
+
+  const response = await fetch(`${DASHSCOPE_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${input.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body,
+    signal: input.abortSignal,
+  });
+
+  return response.json() as Promise<DashScopeChatCompletionResponseV1>;
+}
+
 /**
- * Executes Gemini structured-output generation behind a provider-local adapter.
+ * Executes Qwen structured-output generation via DashScope OpenAI-compatible API.
  *
  * Safety boundary:
- * - All callers receive parsed app contracts, never raw SDK objects.
+ * - All callers receive parsed app contracts, never raw API objects.
  * - Schema validation happens after model generation before workflow code sees data.
  */
 export async function generateGeminiStructuredOutputV1<TOutput>(input: {
@@ -253,77 +290,86 @@ export async function generateGeminiStructuredOutputV1<TOutput>(input: {
       ok: false,
       error: {
         code: "CONFIG_INVALID",
-        message: "Gemini API key is not configured.",
+        message: "AI provider API key is not configured.",
         context: {},
       },
     };
   }
 
   try {
-    const client = createGeminiClientV1(input.apiKey);
     const model = resolveModelNameV1(
       input.request.modelTier,
       input.modelConfig,
     );
     const timeoutMs = input.request.timeoutMs ?? DEFAULT_GEMINI_TIMEOUT_MS_V1;
-    const response = await withAbortTimeoutV1({
-      label: "Gemini request",
+
+    const jsonSchema = zodToJsonSchema(input.request.responseSchema, {
+      $refStrategy: "none",
+      target: "jsonSchema7",
+    });
+
+    const systemMessage = [
+      input.request.systemInstruction,
+      "IMPORTANT: You MUST respond with valid JSON that exactly matches the following JSON Schema. Output only the JSON object — no explanation, no markdown fences.",
+      JSON.stringify(jsonSchema, null, 2),
+    ].join("\n\n");
+
+    const userMessage = buildUserContentV1({
+      userInstruction: input.request.userInstruction,
+      documents: input.request.documents,
+    });
+
+    const apiResponse = await withAbortTimeoutV1({
+      label: "Qwen request",
       timeoutMs,
       execute: (abortSignal) =>
-        client.models.generateContent({
+        callDashScopeV1({
+          apiKey: input.apiKey as string,
           model,
-          contents: buildContentsV1({
-            userInstruction: input.request.userInstruction,
-            documents: input.request.documents,
-          }),
-          config: {
-            abortSignal,
-            systemInstruction: input.request.systemInstruction,
-            temperature: input.request.temperature,
-            maxOutputTokens: input.request.maxOutputTokens,
-            ...(input.request.useResponseJsonSchema === false
-              ? {}
-              : {
-                  responseMimeType: "application/json",
-                  responseJsonSchema: zodToJsonSchema(
-                    input.request.responseSchema,
-                    {
-                      $refStrategy: "none",
-                      target: "jsonSchema7",
-                    },
-                  ),
-                }),
-          },
+          systemMessage,
+          userMessage,
+          temperature: input.request.temperature,
+          maxTokens: input.request.maxOutputTokens,
+          abortSignal,
         }),
     });
 
-    const responseText = response.text;
+    if (apiResponse.error) {
+      return {
+        ok: false,
+        error: {
+          code: "MODEL_EXECUTION_FAILED",
+          message: apiResponse.error.message ?? "DashScope API returned an error.",
+          context: {
+            model,
+            errorType: apiResponse.error.type,
+            errorCode: apiResponse.error.code,
+          },
+        },
+      };
+    }
+
+    const responseText = apiResponse.choices?.[0]?.message?.content;
     if (!responseText || responseText.trim().length === 0) {
       return {
         ok: false,
         error: {
           code: "MODEL_RESPONSE_INVALID",
-          message: "Gemini returned an empty response body.",
-          context: {
-            model,
-          },
+          message: "Qwen returned an empty response body.",
+          context: { model },
         },
       };
     }
 
     let parsedJson: unknown = null;
     try {
-      parsedJson = JSON.parse(
-        input.request.useResponseJsonSchema === false
-          ? extractJsonPayloadTextV1(responseText)
-          : responseText,
-      );
+      parsedJson = JSON.parse(extractJsonPayloadTextV1(responseText));
     } catch (error) {
       return {
         ok: false,
         error: {
           code: "MODEL_RESPONSE_INVALID",
-          message: "Gemini returned invalid JSON.",
+          message: "Qwen returned invalid JSON.",
           context: {
             model,
             error: error instanceof Error ? error.message : "Unknown parse error.",
@@ -339,7 +385,7 @@ export async function generateGeminiStructuredOutputV1<TOutput>(input: {
         ok: false,
         error: {
           code: "MODEL_RESPONSE_INVALID",
-          message: `Gemini response did not match the expected schema. ${summarizedIssues}`,
+          message: `Qwen response did not match the expected schema. ${summarizedIssues}`,
           context: {
             model,
             issueSummary: summarizedIssues,
@@ -364,10 +410,10 @@ export async function generateGeminiStructuredOutputV1<TOutput>(input: {
       error: {
         code: "MODEL_EXECUTION_FAILED",
         message: isAbortErrorV1(error)
-          ? `Gemini request timed out after ${input.request.timeoutMs ?? DEFAULT_GEMINI_TIMEOUT_MS_V1}ms.`
+          ? `Qwen request timed out after ${input.request.timeoutMs ?? DEFAULT_GEMINI_TIMEOUT_MS_V1}ms.`
           : error instanceof Error
             ? error.message
-            : "Unknown Gemini execution failure.",
+            : "Unknown Qwen execution failure.",
         context: {
           timeoutMs: input.request.timeoutMs ?? DEFAULT_GEMINI_TIMEOUT_MS_V1,
         },
@@ -376,7 +422,11 @@ export async function generateGeminiStructuredOutputV1<TOutput>(input: {
   }
 }
 
-export async function uploadGeminiFileV1(input: {
+/**
+ * File upload — not supported by DashScope.
+ * Returns CONFIG_INVALID so callers degrade gracefully (same as missing API key).
+ */
+export async function uploadGeminiFileV1(_input: {
   apiKey?: string;
   displayName?: string;
   fileBytes: Uint8Array;
@@ -384,175 +434,54 @@ export async function uploadGeminiFileV1(input: {
   name?: string;
   timeoutMs?: number;
 }): Promise<
-  | {
-      ok: true;
-      file: GeminiFileReferenceV1;
-    }
+  | { ok: true; file: GeminiFileReferenceV1 }
   | GeminiStructuredOutputFailureV1
 > {
-  if (!input.apiKey) {
-    return {
-      ok: false,
-      error: {
-        code: "CONFIG_INVALID",
-        message: "Gemini API key is not configured.",
-        context: {},
-      },
-    };
-  }
-
-  try {
-    const client = createGeminiClientV1(input.apiKey);
-    const timeoutMs = input.timeoutMs ?? DEFAULT_GEMINI_TIMEOUT_MS_V1;
-    const fileBuffer = Uint8Array.from(input.fileBytes).buffer as ArrayBuffer;
-    const file = await withAbortTimeoutV1({
-      label: "Gemini file upload",
-      timeoutMs,
-      execute: (abortSignal) =>
-        client.files.upload({
-          file: new Blob([fileBuffer], { type: input.mimeType }),
-          config: {
-            abortSignal,
-            displayName: input.displayName,
-            mimeType: input.mimeType,
-            name: input.name,
-          },
-        }),
-    });
-
-    return {
-      ok: true,
-      file: normalizeGeminiFileReferenceV1(file),
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      error: {
-        code: "MODEL_EXECUTION_FAILED",
-        message: isAbortErrorV1(error)
-          ? `Gemini file upload timed out after ${input.timeoutMs ?? DEFAULT_GEMINI_TIMEOUT_MS_V1}ms.`
-          : error instanceof Error
-            ? error.message
-            : "Unknown Gemini file upload failure.",
-        context: {
-          timeoutMs: input.timeoutMs ?? DEFAULT_GEMINI_TIMEOUT_MS_V1,
-        },
-      },
-    };
-  }
+  return {
+    ok: false,
+    error: {
+      code: "CONFIG_INVALID",
+      message: "File upload is not supported by the Qwen/DashScope provider.",
+      context: {},
+    },
+  };
 }
 
-export async function getGeminiFileV1(input: {
+/**
+ * File retrieval — not supported by DashScope.
+ */
+export async function getGeminiFileV1(_input: {
   apiKey?: string;
   name: string;
   timeoutMs?: number;
 }): Promise<
-  | {
-      ok: true;
-      file: GeminiFileReferenceV1;
-    }
+  | { ok: true; file: GeminiFileReferenceV1 }
   | GeminiStructuredOutputFailureV1
 > {
-  if (!input.apiKey) {
-    return {
-      ok: false,
-      error: {
-        code: "CONFIG_INVALID",
-        message: "Gemini API key is not configured.",
-        context: {},
-      },
-    };
-  }
-
-  try {
-    const client = createGeminiClientV1(input.apiKey);
-    const timeoutMs = input.timeoutMs ?? DEFAULT_GEMINI_TIMEOUT_MS_V1;
-    const file = await withAbortTimeoutV1({
-      label: "Gemini file lookup",
-      timeoutMs,
-      execute: (abortSignal) =>
-        client.files.get({
-          name: input.name,
-          config: {
-            abortSignal,
-          },
-        }),
-    });
-
-    return {
-      ok: true,
-      file: normalizeGeminiFileReferenceV1(file),
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      error: {
-        code: "MODEL_EXECUTION_FAILED",
-        message: isAbortErrorV1(error)
-          ? `Gemini file lookup timed out after ${input.timeoutMs ?? DEFAULT_GEMINI_TIMEOUT_MS_V1}ms.`
-          : error instanceof Error
-            ? error.message
-            : "Unknown Gemini file lookup failure.",
-        context: {
-          timeoutMs: input.timeoutMs ?? DEFAULT_GEMINI_TIMEOUT_MS_V1,
-          fileName: input.name,
-        },
-      },
-    };
-  }
+  return {
+    ok: false,
+    error: {
+      code: "CONFIG_INVALID",
+      message: "File retrieval is not supported by the Qwen/DashScope provider.",
+      context: {},
+    },
+  };
 }
 
-export async function deleteGeminiFileV1(input: {
+/**
+ * File deletion — not supported by DashScope.
+ */
+export async function deleteGeminiFileV1(_input: {
   apiKey?: string;
   name: string;
   timeoutMs?: number;
-}): Promise<
-  | {
-      ok: true;
-    }
-  | GeminiStructuredOutputFailureV1
-> {
-  if (!input.apiKey) {
-    return {
-      ok: false,
-      error: {
-        code: "CONFIG_INVALID",
-        message: "Gemini API key is not configured.",
-        context: {},
-      },
-    };
-  }
-
-  try {
-    const client = createGeminiClientV1(input.apiKey);
-    const timeoutMs = input.timeoutMs ?? DEFAULT_GEMINI_TIMEOUT_MS_V1;
-    await withAbortTimeoutV1({
-      label: "Gemini file delete",
-      timeoutMs,
-      execute: (abortSignal) =>
-        client.files.delete({
-          name: input.name,
-          config: {
-            abortSignal,
-          },
-        }),
-    });
-    return { ok: true };
-  } catch (error) {
-    return {
-      ok: false,
-      error: {
-        code: "MODEL_EXECUTION_FAILED",
-        message: isAbortErrorV1(error)
-          ? `Gemini file delete timed out after ${input.timeoutMs ?? DEFAULT_GEMINI_TIMEOUT_MS_V1}ms.`
-          : error instanceof Error
-            ? error.message
-            : "Unknown Gemini file delete failure.",
-        context: {
-          timeoutMs: input.timeoutMs ?? DEFAULT_GEMINI_TIMEOUT_MS_V1,
-          fileName: input.name,
-        },
-      },
-    };
-  }
+}): Promise<{ ok: true } | GeminiStructuredOutputFailureV1> {
+  return {
+    ok: false,
+    error: {
+      code: "CONFIG_INVALID",
+      message: "File deletion is not supported by the Qwen/DashScope provider.",
+      context: {},
+    },
+  };
 }

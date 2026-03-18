@@ -527,7 +527,7 @@ describe("worker tax core routes v1", () => {
         usedAiRunFallback: true,
       },
       aiRun: {
-        provider: "gemini",
+        provider: "qwen",
         usedFallback: true,
       },
     });

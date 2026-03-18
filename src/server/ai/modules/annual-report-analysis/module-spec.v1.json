@@ -4,7 +4,7 @@
   "moduleVersion": "v1",
   "promptVersion": "annual-report-analysis.prompts.v1",
   "runtime": {
-    "provider": "gemini",
+    "provider": "qwen",
     "modelTier": "fast"
   },
   "policy": {

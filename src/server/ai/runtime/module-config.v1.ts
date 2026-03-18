@@ -8,7 +8,7 @@ export const AiModuleSpecV1Schema = z
     promptVersion: z.string().trim().min(1),
     runtime: z
       .object({
-        provider: z.literal("gemini"),
+        provider: z.literal("qwen"),
         modelTier: z.enum(["fast", "thinking"]),
       })
       .strict(),

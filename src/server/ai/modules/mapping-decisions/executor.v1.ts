@@ -907,7 +907,7 @@ export async function executeMappingDecisionsModelV1(
               policyVersion: input.config.policyPack.policyVersion,
               activePatchVersions:
                 input.config.moduleSpec.policy.activePatchVersions,
-              provider: "gemini",
+              provider: "qwen",
               model: primaryModel,
               modelTier:
                 escalatedRows.length > 0

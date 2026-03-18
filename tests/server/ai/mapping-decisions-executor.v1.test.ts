@@ -650,7 +650,7 @@ describe("mapping decisions executor reliability v1", () => {
 
       return {
         ok: true,
-        model: "gemini-test",
+        model: "qwen-test",
         output: {
           schemaVersion: "mapping_ai_proposal_v1",
           decisions: rows.map((row) => ({
@@ -723,7 +723,7 @@ describe("mapping decisions executor reliability v1", () => {
 
       return {
         ok: true,
-        model: "gemini-test",
+        model: "qwen-test",
         output: {
           schemaVersion: "mapping_ai_proposal_v1",
           decisions: rows.map((row) => ({
@@ -904,7 +904,7 @@ describe("mapping decisions executor reliability v1", () => {
       observedBatchSizes.push(rows.length);
       return {
         ok: true,
-        model: "gemini-test",
+        model: "qwen-test",
         output: {
           schemaVersion: "mapping_ai_proposal_v1",
           decisions: rows.map((row) => ({
@@ -953,7 +953,7 @@ describe("mapping decisions executor reliability v1", () => {
       const rows = parseRowsFromInstruction(input.request.userInstruction);
       return {
         ok: true,
-        model: "gemini-test",
+        model: "qwen-test",
         output: {
           schemaVersion: "mapping_ai_proposal_result_v1",
           decisions: rows.map((row) => ({
@@ -1005,7 +1005,7 @@ describe("mapping decisions executor reliability v1", () => {
       const rows = parseRowsFromInstruction(input.request.userInstruction);
       return {
         ok: true,
-        model: "gemini-test",
+        model: "qwen-test",
         output: {
           schemaVersion: "mapping_ai_proposal_v1",
           decisions: rows.map((row, index) => ({
@@ -1091,7 +1091,7 @@ describe("mapping decisions executor reliability v1", () => {
       if (batchCallCount === 1) {
         return {
           ok: true,
-          model: "gemini-test",
+          model: "qwen-test",
           output: {
             schemaVersion: "mapping_ai_proposal_v1",
             decisions: rows
@@ -1110,7 +1110,7 @@ describe("mapping decisions executor reliability v1", () => {
 
       return {
         ok: true,
-        model: "gemini-test",
+        model: "qwen-test",
         output: {
           schemaVersion: "mapping_ai_proposal_v1",
           decisions: rows.map((row) => ({
@@ -1165,7 +1165,7 @@ describe("mapping decisions executor reliability v1", () => {
 
     vi.mocked(generateGeminiStructuredOutputV1).mockResolvedValue({
       ok: true,
-      model: "gemini-test",
+      model: "qwen-test",
       output: {
         schemaVersion: "mapping_ai_proposal_v1",
         decisions: [
@@ -1438,7 +1438,7 @@ describe("mapping decisions executor reliability v1", () => {
 
     vi.mocked(generateGeminiStructuredOutputV1).mockResolvedValue({
       ok: true,
-      model: "gemini-test",
+      model: "qwen-test",
       output: {
         schemaVersion: "mapping_ai_proposal_v1",
         decisions: [
@@ -1541,7 +1541,7 @@ describe("mapping decisions executor reliability v1", () => {
 
     vi.mocked(generateGeminiStructuredOutputV1).mockResolvedValue({
       ok: true,
-      model: "gemini-test",
+      model: "qwen-test",
       output: {
         schemaVersion: "mapping_ai_proposal_v1",
         decisions: [

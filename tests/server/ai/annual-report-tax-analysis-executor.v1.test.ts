@@ -128,7 +128,7 @@ describe("executeAnnualReportTaxAnalysisV1", () => {
   it("attaches the full annual report PDF and uses a larger time budget", async () => {
     generateGeminiStructuredOutputMock.mockResolvedValue({
       ok: true,
-      model: "gemini-2.5-pro",
+      model: "qwen-max",
       output: {
         executiveSummary: "Finance note and depreciation note need review.",
         accountingStandardAssessment: {
@@ -195,7 +195,7 @@ describe("executeAnnualReportTaxAnalysisV1", () => {
   it("normalizes loose AI output into the saved tax-analysis contract", async () => {
     generateGeminiStructuredOutputMock.mockResolvedValue({
       ok: true,
-      model: "gemini-2.5-pro",
+      model: "qwen-max",
       output: {
         accountingStandardAssessment: {},
         missingInformation: ["Signed merger agreement is missing."],
@@ -263,7 +263,7 @@ describe("executeAnnualReportTaxAnalysisV1", () => {
   it("synthesizes minimum forensic coverage when the AI returns an empty review but extraction signals exist", async () => {
     generateGeminiStructuredOutputMock.mockResolvedValue({
       ok: true,
-      model: "gemini-2.5-pro",
+      model: "qwen-max",
       output: {
         executiveSummary: "",
         findings: [],

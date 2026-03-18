@@ -100,7 +100,7 @@ function readRegressionConfigFileV1(): RegressionConfigFileV1 | null {
 }
 
 function buildEnvForRuntimeModeV1(runtimeMode: RuntimeModeV1): Env {
-  const apiKey = process.env.GEMINI_API_KEY ?? process.env.AI_PROVIDER_API_KEY;
+  const apiKey = process.env.QWEN_API_KEY ?? process.env.AI_PROVIDER_API_KEY;
   return {
     AI_PROVIDER_API_KEY: process.env.AI_PROVIDER_API_KEY,
     ANNUAL_REPORT_AI_OVERDRIVE_ENABLED:
@@ -108,9 +108,9 @@ function buildEnvForRuntimeModeV1(runtimeMode: RuntimeModeV1): Env {
     APP_BASE_URL: "http://localhost:5173",
     AUTH_TOKEN_HMAC_SECRET: "local-annual-report-speed-regression",
     DB: {} as Env["DB"],
-    GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? apiKey,
-    GEMINI_FAST_MODEL: process.env.GEMINI_FAST_MODEL,
-    GEMINI_THINKING_MODEL: process.env.GEMINI_THINKING_MODEL,
+    QWEN_API_KEY: process.env.QWEN_API_KEY ?? apiKey,
+    QWEN_FAST_MODEL: process.env.QWEN_FAST_MODEL,
+    QWEN_THINKING_MODEL: process.env.QWEN_THINKING_MODEL,
   };
 }
 

@@ -69,7 +69,7 @@ function installUploadXhrMock(input: {
         input.includeRuntimeHeader !== false &&
         name.toLowerCase() === "x-dink-annual-report-runtime"
       ) {
-        return "annual-report-deep-extraction.v3|gemini-2.5-flash|gemini-2.5-pro";
+        return "annual-report-deep-extraction.v3|qwen-plus|qwen-max";
       }
       return null;
     }
@@ -106,7 +106,7 @@ describe("workspace annual report API client v1", () => {
       runtime: {
         extractionEngineVersion: "annual-report-deep-extraction.v2",
         runtimeFingerprint:
-          "annual-report-deep-extraction.v2|gemini-2.5-flash|gemini-2.5-pro",
+          "annual-report-deep-extraction.v2|qwen-plus|qwen-max",
       },
       extraction: {
         schemaVersion: "annual_report_extraction_v1",
@@ -140,7 +140,7 @@ describe("workspace annual report API client v1", () => {
         engineMetadata: {
           extractionEngineVersion: "annual-report-deep-extraction.v2",
           runtimeFingerprint:
-            "annual-report-deep-extraction.v2|gemini-2.5-flash|gemini-2.5-pro",
+            "annual-report-deep-extraction.v2|qwen-plus|qwen-max",
         },
         confirmation: {
           isConfirmed: true,

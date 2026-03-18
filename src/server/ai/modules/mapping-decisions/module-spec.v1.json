@@ -4,7 +4,7 @@
   "moduleVersion": "v1",
   "promptVersion": "mapping-decisions.prompts.v1",
   "runtime": {
-    "provider": "gemini",
+    "provider": "qwen",
     "modelTier": "fast"
   },
   "purpose": "AI-first mapping of trial-balance rows into the canonical tax-category catalog, using annual-report context when available and conservative AI fallback outputs when live model execution is unavailable.",

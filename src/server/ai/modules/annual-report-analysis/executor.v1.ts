@@ -5501,7 +5501,7 @@ export async function executeAnnualReportAnalysisV1(
       promptVersion: input.config.moduleSpec.promptVersion,
       policyVersion: input.config.policyPack.policyVersion,
       activePatchVersions: input.config.moduleSpec.policy.activePatchVersions,
-      provider: "gemini",
+      provider: "qwen",
       model: selectedModelName,
       modelTier: input.config.moduleSpec.runtime.modelTier,
       generatedAt: input.generatedAt,

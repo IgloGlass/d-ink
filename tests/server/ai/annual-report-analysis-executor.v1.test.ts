@@ -157,7 +157,7 @@ describe("executeAnnualReportAnalysisV1", () => {
     generateGeminiStructuredOutputMock
       .mockResolvedValueOnce({
         ok: true,
-        model: "gemini-2.5-flash",
+        model: "qwen-plus",
         output: {
           schemaVersion: "annual_report_ai_section_locator_v1",
           sections: {
@@ -177,7 +177,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        model: "gemini-2.5-flash",
+        model: "qwen-plus",
         output: {
           schemaVersion: "annual_report_ai_core_facts_v1",
           fields: {
@@ -222,7 +222,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        model: "gemini-2.5-flash",
+        model: "qwen-plus",
         output: {
           schemaVersion: "annual_report_ai_statements_only_v1",
           ink2rExtracted: {
@@ -283,8 +283,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-1",
       generatedAt: "2026-03-09T10:00:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
     });
 
@@ -310,7 +310,7 @@ describe("executeAnnualReportAnalysisV1", () => {
     generateGeminiStructuredOutputMock
       .mockResolvedValueOnce({
         ok: true,
-        model: "gemini-2.5-flash",
+        model: "qwen-plus",
         output: {
           schemaVersion: "annual_report_ai_section_locator_v1",
           sections: {
@@ -330,7 +330,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        model: "gemini-2.5-flash",
+        model: "qwen-plus",
         output: {
           schemaVersion: "annual_report_ai_core_facts_v1",
           fields: {
@@ -386,7 +386,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        model: "gemini-2.5-flash",
+        model: "qwen-plus",
         output: {
           schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
           depreciationContext: { assetAreas: [], evidence: [] },
@@ -397,7 +397,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        model: "gemini-2.5-flash",
+        model: "qwen-plus",
         output: {
           schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
           netInterestContext: { notes: [], evidence: [] },
@@ -410,7 +410,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        model: "gemini-2.5-flash",
+        model: "qwen-plus",
         output: {
           schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
           netInterestContext: { notes: [], evidence: [] },
@@ -423,7 +423,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       });
     generateGeminiStructuredOutputMock.mockResolvedValue({
       ok: true,
-      model: "gemini-2.5-flash",
+      model: "qwen-plus",
       output: {
         schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
         netInterestContext: { notes: [], evidence: [] },
@@ -447,8 +447,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-2",
       generatedAt: "2026-03-09T10:00:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
     });
 
@@ -475,7 +475,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: section locator.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_section_locator_v1",
             sections: {
@@ -497,7 +497,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -516,7 +516,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: createCombinedExtractionOutputV1({
             taxExpenseNotes: ["Current tax disclosed"],
           }),
@@ -591,8 +591,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-3",
       generatedAt: "2026-03-09T10:00:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
     });
 
@@ -624,7 +624,7 @@ describe("executeAnnualReportAnalysisV1", () => {
     generateGeminiStructuredOutputMock
       .mockResolvedValueOnce({
         ok: true,
-        model: "gemini-2.5-flash",
+        model: "qwen-plus",
         output: {
           schemaVersion: "annual_report_ai_section_locator_v1",
           sections: {
@@ -644,7 +644,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        model: "gemini-2.5-flash",
+        model: "qwen-plus",
         output: {
           schemaVersion: "annual_report_ai_core_facts_v1",
           fields: {
@@ -685,8 +685,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-4",
       generatedAt: "2026-03-09T10:00:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
     });
 
@@ -713,7 +713,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: section locator.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_section_locator_v1",
             sections: {
@@ -735,7 +735,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -754,7 +754,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: createCombinedExtractionOutputV1(),
         };
       }
@@ -820,8 +820,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-5",
       generatedAt: "2026-03-09T10:00:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
     });
 
@@ -853,7 +853,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: section locator.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_section_locator_v1",
             sections: {
@@ -875,7 +875,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -894,7 +894,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: createCombinedExtractionOutputV1(),
         };
       }
@@ -960,8 +960,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-6",
       generatedAt: "2026-03-09T10:00:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       runtimeMode: "ai_overdrive",
     });
@@ -1003,7 +1003,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -1022,7 +1022,7 @@ describe("executeAnnualReportAnalysisV1", () => {
 
       return {
         ok: true,
-        model: "gemini-2.5-flash",
+        model: "qwen-plus",
         output: createCombinedExtractionOutputV1(),
       };
     });
@@ -1080,8 +1080,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-core-facts-single-shot",
       generatedAt: "2026-03-10T09:20:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
     });
 
@@ -1112,7 +1112,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -1131,7 +1131,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: financial statements extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_statements_only_v1",
             ink2rExtracted: {
@@ -1157,7 +1157,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
             depreciationContext: { assetAreas: [], evidence: [] },
@@ -1171,7 +1171,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (finance & other).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
             netInterestContext: { notes: ["Räntekostnader disclosed"], evidence: [] },
@@ -1245,8 +1245,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-skip-combined",
       generatedAt: "2026-03-10T09:45:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
     });
 
@@ -1294,7 +1294,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: section locator.")) {
         return {
           ok: true,
-          model: "gemini-2.5-pro",
+          model: "qwen-max",
           output: {
             schemaVersion: "annual_report_ai_section_locator_v1",
             sections: {
@@ -1316,7 +1316,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-pro",
+          model: "qwen-max",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -1335,7 +1335,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: financial statements extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-pro",
+          model: "qwen-max",
           output: {
             schemaVersion: "annual_report_ai_statements_only_v1",
             ink2rExtracted: {
@@ -1351,7 +1351,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
         return {
           ok: true,
-          model: "gemini-2.5-pro",
+          model: "qwen-max",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
             depreciationContext: { assetAreas: [], evidence: [] },
@@ -1365,7 +1365,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (finance & other).")) {
         return {
           ok: true,
-          model: "gemini-2.5-pro",
+          model: "qwen-max",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
             netInterestContext: { notes: ["Rantekostnader disclosed"], evidence: [] },
@@ -1440,8 +1440,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-overdrive-skip-combined",
       generatedAt: "2026-03-11T09:45:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       runtimeMode: "ai_overdrive",
       onProgress,
@@ -1479,7 +1479,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: section locator.")) {
         return {
           ok: true,
-          model: "gemini-2.5-pro",
+          model: "qwen-max",
           output: {
             schemaVersion: "annual_report_ai_section_locator_v1",
             sections: {
@@ -1501,7 +1501,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-pro",
+          model: "qwen-max",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -1520,7 +1520,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-pro",
+          model: "qwen-max",
           output: createCombinedExtractionOutputV1({
             incomeStatement: [
               { code: "profit_before_tax", label: "Resultat före skatt", currentYearValue: 545286 },
@@ -1533,7 +1533,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: financial statements extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-pro",
+          model: "qwen-max",
           output: {
             schemaVersion: "annual_report_ai_statements_only_v1",
             ink2rExtracted: {
@@ -1553,7 +1553,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
         return {
           ok: true,
-          model: "gemini-2.5-pro",
+          model: "qwen-max",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
             depreciationContext: { assetAreas: [], evidence: [] },
@@ -1567,7 +1567,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (finance & other).")) {
         return {
           ok: true,
-          model: "gemini-2.5-pro",
+          model: "qwen-max",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
             netInterestContext: { notes: ["Räntekostnader disclosed"], evidence: [] },
@@ -1627,8 +1627,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-ai-overdrive",
       generatedAt: "2026-03-10T10:15:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       runtimeMode: "ai_overdrive",
     });
@@ -1667,7 +1667,7 @@ describe("executeAnnualReportAnalysisV1", () => {
     generateGeminiStructuredOutputMock
       .mockResolvedValueOnce({
         ok: true,
-        model: "gemini-2.5-flash",
+        model: "qwen-plus",
         output: {
           schemaVersion: "annual_report_ai_section_locator_v1",
           sections: {
@@ -1687,7 +1687,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        model: "gemini-2.5-flash",
+        model: "qwen-plus",
         output: {
           schemaVersion: "annual_report_ai_core_facts_v1",
           fields: {
@@ -1704,7 +1704,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        model: "gemini-2.5-flash",
+        model: "qwen-plus",
         output: createCombinedExtractionOutputV1(),
       });
 
@@ -1737,8 +1737,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-7",
       generatedAt: "2026-03-09T10:00:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       onProgress,
     });
@@ -1777,7 +1777,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -1807,14 +1807,14 @@ describe("executeAnnualReportAnalysisV1", () => {
         }
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: createCombinedExtractionOutputV1(),
         };
       }
       if (userInstruction.includes("Stage: financial statements extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_statements_only_v1",
             ink2rExtracted: {
@@ -1837,7 +1837,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       }
       return {
         ok: true,
-        model: "gemini-2.5-flash",
+        model: "qwen-plus",
         output: {
           schemaVersion: "annual_report_ai_section_locator_v1",
           sections: {
@@ -1909,8 +1909,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-8",
       generatedAt: "2026-03-09T10:00:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       runtimeMode: "ai_overdrive",
     });
@@ -2054,7 +2054,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -2073,7 +2073,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: createCombinedExtractionOutputV1(),
         };
       }
@@ -2142,8 +2142,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-9",
       generatedAt: "2026-03-09T10:00:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       onProgress,
     });
@@ -2166,7 +2166,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -2185,7 +2185,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: createCombinedExtractionOutputV1(),
         };
       }
@@ -2253,8 +2253,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-10",
       generatedAt: "2026-03-09T10:00:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
     });
 
@@ -2316,7 +2316,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -2363,7 +2363,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: financial statements extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_statements_only_v1",
             ink2rExtracted: {
@@ -2405,7 +2405,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
             depreciationContext: { assetAreas: [], evidence: [] },
@@ -2420,7 +2420,7 @@ describe("executeAnnualReportAnalysisV1", () => {
         financeAttemptInputs.push(usesDocuments ? "pdf" : "text");
         return {
           ok: true,
-          model: usesDocuments ? "gemini-2.5-pro" : "gemini-2.5-flash",
+          model: usesDocuments ? "qwen-max" : "qwen-plus",
           output: usesDocuments
             ? {
                 schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
@@ -2499,8 +2499,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-finance-retry",
       generatedAt: "2026-03-12T18:00:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
     });
 
@@ -2549,7 +2549,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -2568,7 +2568,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_combined_text_extraction_v1",
             documentWarnings: [],
@@ -2624,7 +2624,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
             depreciationContext: { assetAreas: [], evidence: [] },
@@ -2643,7 +2643,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (finance & other).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
             netInterestContext: { notes: [], evidence: [] },
@@ -2711,8 +2711,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-combined-plus-targeted-notes",
       generatedAt: "2026-03-12T09:00:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       runtimeMode: "ai_overdrive",
     });
@@ -2752,7 +2752,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -2771,7 +2771,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: createCombinedExtractionOutputV1({
             reserveNotes: ["Periodiseringsfond redovisas i not 8."],
             taxExpenseNotes: [
@@ -2785,7 +2785,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax expense note extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_expense_note_v1",
             taxExpenseContext: { notes: [], evidence: [] },
@@ -2796,7 +2796,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: relevant tax-note locator.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_relevant_note_locator_v1",
             relevantNotes: [],
@@ -2863,8 +2863,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-combined-skips-targeted-notes",
       generatedAt: "2026-03-12T11:30:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       runtimeMode: "ai_overdrive",
     });
@@ -2888,7 +2888,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -2907,7 +2907,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: createCombinedExtractionOutputV1({
             reserveNotes: ["Periodiseringsfond redovisas i not 8."],
             taxExpenseNotes: [
@@ -2919,7 +2919,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax expense note extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_expense_note_v1",
             taxExpenseContext: { notes: [], evidence: [] },
@@ -2930,7 +2930,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: relevant tax-note locator.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_relevant_note_locator_v1",
             relevantNotes: [],
@@ -2951,7 +2951,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (finance & other).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
             netInterestContext: {
@@ -3010,8 +3010,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-combined-finance-only-follow-up",
       generatedAt: "2026-03-12T12:00:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       runtimeMode: "ai_overdrive",
     });
@@ -3042,7 +3042,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -3061,7 +3061,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_combined_text_extraction_v1",
             documentWarnings: [],
@@ -3115,7 +3115,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
             depreciationContext: { assetAreas: [], evidence: [] },
@@ -3129,7 +3129,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (finance & other).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
             netInterestContext: { notes: [], evidence: [] },
@@ -3144,7 +3144,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: relevant tax-note locator.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_relevant_note_locator_v1",
             relevantNotes: [
@@ -3217,8 +3217,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-relevant-notes",
       generatedAt: "2026-03-12T10:30:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       runtimeMode: "ai_overdrive",
     });
@@ -3265,7 +3265,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -3284,14 +3284,14 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: createCombinedExtractionOutputV1(),
         };
       }
       if (userInstruction.includes("Stage: tax expense note extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_expense_note_v1",
             taxExpenseContext: { notes: [], evidence: [] },
@@ -3302,7 +3302,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: relevant tax-note locator.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_relevant_note_locator_v1",
             relevantNotes: [
@@ -3322,7 +3322,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
             depreciationContext: { assetAreas: [], evidence: [] },
@@ -3336,7 +3336,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (finance & other).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
             netInterestContext: { notes: [], evidence: [] },
@@ -3392,8 +3392,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-invalid-relevant-note-category",
       generatedAt: "2026-03-12T12:30:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       runtimeMode: "ai_overdrive",
     });
@@ -3425,7 +3425,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -3444,14 +3444,14 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: createCombinedExtractionOutputV1(),
         };
       }
       if (userInstruction.includes("Stage: tax expense note extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_expense_note_v1",
             taxExpenseContext: { notes: [], evidence: [] },
@@ -3462,7 +3462,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: relevant tax-note locator.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_relevant_note_locator_v1",
             relevantNotes: [
@@ -3483,7 +3483,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
             depreciationContext: { assetAreas: [], evidence: [] },
@@ -3497,7 +3497,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (finance & other).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
             netInterestContext: {
@@ -3554,8 +3554,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-no-duplicate-relevant-note-backfill",
       generatedAt: "2026-03-12T13:00:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       runtimeMode: "ai_overdrive",
     });
@@ -3591,7 +3591,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -3610,14 +3610,14 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: createCombinedExtractionOutputV1(),
         };
       }
       if (userInstruction.includes("Stage: tax expense note extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_expense_note_v1",
             taxExpenseContext: {
@@ -3641,7 +3641,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: relevant tax-note locator.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_relevant_note_locator_v1",
             relevantNotes: [],
@@ -3652,7 +3652,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
             depreciationContext: { assetAreas: [], evidence: [] },
@@ -3666,7 +3666,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (finance & other).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
             netInterestContext: { notes: [], evidence: [] },
@@ -3720,8 +3720,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-tax-expense-note",
       generatedAt: "2026-03-12T11:00:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       runtimeMode: "ai_overdrive",
     });
@@ -3752,7 +3752,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -3771,7 +3771,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: createCombinedExtractionOutputV1(),
         };
       }
@@ -3791,7 +3791,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
             depreciationContext: { assetAreas: [], evidence: [] },
@@ -3805,7 +3805,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (finance & other).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
             netInterestContext: { notes: [], evidence: [] },
@@ -3861,8 +3861,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-deterministic-note-fallback",
       generatedAt: "2026-03-12T15:45:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       runtimeMode: "ai_overdrive",
     });
@@ -3918,7 +3918,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -3957,7 +3957,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
             depreciationContext: { assetAreas: [], evidence: [] },
@@ -3971,7 +3971,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (finance & other).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
             netInterestContext: { notes: [], evidence: [] },
@@ -4084,8 +4084,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-deterministic-statement-skip",
       generatedAt: "2026-03-12T10:00:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       runtimeMode: "ai_overdrive",
     });
@@ -4115,7 +4115,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: section locator.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_section_locator_v1",
             sections: {
@@ -4137,7 +4137,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -4156,7 +4156,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: financial statements extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_statements_only_v1",
             ink2rExtracted: {
@@ -4172,7 +4172,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
             depreciationContext: { assetAreas: [], evidence: [] },
@@ -4185,7 +4185,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       }
       return {
         ok: true,
-        model: "gemini-2.5-flash",
+        model: "qwen-plus",
         output: {
           schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
           netInterestContext: { notes: [], evidence: [] },
@@ -4222,8 +4222,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-11",
       generatedAt: "2026-03-09T10:00:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
     });
 
@@ -4267,7 +4267,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -4286,7 +4286,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: createCombinedExtractionOutputV1(),
         };
       }
@@ -4326,8 +4326,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-seed-fallback",
       generatedAt: "2026-03-10T10:15:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
       runtimeMode: "ai_overdrive",
     });
@@ -4380,7 +4380,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -4399,7 +4399,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: financial statements extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_statements_only_v1",
             ink2rExtracted: {
@@ -4423,7 +4423,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
             depreciationContext: { assetAreas: [], evidence: [] },
@@ -4436,7 +4436,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       }
       return {
         ok: true,
-        model: "gemini-2.5-flash",
+        model: "qwen-plus",
         output: {
           schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
           netInterestContext: { notes: [], evidence: [] },
@@ -4532,8 +4532,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-legacy-keys",
       generatedAt: "2026-03-10T10:50:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
     });
 
@@ -4599,7 +4599,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: core facts extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_core_facts_v1",
             fields: {
@@ -4623,7 +4623,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: financial statements extraction.")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_statements_only_v1",
             ink2rExtracted: {
@@ -4647,7 +4647,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
             depreciationContext: { assetAreas: [], evidence: [] },
@@ -4661,7 +4661,7 @@ describe("executeAnnualReportAnalysisV1", () => {
       if (userInstruction.includes("Stage: tax notes (finance & other).")) {
         return {
           ok: true,
-          model: "gemini-2.5-flash",
+          model: "qwen-plus",
           output: {
             schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
             netInterestContext: { notes: [], evidence: [] },
@@ -4715,8 +4715,8 @@ describe("executeAnnualReportAnalysisV1", () => {
       generateId: () => "run-pbt-precedence",
       generatedAt: "2026-03-10T10:30:00.000Z",
       modelConfig: {
-        fastModel: "gemini-2.5-flash",
-        thinkingModel: "gemini-2.5-pro",
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
       },
     });
 
