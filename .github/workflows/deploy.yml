@@ -5,9 +5,9 @@ on:
     branches: [main]
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    name: Build & Deploy
+    name: Build
     steps:
       - uses: actions/checkout@v4
 
@@ -26,14 +26,65 @@ jobs:
       - name: Build frontend
         run: node node_modules/vite/bin/vite.js build
 
-      - name: Deploy Worker (API)
-        run: node node_modules/wrangler/bin/wrangler.js deploy
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 1
+
+  deploy-pages:
+    runs-on: ubuntu-latest
+    name: Deploy Pages (frontend)
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Deploy to Cloudflare Pages
+        run: node node_modules/wrangler/bin/wrangler.js pages deploy dist --project-name d-ink-demo --commit-dirty=true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: f06b4d7c7ec35f6b3e44993d241e9d65
 
-      - name: Deploy Pages (frontend)
-        run: node node_modules/wrangler/bin/wrangler.js pages deploy dist --project-name d-ink-demo --commit-dirty=true
+  deploy-worker:
+    runs-on: ubuntu-latest
+    name: Deploy Worker (API)
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Deploy Worker
+        run: node node_modules/wrangler/bin/wrangler.js deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: f06b4d7c7ec35f6b3e44993d241e9d65
