@@ -5,7 +5,7 @@ compatibility_date = "2024-11-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "d-ink-v1"
-database_id = "00000000-0000-4000-8000-000000000001"
+database_id = "b7a61b67-93a1-4e0e-a6dd-5dbb6f67da3b"
 migrations_dir = "src/db/migrations"
 
 [[r2_buckets]]
