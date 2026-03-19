@@ -262,7 +262,10 @@ async function runBatchV1(input: {
       modelTier: input.modelTier,
       responseSchema: MappingAiProposalProviderResultV1Schema,
       systemInstruction: MAPPING_DECISIONS_SYSTEM_PROMPT_V1,
-      timeoutMs: input.config.policyPack.timeouts.requestTimeoutMs,
+      timeoutMs:
+        input.modelTier === "thinking"
+          ? input.config.policyPack.timeouts.thinkingRequestTimeoutMs
+          : input.config.policyPack.timeouts.requestTimeoutMs,
       signal: input.signal,
       userInstruction: buildInstructionV1({
         annualReportContext: input.annualReportContext,

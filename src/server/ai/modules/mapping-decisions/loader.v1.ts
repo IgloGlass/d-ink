@@ -25,6 +25,8 @@ const MappingDecisionsPolicyPackV1Schema = z
     timeouts: z
       .object({
         requestTimeoutMs: z.number().int().positive(),
+        /** Separate, longer timeout for the thinking-model escalation pass. */
+        thinkingRequestTimeoutMs: z.number().int().positive(),
       })
       .strict(),
     classificationStrategy: z

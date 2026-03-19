@@ -4687,7 +4687,10 @@ export function createCompanyLifecycleDepsV1(env: Env): CompanyLifecycleDepsV1 {
 export function createTrialBalancePipelineRunDepsV1(
   env: Env,
 ): TrialBalancePipelineRunDepsV1 {
-  const trialBalanceImportAiExecutionBudgetMs = 120_000;
+  // Budget accounts for: initial fast-model pass + thinking-model escalation
+  // pass, both running in parallel. Thinking model (qwen-max) can take up to
+  // 90s per request; 300s gives two full retry cycles with headroom.
+  const trialBalanceImportAiExecutionBudgetMs = 300_000;
 
   return {
     artifactRepository: createD1TbPipelineArtifactRepositoryV1(env.DB),
