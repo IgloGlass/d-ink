@@ -18,6 +18,12 @@ export type AiModelConfigV1 = {
   fastModel: string;
   /** Model name used for slower, higher-quality requests. */
   thinkingModel: string;
+  /**
+   * Optional base URL override for the provider's API endpoint.
+   * Used by the Qwen adapter to switch between domestic and international
+   * DashScope endpoints. Ignored by other adapters.
+   */
+  baseUrl?: string;
 };
 
 // ---------------------------------------------------------------------------

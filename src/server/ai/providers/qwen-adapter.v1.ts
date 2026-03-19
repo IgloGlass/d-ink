@@ -23,7 +23,7 @@ import type {
 // Constants
 // ---------------------------------------------------------------------------
 
-const DASHSCOPE_BASE_URL =
+const DASHSCOPE_DEFAULT_BASE_URL =
   "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
 
 const DEFAULT_TIMEOUT_MS = 90_000;
@@ -187,6 +187,7 @@ type DashScopeResponse = {
 
 async function callDashScope(input: {
   apiKey: string;
+  baseUrl?: string;
   model: string;
   systemMessage: string;
   userMessage: string;
@@ -194,6 +195,7 @@ async function callDashScope(input: {
   maxTokens?: number;
   signal: AbortSignal;
 }): Promise<DashScopeResponse> {
+  const baseUrl = input.baseUrl ?? DASHSCOPE_DEFAULT_BASE_URL;
   const body = JSON.stringify({
     model: input.model,
     messages: [
@@ -205,7 +207,7 @@ async function callDashScope(input: {
     max_tokens: input.maxTokens ?? 8192,
   });
 
-  const response = await fetch(`${DASHSCOPE_BASE_URL}/chat/completions`, {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${input.apiKey}`,
@@ -269,6 +271,7 @@ async function generateStructuredOutput<TOutput>(adapterInput: {
       execute: (signal) =>
         callDashScope({
           apiKey: adapterInput.apiKey,
+          baseUrl: adapterInput.modelConfig.baseUrl,
           model,
           systemMessage,
           userMessage,

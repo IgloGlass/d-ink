@@ -1050,12 +1050,7 @@ export function AccountMappingGridV1({
                         style={{ width: effectiveColumnWidths.closingBalance }}
                         className="account-mapper__cell account-mapper__cell--balance"
                       >
-                        <div className="account-mapper__cell-title">
-                          {formatBalanceValueV1(row.closingBalance)}
-                        </div>
-                        <div className="account-mapper__cell-subtle">
-                          Closing balance
-                        </div>
+                        {formatBalanceValueV1(row.closingBalance)}
                       </div>
 
                       <div

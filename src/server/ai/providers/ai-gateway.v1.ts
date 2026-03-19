@@ -40,6 +40,7 @@ const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
     getModelConfig: (env) => ({
       fastModel: env.QWEN_FAST_MODEL ?? "qwen-plus",
       thinkingModel: env.QWEN_THINKING_MODEL ?? "qwen-max",
+      baseUrl: env.QWEN_BASE_URL,
     }),
   },
   openai: {

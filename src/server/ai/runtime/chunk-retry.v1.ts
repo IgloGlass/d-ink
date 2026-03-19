@@ -40,6 +40,17 @@ export function isRetryableAiErrorV1(error: RetryableAiErrorV1): boolean {
     return false;
   }
 
+  // Auth failures are permanent — retrying will not help and wastes time.
+  if (
+    error.message.includes("HTTP 401") ||
+    error.message.includes("HTTP 403") ||
+    error.message.toLowerCase().includes("invalid api key") ||
+    error.message.toLowerCase().includes("authentication failed") ||
+    error.message.toLowerCase().includes("unauthorized")
+  ) {
+    return false;
+  }
+
   return (
     error.code === "MODEL_EXECUTION_FAILED" ||
     error.message.includes("429") ||

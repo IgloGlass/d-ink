@@ -37,6 +37,7 @@ export interface Env {
   DEV_AUTH_DEFAULT_ROLE?: string;
   DEV_AUTH_DEFAULT_TENANT_ID?: string;
   QWEN_API_KEY?: string;
+  QWEN_BASE_URL?: string;
   QWEN_FAST_MODEL?: string;
   QWEN_THINKING_MODEL?: string;
   OPENAI_API_KEY?: string;
