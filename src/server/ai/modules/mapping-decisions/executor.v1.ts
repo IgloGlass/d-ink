@@ -723,12 +723,17 @@ export async function executeMappingDecisionsModelV1(
               }
               const result = await runBatchWithTierFallbackV1({
                 apiKey: input.apiKey,
+                env: input.env,
                 annualReportContext: input.annualReportContext,
                 config: input.config,
                 modelConfig: input.modelConfig,
                 rows: chunk,
                 preferredTier: input.config.moduleSpec.runtime.modelTier,
-                fallbackTier: input.config.policyPack.escalation.modelTier,
+                // No tier fallback in initial pass — escalation pass handles
+                // thinking-model quality uplift for tax-sensitive rows.
+                // Tier fallback here doubles per-attempt time (45s + 90s = 135s)
+                // and pushes 3-pass total past the execution budget.
+                fallbackTier: undefined,
                 signal,
               });
               if (signal.aborted) {
@@ -791,7 +796,7 @@ export async function executeMappingDecisionsModelV1(
           );
         }
 
-        if (omittedRowsFromInitialPass.length > 0) {
+        if (omittedRowsFromInitialPass.length > 0 && !signal.aborted) {
           degradedDiagnostics.add(
             "At least one model response omitted requested rows.",
           );
@@ -815,12 +820,13 @@ export async function executeMappingDecisionsModelV1(
               }
               const result = await runBatchWithTierFallbackV1({
                 apiKey: input.apiKey,
+                env: input.env,
                 annualReportContext: input.annualReportContext,
                 config: input.config,
                 modelConfig: input.modelConfig,
                 rows: chunk,
                 preferredTier: input.config.moduleSpec.runtime.modelTier,
-                fallbackTier: input.config.policyPack.escalation.modelTier,
+                fallbackTier: undefined,
                 signal,
               });
               if (signal.aborted) {
@@ -885,7 +891,7 @@ export async function executeMappingDecisionsModelV1(
           );
         });
 
-        if (escalatedRows.length > 0) {
+        if (escalatedRows.length > 0 && !signal.aborted) {
           const escalatedBatches = chunkRowsV1(
             escalatedRows,
             effectiveBatchSize,
@@ -914,6 +920,7 @@ export async function executeMappingDecisionsModelV1(
               }
               const result = await runBatchWithTierFallbackV1({
                 apiKey: input.apiKey,
+                env: input.env,
                 annualReportContext: input.annualReportContext,
                 config: input.config,
                 modelConfig: input.modelConfig,
