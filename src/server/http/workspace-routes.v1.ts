@@ -140,6 +140,30 @@ function createAnnualReportRuntimeHeadersV1(env: Env): HeadersInit {
   };
 }
 
+/**
+ * Stamps the annual-report runtime header onto every response — including
+ * error responses — so the client can always read the real error body instead
+ * of falling back to the generic RUNTIME_MISMATCH message.
+ */
+async function withAnnualReportRuntimeHeaderV1(
+  env: Env,
+  handler: () => Promise<Response>,
+): Promise<Response> {
+  const response = await handler();
+  const runtimeHeaders = createAnnualReportRuntimeHeadersV1(
+    env,
+  ) as Record<string, string>;
+  const newHeaders = new Headers(response.headers);
+  for (const [key, value] of Object.entries(runtimeHeaders)) {
+    newHeaders.set(key, value);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: newHeaders,
+  });
+}
+
 function inferAnnualReportFileTypeFromNameV1(
   fileName: string,
 ): AnnualReportFileTypeV1 | null {
@@ -2845,11 +2869,13 @@ export async function handleWorkspaceRoutesV1(
       return createMethodNotAllowedResponseV1("POST");
     }
 
-    return handleCreateAnnualReportUploadSessionRouteV1(
-      request,
-      env,
-      appBaseUrl,
-      routeSegments[0],
+    return withAnnualReportRuntimeHeaderV1(env, () =>
+      handleCreateAnnualReportUploadSessionRouteV1(
+        request,
+        env,
+        appBaseUrl,
+        routeSegments[0],
+      ),
     );
   }
 
@@ -2864,12 +2890,14 @@ export async function handleWorkspaceRoutesV1(
       return createMethodNotAllowedResponseV1("PUT");
     }
 
-    return handleUploadAnnualReportSourceRouteV1(
-      request,
-      env,
-      appBaseUrl,
-      routeSegments[0],
-      routeSegments[2],
+    return withAnnualReportRuntimeHeaderV1(env, () =>
+      handleUploadAnnualReportSourceRouteV1(
+        request,
+        env,
+        appBaseUrl,
+        routeSegments[0],
+        routeSegments[2],
+      ),
     );
   }
 
