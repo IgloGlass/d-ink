@@ -39,4 +39,7 @@ export interface Env {
   QWEN_API_KEY?: string;
   QWEN_FAST_MODEL?: string;
   QWEN_THINKING_MODEL?: string;
+  OPENAI_API_KEY?: string;
+  OPENAI_FAST_MODEL?: string;
+  OPENAI_THINKING_MODEL?: string;
 }

@@ -18,6 +18,7 @@ import type {
   AiStructuredOutputRequestV1,
   AiStructuredOutputResultV1,
 } from "./ai-provider.v1";
+import { openAiAdapter } from "./openai-adapter.v1";
 import { qwenAdapter } from "./qwen-adapter.v1";
 
 // ---------------------------------------------------------------------------
@@ -37,6 +38,14 @@ const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
     getModelConfig: (env) => ({
       fastModel: env.QWEN_FAST_MODEL ?? "qwen-plus",
       thinkingModel: env.QWEN_THINKING_MODEL ?? "qwen-max",
+    }),
+  },
+  openai: {
+    adapter: openAiAdapter,
+    getApiKey: (env) => env.OPENAI_API_KEY ?? env.AI_PROVIDER_API_KEY,
+    getModelConfig: (env) => ({
+      fastModel: env.OPENAI_FAST_MODEL ?? "gpt-4o-mini",
+      thinkingModel: env.OPENAI_THINKING_MODEL ?? "gpt-4o",
     }),
   },
 };
