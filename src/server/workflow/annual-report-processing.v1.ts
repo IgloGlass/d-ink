@@ -1531,7 +1531,9 @@ export async function uploadAnnualReportSourceV1(
         message: error instanceof Error ? error.message : "Upload failed.",
         userMessage:
           "The uploaded annual report could not be stored for analysis.",
-        context: {},
+        context: {
+          reason: error instanceof Error ? error.message : String(error),
+        },
       }),
     );
   }
