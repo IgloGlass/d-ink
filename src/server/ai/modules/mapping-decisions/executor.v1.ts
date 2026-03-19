@@ -505,6 +505,8 @@ function buildMappingDecisionSetV1(input: {
       row,
       proposal: originalProposal,
     });
+    const guardrailApplied =
+      proposal.selectedCategoryCode !== originalProposal.selectedCategoryCode;
     const proposedCategory = getSilverfinTaxCategoryByCodeV1(
       originalProposal.selectedCategoryCode as SilverfinTaxCategoryCodeV1,
     );
@@ -536,8 +538,15 @@ function buildMappingDecisionSetV1(input: {
       ],
       policyRuleReference: proposal.policyRuleReference,
       reviewFlag: proposal.reviewFlag,
-      status: "proposed" as const,
+      status: guardrailApplied ? ("overridden" as const) : ("proposed" as const),
       source: "ai" as const,
+      override: guardrailApplied
+        ? {
+            scope: "return" as const,
+            reason:
+              "Policy guardrail applied automatically because the selected category would otherwise conflict with the balance-sheet accumulated depreciation rule.",
+          }
+        : undefined,
       aiTrace: {
         rationale: proposal.rationale,
         annualReportContextReferences: proposal.annualReportContextReferences,

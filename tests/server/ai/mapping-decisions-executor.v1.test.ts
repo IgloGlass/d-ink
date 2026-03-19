@@ -1557,6 +1557,11 @@ describe("mapping decisions executor reliability v1", () => {
 
     expect(result.mapping.decisions[0]?.selectedCategory.code).toBe("100000");
     expect(result.mapping.decisions[0]?.reviewFlag).toBe(true);
+    expect(result.mapping.decisions[0]?.status).toBe("overridden");
+    expect(result.mapping.decisions[0]?.override).toMatchObject({
+      scope: "return",
+      reason: expect.stringContaining("Policy guardrail applied automatically"),
+    });
     expect(result.mapping.decisions[0]?.policyRuleReference).toBe(
       "mapping.ai.guardrail.bs.building_land_leasehold_accumulated_depreciation.non_tax_sensitive.v1",
     );
