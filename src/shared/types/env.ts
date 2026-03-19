@@ -24,6 +24,8 @@ export interface AnnualReportProcessingQueueV1 {
 
 export interface Env {
   AUTH_TOKEN_HMAC_SECRET: string;
+  /** Which AI provider to use. Defaults to "qwen" if not set. */
+  AI_PROVIDER?: string;
   AI_PROVIDER_API_KEY?: string;
   ANNUAL_REPORT_AI_OVERDRIVE_ENABLED?: string;
   ANNUAL_REPORT_FILES?: AnnualReportSourceStoreV1;
