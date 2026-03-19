@@ -12,6 +12,9 @@ import type {
   AiStructuredOutputRequestV1,
   AiStructuredOutputResultV1,
 } from "./ai-provider.v1";
+import {
+  generateAiStructuredOutputV1 as generateAiStructuredOutputThroughGatewayV1,
+} from "./ai-gateway.v1";
 import { qwenAdapter } from "./qwen-adapter.v1";
 
 // Re-export the abstract types so executors have a single import point.
@@ -57,10 +60,18 @@ export function toBase64V1(bytes: Uint8Array): string {
  * if you have access to `env` and want the fully automatic selection path.
  */
 export async function generateAiStructuredOutputV1<TOutput>(input: {
+  env?: Env;
   apiKey?: string;
   modelConfig: AiModelConfigV1;
   request: AiStructuredOutputRequestV1;
 }): Promise<AiStructuredOutputResultV1<TOutput>> {
+  if (input.env) {
+    return generateAiStructuredOutputThroughGatewayV1<TOutput>({
+      env: input.env,
+      request: input.request,
+    });
+  }
+
   if (!input.apiKey) {
     return {
       ok: false,

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 
 import {
@@ -10,6 +10,7 @@ import { CardV1 } from "../../components/card-v1";
 import { EmptyStateV1 } from "../../components/empty-state-v1";
 import { GuidanceBannerV1 } from "../../components/guidance-banner-v1";
 import { StatusPill } from "../../components/status-pill";
+import { WorkspaceStatusTransitionV1 } from "../../components/workspace-status-transition-v1";
 import { listCompaniesByTenantV1 } from "../../lib/http/company-api";
 import {
   getActiveAnnualReportExtractionV1,
@@ -39,6 +40,7 @@ function formatVersionTimestampV1(raw: string | undefined): string | null {
 
 export function WorkspaceDashboardPageV1() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const principal = useRequiredSessionPrincipalV1();
   const { workspaceId } = useParams();
   const resolvedWorkspaceId = workspaceId ?? "";
@@ -173,6 +175,20 @@ export function WorkspaceDashboardPageV1() {
               →
             </button>
           </div>
+
+          <WorkspaceStatusTransitionV1
+            currentStatus={workspace.status}
+            tenantId={principal.tenantId}
+            workspaceId={workspace.id}
+            onTransitionSuccess={() => {
+              queryClient.invalidateQueries({
+                queryKey: ["workspace", principal.tenantId, resolvedWorkspaceId],
+              });
+              queryClient.invalidateQueries({
+                queryKey: ["workspaces", principal.tenantId],
+              });
+            }}
+          />
 
           <div className="workspace-dashboard__progress-rail">
             {coreModuleDefinitionsV1.map((mod) => {

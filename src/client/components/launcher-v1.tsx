@@ -60,14 +60,15 @@ export function LauncherV1({
 
   const filteredWorkspaces = useMemo(() => {
     const workspaces = workspaceListQuery.data?.workspaces ?? [];
+    // Only include workspaces whose company is known — orphaned records are hidden
+    const resolved = workspaces.filter((w) => companies.some((c) => c.id === w.companyId));
     const query = launcherQuery.trim().toLowerCase();
-    if (!query) return workspaces.slice(0, 6);
-    return workspaces.filter((w) => {
+    if (!query) return resolved.slice(0, 6);
+    return resolved.filter((w) => {
       const company = companies.find((c) => c.id === w.companyId);
       return (
         company?.legalName.toLowerCase().includes(query) ||
-        company?.organizationNumber.toLowerCase().includes(query) ||
-        w.id.toLowerCase().includes(query)
+        company?.organizationNumber.toLowerCase().includes(query)
       );
     }).slice(0, 6);
   }, [launcherQuery, workspaceListQuery.data, companies]);

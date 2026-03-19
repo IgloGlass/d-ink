@@ -29,6 +29,7 @@ import {
 } from "../../../../shared/contracts/annual-report-ai.v1";
 import type { AnnualReportProcessingRunStatusV1 } from "../../../../shared/contracts/annual-report-processing-run.v1";
 import { parseAiRunMetadataV1 } from "../../../../shared/contracts/ai-run.v1";
+import type { Env } from "../../../../shared/types/env";
 import {
   generateAiStructuredOutputV1,
   toBase64V1,
@@ -59,6 +60,7 @@ export type AnnualReportAnalysisRuntimeConfigV1 =
 
 export type ExecuteAnnualReportAnalysisInputV1 = {
   apiKey?: string;
+  env?: Env;
   config: AnnualReportAnalysisRuntimeConfigV1;
   document: AnnualReportPreparedDocumentV1;
   generateId: () => string;
@@ -812,6 +814,7 @@ function createEmptyTaxDeepV1(): AnnualReportAiExtractionResultV1["taxDeep"] {
 
 async function executeAnnualReportStageV1<TOutput>(input: {
   apiKey?: string;
+  env?: Env;
   modelConfig: AiModelConfigV1;
   modelTier: "fast" | "thinking";
   document: AnnualReportPreparedDocumentV1;
@@ -838,6 +841,7 @@ async function executeAnnualReportStageV1<TOutput>(input: {
   useResponseJsonSchema?: boolean;
 }) {
   return generateAiStructuredOutputV1<TOutput>({
+    env: input.env,
     apiKey: input.apiKey,
     modelConfig: input.modelConfig,
     request: {

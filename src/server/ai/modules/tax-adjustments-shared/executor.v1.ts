@@ -8,6 +8,7 @@ import type {
   MappedAdjustmentCandidateV1,
   TaxAdjustmentModuleContextV1,
 } from "../../../../shared/contracts/tax-adjustment-routing.v1";
+import type { Env } from "../../../../shared/types/env";
 import type { AiModelConfigV1 } from "../../providers/ai-provider-client.v1";
 import { generateAiStructuredOutputV1 } from "../../providers/ai-provider-client.v1";
 import type { AiModuleSpecV1 } from "../../runtime/module-config.v1";
@@ -47,6 +48,7 @@ type TaxAdjustmentPolicyRuntimeV1 = {
 
 export type ExecuteTaxAdjustmentSubmoduleInputV1<TPolicy> = {
   apiKey?: string;
+  env?: Env;
   annualReportTaxContext: TaxAdjustmentModuleContextV1;
   candidates: CandidateRowV1[];
   config: TaxAdjustmentModuleRuntimeConfigV1<TPolicy & TaxAdjustmentPolicyRuntimeV1>;
@@ -144,6 +146,7 @@ export async function executeTaxAdjustmentSubmoduleV1<TPolicy>(
       }),
     executeChunk: async (chunk) => {
       const result = await generateAiStructuredOutputV1({
+        env: input.env,
         apiKey: input.apiKey,
         modelConfig: input.modelConfig,
         request: {

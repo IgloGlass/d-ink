@@ -34,16 +34,6 @@ const REPLACE_ANNUAL_REPORT_CONFIRMATION_V1 =
 const CLEAR_ANNUAL_REPORT_CONFIRMATION_V1 =
   "Clear the current annual-report data? This will remove the active annual-report extraction and dependent tax outputs from this workspace. Historical versions will still be kept.";
 
-function confirmBrowserActionV1(message: string): boolean {
-  if (
-    typeof window === "undefined" ||
-    typeof window.confirm !== "function"
-  ) {
-    return true;
-  }
-
-  return window.confirm(message);
-}
 
 function scrollUploadPanelIntoViewV1(uploadPanelId: string): HTMLElement | null {
   if (typeof document === "undefined") {
@@ -120,6 +110,7 @@ export type AnnualReportUploadControllerOptionsV1 = {
   hasActiveExtraction: boolean;
   latestRun: AnnualReportProcessingRunV1 | undefined;
   latestRunQueryKey: QueryKey;
+  onConfirmRequired: (message: string, confirmLabel: string, onConfirm: () => void) => void;
   policyVersion: string;
   settledRunInvalidateQueryKeys: QueryKey[];
   tenantId: string;
@@ -271,10 +262,12 @@ export function useAnnualReportUploadControllerV1(
       return false;
     }
 
-    if (
-      options.hasActiveExtraction &&
-      !confirmBrowserActionV1(REPLACE_ANNUAL_REPORT_CONFIRMATION_V1)
-    ) {
+    if (options.hasActiveExtraction) {
+      options.onConfirmRequired(
+        REPLACE_ANNUAL_REPORT_CONFIRMATION_V1,
+        "Replace report",
+        () => annualReportMutation.mutate(),
+      );
       return false;
     }
 
@@ -283,12 +276,12 @@ export function useAnnualReportUploadControllerV1(
   };
 
   const clearActiveData = () => {
-    if (!confirmBrowserActionV1(CLEAR_ANNUAL_REPORT_CONFIRMATION_V1)) {
-      return false;
-    }
-
-    clearAnnualReportMutation.mutate();
-    return true;
+    options.onConfirmRequired(
+      CLEAR_ANNUAL_REPORT_CONFIRMATION_V1,
+      "Clear data",
+      () => clearAnnualReportMutation.mutate(),
+    );
+    return false;
   };
 
   const runRecoveryAction = () => {

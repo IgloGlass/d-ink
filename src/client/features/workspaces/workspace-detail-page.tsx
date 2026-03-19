@@ -11,6 +11,7 @@ import {
 } from "../../../shared/contracts/mapping.v1";
 import type { TrialBalanceFileTypeV1 } from "../../../shared/contracts/trial-balance.v1";
 import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
+import { ConfirmModalV1 } from "../../components/confirm-modal-v1";
 import { StatusPill } from "../../components/status-pill";
 import {
   isAnnualReportProcessingOpenStatusV1,
@@ -186,6 +187,15 @@ export function WorkspaceDetailPage() {
   const { workspaceId } = useParams();
   const principal = useRequiredSessionPrincipalV1();
   const queryClient = useQueryClient();
+
+  const [confirmModal, setConfirmModal] = useState<{
+    message: string;
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
+  const requestConfirm = (message: string, confirmLabel: string, onConfirm: () => void) => {
+    setConfirmModal({ message, confirmLabel, onConfirm });
+  };
 
   const [toStatus, setToStatus] = useState<WorkspaceStatusV1>("in_review");
   const [statusReason, setStatusReason] = useState("");
@@ -831,6 +841,7 @@ export function WorkspaceDetailPage() {
     policyVersion: annualPolicyVersion,
     latestRun: latestAnnualReportRun,
     hasActiveExtraction: Boolean(activeAnnualReportData?.active),
+    onConfirmRequired: requestConfirm,
     uploadPanelId: "annual-report-upload-panel",
     latestRunQueryKey: latestAnnualReportProcessingRunKeyV1(
       principal.tenantId,
@@ -1936,6 +1947,18 @@ export function WorkspaceDetailPage() {
           <p className="success-text">Workspace status updated successfully.</p>
         ) : null}
       </article>
+
+      <ConfirmModalV1
+        isOpen={confirmModal !== null}
+        title="Confirm action"
+        message={confirmModal?.message ?? ""}
+        confirmLabel={confirmModal?.confirmLabel ?? "Confirm"}
+        onConfirm={() => {
+          confirmModal?.onConfirm();
+          setConfirmModal(null);
+        }}
+        onCancel={() => setConfirmModal(null)}
+      />
     </section>
   );
 }

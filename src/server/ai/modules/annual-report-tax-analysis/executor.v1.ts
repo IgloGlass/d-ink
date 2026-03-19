@@ -3,6 +3,7 @@ import { parseAiRunMetadataV1 } from "../../../../shared/contracts/ai-run.v1";
 import type { AnnualReportExtractionPayloadV1 } from "../../../../shared/contracts/annual-report-extraction.v1";
 import type { AnnualReportTaxAnalysisPayloadV1 } from "../../../../shared/contracts/annual-report-tax-analysis.v1";
 import type { AnnualReportPreparedDocumentV1 } from "../../document-prep/annual-report-document.v1";
+import type { Env } from "../../../../shared/types/env";
 import type { AiModelConfigV1 } from "../../providers/ai-provider-client.v1";
 import { generateAiStructuredOutputV1 } from "../../providers/ai-provider-client.v1";
 import type { loadAnnualReportTaxAnalysisModuleConfigV1 } from "./loader.v1";
@@ -20,6 +21,7 @@ export type AnnualReportTaxAnalysisRuntimeConfigV1 = NonNullable<
 
 export type ExecuteAnnualReportTaxAnalysisInputV1 = {
   apiKey?: string;
+  env?: Env;
   config: AnnualReportTaxAnalysisRuntimeConfigV1;
   document?: AnnualReportPreparedDocumentV1;
   extraction: AnnualReportExtractionPayloadV1;
@@ -709,6 +711,7 @@ export async function executeAnnualReportTaxAnalysisV1(
   const result = await generateAiStructuredOutputV1<
     Record<string, unknown>
   >({
+    env: input.env,
     apiKey: input.apiKey,
     modelConfig: input.modelConfig,
     request: {

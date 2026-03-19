@@ -18,6 +18,7 @@ import {
   getTrialBalanceRowBalanceValueV1,
   type TrialBalanceNormalizedArtifactV1,
 } from "../../../../shared/contracts/trial-balance.v1";
+import type { Env } from "../../../../shared/types/env";
 import { generateAiStructuredOutputV1 } from "../../providers/ai-provider-client.v1";
 import type { AiModelConfigV1 } from "../../providers/ai-provider-client.v1";
 import {
@@ -66,6 +67,7 @@ type MappingAnnualReportLineageV1 = {
 
 export type ExecuteMappingDecisionsInputV1 = {
   apiKey?: string;
+  env?: Env;
   annualReportContext?: AnnualReportMappingContextV1;
   annualReportLineage?: MappingAnnualReportLineageV1;
   config: MappingDecisionsRuntimeConfigV1;
@@ -230,6 +232,7 @@ function buildInstructionV1(input: {
 
 async function runBatchV1(input: {
   apiKey?: string;
+  env?: Env;
   annualReportContext?: AnnualReportMappingContextV1;
   config: MappingDecisionsRuntimeConfigV1;
   modelConfig: AiModelConfigV1;
@@ -251,6 +254,7 @@ async function runBatchV1(input: {
     }
 > {
   const result = await generateAiStructuredOutputV1({
+    env: input.env,
     apiKey: input.apiKey,
     modelConfig: input.modelConfig,
     request: {
@@ -280,6 +284,7 @@ async function runBatchV1(input: {
 
 async function runBatchWithTierFallbackV1(input: {
   apiKey?: string;
+  env?: Env;
   annualReportContext?: AnnualReportMappingContextV1;
   config: MappingDecisionsRuntimeConfigV1;
   fallbackTier?: "fast" | "thinking";
@@ -305,6 +310,7 @@ async function runBatchWithTierFallbackV1(input: {
 > {
   const preferredResult = await runBatchV1({
     apiKey: input.apiKey,
+    env: input.env,
     annualReportContext: input.annualReportContext,
     config: input.config,
     modelConfig: input.modelConfig,
@@ -331,6 +337,7 @@ async function runBatchWithTierFallbackV1(input: {
 
   const fallbackResult = await runBatchV1({
     apiKey: input.apiKey,
+    env: input.env,
     annualReportContext: input.annualReportContext,
     config: input.config,
     modelConfig: input.modelConfig,

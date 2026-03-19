@@ -3347,6 +3347,7 @@ async function extractAnnualReportWithPrimaryAiV1(input: {
       execute: async () => {
         const result = await executeAnnualReportAnalysisV1({
           apiKey,
+          env: input.env,
           config: configResult.config,
           document: preparedDocument,
           generateId: () => crypto.randomUUID(),
@@ -4059,6 +4060,7 @@ async function analyzeAnnualReportTaxWithPrimaryAiV1(input: {
     execute: async () => {
       const analysisResult = await executeAnnualReportTaxAnalysisV1({
         apiKey,
+        env: input.env,
         config,
         document: preparedSourceDocument,
         extraction: input.extraction,
@@ -4242,6 +4244,7 @@ async function generateMappingDecisionsWithPrimaryAiV1(input: {
 
   const aiResult = await executeMappingDecisionsModelV1({
     apiKey,
+    env: input.env,
     annualReportContext,
     annualReportLineage,
     config: configResult.config,
@@ -4465,6 +4468,7 @@ async function generateTaxAdjustmentsWithPrimaryAiV1(input: {
 
     const moduleResult = await executeTaxAdjustmentSubmoduleV1({
       apiKey,
+      env: input.env,
       annualReportTaxContext: projectTaxAdjustmentModuleContextV1({
         annualReportTaxContext,
         moduleCode: candidates[0]!.moduleCode,

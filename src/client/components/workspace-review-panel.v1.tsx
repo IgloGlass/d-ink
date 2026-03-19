@@ -2,9 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 
 import { StatusPill } from "./status-pill";
-import { ButtonV1 } from "./button-v1";
+import { WorkspaceStatusTransitionV1 } from "./workspace-status-transition-v1";
 import {
-  applyWorkspaceTransitionV1,
   createCommentV1,
   createTaskV1,
   completeTaskV1,
@@ -53,18 +52,6 @@ export function WorkspaceReviewPanelV1({
     queryKey: ["workspace-tasks", tenantId, workspaceId],
     queryFn: () => listTasksV1({ tenantId, workspaceId }),
     retry: false,
-  });
-
-  const transitionMutation = useMutation({
-    mutationFn: (toStatus: WorkspaceStatusV1) =>
-      applyWorkspaceTransitionV1({ tenantId, workspaceId, toStatus, reason: "" }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["workspace", tenantId, workspaceId],
-      });
-      showSuccessToast("Workspace status updated");
-      onTransitionSuccess?.();
-    },
   });
 
   const createTaskMutation = useMutation({
@@ -215,51 +202,24 @@ export function WorkspaceReviewPanelV1({
         </form>
       </section>
 
-      {(workspaceStatus === "draft" ||
-        workspaceStatus === "in_review" ||
-        workspaceStatus === "approved_for_export") && (
-        <section className="review-panel__section">
-          <div className="review-panel__eyebrow">Workflow actions</div>
-          <div className="review-panel__actions">
-            {workspaceStatus === "draft" && (
-              <ButtonV1
-                className="btn-v1 btn-v1--primary"
-                onClick={() => transitionMutation.mutate("in_review")}
-                disabled={transitionMutation.isPending}
-              >
-                Submit for review
-              </ButtonV1>
-            )}
-            {workspaceStatus === "in_review" && (
-              <>
-                <ButtonV1
-                  className="btn-v1 btn-v1--primary"
-                  onClick={() => transitionMutation.mutate("approved_for_export")}
-                  disabled={transitionMutation.isPending}
-                >
-                  Approve for export
-                </ButtonV1>
-                <ButtonV1
-                  className="btn-v1 btn-v1--ghost"
-                  onClick={() => transitionMutation.mutate("draft")}
-                  disabled={transitionMutation.isPending}
-                >
-                  Return to draft
-                </ButtonV1>
-              </>
-            )}
-            {workspaceStatus === "approved_for_export" && (
-              <ButtonV1
-                className="btn-v1 btn-v1--ghost"
-                onClick={() => transitionMutation.mutate("in_review")}
-                disabled={transitionMutation.isPending}
-              >
-                Return to review
-              </ButtonV1>
-            )}
-          </div>
-        </section>
-      )}
+      <section className="review-panel__section">
+        <div className="review-panel__eyebrow">Workflow actions</div>
+        <WorkspaceStatusTransitionV1
+          currentStatus={workspaceStatus}
+          tenantId={tenantId}
+          workspaceId={workspaceId}
+          onTransitionSuccess={(newStatus) => {
+            queryClient.invalidateQueries({
+              queryKey: ["workspace", tenantId, workspaceId],
+            });
+            queryClient.invalidateQueries({
+              queryKey: ["workspaces", tenantId],
+            });
+            showSuccessToast(`Status updated to ${newStatus.replace(/_/g, " ")}`);
+            onTransitionSuccess?.();
+          }}
+        />
+      </section>
     </aside>
   );
 }

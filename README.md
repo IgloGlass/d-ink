@@ -25,27 +25,37 @@ Fallback (no global `pnpm`):
 corepack pnpm install
 ```
 
-## Qwen AI setup
+## AI provider setup
 
-The backend now supports Qwen as the primary AI provider for:
+The backend supports provider selection through `AI_PROVIDER` for:
 
 - annual report analysis
 - account mapping
 - tax adjustments
 
+Supported providers:
+
+- `qwen` through Alibaba DashScope
+- `openai` through the OpenAI chat-completions API
+
 Configure secrets in local `.dev.vars` or Wrangler secrets:
 
 ```bash
+AI_PROVIDER=qwen
 QWEN_API_KEY=your-qwen-api-key
 QWEN_FAST_MODEL=qwen-plus
 QWEN_THINKING_MODEL=qwen-max
+
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_FAST_MODEL=gpt-4o-mini
+OPENAI_THINKING_MODEL=gpt-4o
 ```
 
 Notes:
 
-- `QWEN_API_KEY` is preferred.
+- `QWEN_API_KEY` and `OPENAI_API_KEY` are both supported.
 - `AI_PROVIDER_API_KEY` remains supported as a backwards-compatible fallback.
-- If no Qwen key is configured, the backend falls back to deterministic/offline behavior for local safety and testability.
+- If the selected provider key is missing, the backend falls back to deterministic/offline behavior for local safety and testability.
 - Do not commit real API keys.
 
 ## Windows quick start

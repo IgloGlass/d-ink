@@ -31,6 +31,8 @@ type ProviderEntry = {
   getModelConfig: (env: Env) => AiModelConfigV1;
 };
 
+export type AiProviderEntryV1 = ProviderEntry;
+
 const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
   qwen: {
     adapter: qwenAdapter,
@@ -60,9 +62,18 @@ const DEFAULT_PROVIDER = "qwen";
  * Resolves the active provider entry from the environment.
  * Returns null if the configured provider is not registered.
  */
-export function resolveAiProviderV1(env: Env): ProviderEntry | null {
+export function resolveAiProviderV1(env: Env): AiProviderEntryV1 | null {
   const providerName = env.AI_PROVIDER ?? DEFAULT_PROVIDER;
   return PROVIDER_REGISTRY[providerName] ?? null;
+}
+
+export function getActiveAiApiKeyV1(env: Env): string | undefined {
+  return resolveAiProviderV1(env)?.getApiKey(env);
+}
+
+export function getActiveAiModelConfigV1(env: Env): AiModelConfigV1 | null {
+  const provider = resolveAiProviderV1(env);
+  return provider ? provider.getModelConfig(env) : null;
 }
 
 /**

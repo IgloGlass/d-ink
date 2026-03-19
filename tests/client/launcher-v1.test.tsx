@@ -67,6 +67,13 @@ describe("LauncherV1", () => {
             isOpen={true}
             onClose={onClose}
             tenantId="11111111-1111-4111-8111-111111111111"
+            companies={[
+              {
+                id: "Gamma AB",
+                legalName: "Gamma AB",
+                organizationNumber: "5561234567",
+              },
+            ]}
           />
         </MemoryRouter>
       </QueryClientProvider>,
