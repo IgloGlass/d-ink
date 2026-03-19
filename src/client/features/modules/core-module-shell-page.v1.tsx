@@ -212,7 +212,7 @@ function hasAnnualReportStatementDataV1(
 function hasLegacyAnnualReportWarningSignatureV1(warnings: string[]): boolean {
   return warnings.some(
     (warning) =>
-      warning.includes("Gemini statements extraction skipped") ||
+      warning.includes("statements extraction skipped") ||
       warning.includes("maximum allowed nesting depth") ||
       warning.includes("Full financial extraction is missing"),
   );
@@ -1901,11 +1901,12 @@ export function CoreModuleShellPageV1() {
   const annualReportForensicRailRef = useRef<HTMLElement | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
     message: string;
+    confirmLabel: string;
     onConfirm: () => void;
   } | null>(null);
 
-  const requestConfirm = (message: string, onConfirm: () => void) => {
-    setConfirmModal({ message, onConfirm });
+  const requestConfirm = (message: string, confirmLabel: string, onConfirm: () => void) => {
+    setConfirmModal({ message, confirmLabel, onConfirm });
   };
 
   const resolvedWorkspaceId = workspaceId ?? "";
@@ -2396,6 +2397,7 @@ export function CoreModuleShellPageV1() {
     policyVersion: ANNUAL_REPORT_POLICY_VERSION_V1,
     latestRun: latestAnnualReportRun,
     hasActiveExtraction: hasActiveAnnualReportExtraction,
+    onConfirmRequired: requestConfirm,
     uploadPanelId: "annual-report-upload-panel",
     latestRunQueryKey: [
       "latest-annual-report-processing-run",
@@ -2699,6 +2701,7 @@ export function CoreModuleShellPageV1() {
     if (hasActiveMappingDecisions) {
       requestConfirm(
         "Import trial balance again? This will replace the active account mapping data and current mapping review state for this workspace.",
+        "Re-import",
         () => {
           mappingAiEnrichmentMutation.reset();
           setMappingAiEnrichmentMonitor(null);
@@ -2724,6 +2727,7 @@ export function CoreModuleShellPageV1() {
     if (activeMappingExecutionMetadata?.actualStrategy === "ai") {
       requestConfirm(
         "Run AI account mapping again? This will replace the current AI mapping result for this workspace.",
+        "Run AI mapping",
         () => {
           setMappingAiEnrichmentFeedback(null);
           mappingAiEnrichmentMutation.mutate({
@@ -2753,6 +2757,7 @@ export function CoreModuleShellPageV1() {
 
     requestConfirm(
       "Clear account-mapping data? This will remove the active trial balance, reconciliation, mapping, and downstream tax outputs for this workspace.",
+      "Clear data",
       () => {
         clearTrialBalanceDataMutation.mutate();
       },
@@ -3213,8 +3218,7 @@ export function CoreModuleShellPageV1() {
         }
         recoveryActionLabel={recoveryActionLabel}
       />
-    ) : normalizedCoreModule === "annual-report-analysis" ||
-      normalizedCoreModule === "account-mapping" ||
+    ) : normalizedCoreModule === "account-mapping" ||
       normalizedCoreModule === "tax-adjustments" ||
       normalizedCoreModule === "tax-return-ink2" ? null : (
       <WorkspaceReviewPanelV1
@@ -3255,6 +3259,7 @@ export function CoreModuleShellPageV1() {
         isOpen={confirmModal !== null}
         title="Confirm action"
         message={confirmModal?.message ?? ""}
+        confirmLabel={confirmModal?.confirmLabel ?? "Confirm"}
         onConfirm={() => {
           confirmModal?.onConfirm();
           setConfirmModal(null);

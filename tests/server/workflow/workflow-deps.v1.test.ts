@@ -1257,7 +1257,7 @@ describe("workflow deps annual-report AI date normalization v1", () => {
         confirmation: { isConfirmed: false },
       },
       extractionArtifactId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      fallbackReason: "Gemini request timed out after 180000ms.",
+      fallbackReason: "Qwen request timed out after 180000ms.",
       modelName: "qwen-plus",
       policyVersion: "annual-report-tax-analysis.v1",
     });

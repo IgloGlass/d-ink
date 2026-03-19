@@ -2627,7 +2627,7 @@ describe("CoreModuleShellPageV1", () => {
               reviewState: {
                 mode: "deterministic_fallback",
                 reasons: [
-                  "AI fallback reason: Gemini request timed out after 180000ms.",
+                  "AI fallback reason: Qwen request timed out after 180000ms.",
                   "Source document unavailable for the active extraction.",
                 ],
                 sourceDocumentAvailable: false,
@@ -2709,7 +2709,7 @@ describe("CoreModuleShellPageV1", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "AI fallback reason: Gemini request timed out after 180000ms.",
+        "AI fallback reason: Qwen request timed out after 180000ms.",
       ),
     ).toBeInTheDocument();
   });

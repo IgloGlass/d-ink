@@ -1,39 +1,34 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-const generateContentMock = vi.fn();
+const fetchMock = vi.fn();
 
-vi.mock("@google/genai", () => ({
-  GoogleGenAI: vi.fn().mockImplementation(() => ({
-    models: {
-      generateContent: generateContentMock,
-    },
-  })),
-  createPartFromBase64: vi.fn((dataBase64: string, mimeType: string) => ({
-    dataBase64,
-    mimeType,
-  })),
-  createUserContent: vi.fn((parts: unknown[]) => ({
-    role: "user",
-    parts,
-  })),
-}));
+vi.stubGlobal("fetch", fetchMock);
 
 import { generateGeminiStructuredOutputV1 } from "../../../src/server/ai/providers/gemini-client.v1";
 
+function makeDashScopeResponse(content: string) {
+  return {
+    ok: true,
+    json: () =>
+      Promise.resolve({
+        choices: [{ message: { content }, finish_reason: "stop" }],
+        model: "qwen-plus",
+      }),
+  } as unknown as Response;
+}
+
 describe("generateGeminiStructuredOutputV1", () => {
   beforeEach(() => {
-    generateContentMock.mockReset();
+    fetchMock.mockReset();
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("omits response schema config when plain JSON mode is requested", async () => {
-    generateContentMock.mockResolvedValue({
-      text: '```json\n{"answer":"ok"}\n```',
-    });
+  it("returns parsed output when DashScope responds with valid JSON", async () => {
+    fetchMock.mockResolvedValue(makeDashScopeResponse('{"answer":"ok"}'));
 
     const result = await generateGeminiStructuredOutputV1({
       apiKey: "test-key",
@@ -50,7 +45,6 @@ describe("generateGeminiStructuredOutputV1", () => {
           .strict(),
         systemInstruction: "Return JSON only.",
         userInstruction: "Say ok.",
-        useResponseJsonSchema: false,
       },
     });
 
@@ -59,22 +53,19 @@ describe("generateGeminiStructuredOutputV1", () => {
       return;
     }
 
-    expect(result.output).toEqual({
-      answer: "ok",
+    expect(result.output).toEqual({ answer: "ok" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/chat/completions");
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      model: "qwen-plus",
+      response_format: { type: "json_object" },
     });
-
-    expect(generateContentMock).toHaveBeenCalledTimes(1);
-    const config = generateContentMock.mock.calls[0]?.[0]?.config as
-      | Record<string, unknown>
-      | undefined;
-    expect(config).toBeDefined();
-    expect(config?.responseJsonSchema).toBeUndefined();
-    expect(config?.responseMimeType).toBeUndefined();
   });
 
-  it("fails cleanly when Gemini does not return before the timeout", async () => {
+  it("fails cleanly when DashScope does not respond before the timeout", async () => {
     vi.useFakeTimers();
-    generateContentMock.mockReturnValue(new Promise(() => {}));
+    fetchMock.mockReturnValue(new Promise(() => {}));
 
     const resultPromise = generateGeminiStructuredOutputV1({
       apiKey: "test-key",
@@ -109,9 +100,9 @@ describe("generateGeminiStructuredOutputV1", () => {
   });
 
   it("includes compact schema issue summaries when validation fails", async () => {
-    generateContentMock.mockResolvedValue({
-      text: '{"answer":123,"extra":"value"}',
-    });
+    fetchMock.mockResolvedValue(
+      makeDashScopeResponse('{"answer":123,"extra":"value"}'),
+    );
 
     const result = await generateGeminiStructuredOutputV1({
       apiKey: "test-key",
@@ -127,7 +118,6 @@ describe("generateGeminiStructuredOutputV1", () => {
         }),
         systemInstruction: "Return JSON only.",
         userInstruction: "Say ok.",
-        useResponseJsonSchema: false,
       },
     });
 

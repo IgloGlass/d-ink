@@ -113,9 +113,9 @@ function buildEnvForRuntimeModeV1(input: {
       readValue("AUTH_TOKEN_HMAC_SECRET") ?? "local-annual-report-speed-regression",
     DB: {} as Env["DB"],
     DEV_AUTH_BYPASS_ENABLED: readValue("DEV_AUTH_BYPASS_ENABLED"),
-    GEMINI_API_KEY: readValue("GEMINI_API_KEY"),
-    GEMINI_FAST_MODEL: readValue("GEMINI_FAST_MODEL"),
-    GEMINI_THINKING_MODEL: readValue("GEMINI_THINKING_MODEL"),
+    QWEN_API_KEY: readValue("QWEN_API_KEY"),
+    QWEN_FAST_MODEL: readValue("QWEN_FAST_MODEL"),
+    QWEN_THINKING_MODEL: readValue("QWEN_THINKING_MODEL"),
   };
 }
 

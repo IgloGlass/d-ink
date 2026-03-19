@@ -226,7 +226,7 @@ function buildAnnualReportFallbackExtractionV1(input: {
         documentWarnings: [
           ...(input.diagnosticWarnings ?? []),
           ...existingWarnings,
-          `Gemini extraction fallback used: ${input.fallbackReason}`,
+          `Qwen extraction fallback used: ${input.fallbackReason}`,
         ],
         aiRun: parseAiRunMetadataV1({
           runId: crypto.randomUUID(),
@@ -644,7 +644,7 @@ export function normalizeAnnualReportAiDateFieldV1(input: {
       confidence: 0,
       sourceSnippet,
     },
-    warning: `Gemini ${input.fieldKey} requires manual review: could not normalize "${input.field.valueText ?? input.field.normalizedValue ?? "unknown date"}" to ISO YYYY-MM-DD.`,
+    warning: `Qwen ${input.fieldKey} requires manual review: could not normalize "${input.field.valueText ?? input.field.normalizedValue ?? "unknown date"}" to ISO YYYY-MM-DD.`,
   };
 }
 
@@ -3291,7 +3291,7 @@ async function extractAnnualReportWithPrimaryAiV1(input: {
     (input.fileName.toLowerCase().endsWith(".docx") ? "docx" : "pdf");
   if (!apiKey) {
     return buildAnnualReportExtractionFallbackV1({
-      fallbackReason: "Gemini API key is not configured.",
+      fallbackReason: "Qwen API key is not configured.",
       fileBytes: input.fileBytes,
       fileName: input.fileName,
       fileType: resolvedFileType,
@@ -3516,7 +3516,7 @@ async function extractAnnualReportWithPrimaryAiV1(input: {
       !hasAnnualReportFullExtractionV1(alignedTaxDeep) &&
       aiResult.extraction.documentWarnings.some(
         (warning) =>
-          warning.includes("Gemini statements extraction skipped") ||
+          warning.includes("statements extraction skipped") ||
           warning.includes("maximum allowed nesting depth"),
       );
     const extractionWarnings = [
@@ -4043,7 +4043,7 @@ async function analyzeAnnualReportTaxWithPrimaryAiV1(input: {
         extraction: input.extraction,
         extractionArtifactId: input.extractionArtifactId,
         fallbackReason: !apiKey
-          ? "Gemini API key is not configured."
+          ? "Qwen API key is not configured."
           : (configFailureMessage ??
             "Annual-report tax-analysis config failed."),
         modelName: fallbackModelName,
@@ -4224,7 +4224,7 @@ async function generateMappingDecisionsWithPrimaryAiV1(input: {
     });
     return stampConservativeFallbackMappingV1({
       code: "missing_api_key",
-      message: "Gemini API key is not configured for AI-primary mapping.",
+      message: "Qwen API key is not configured for AI-primary mapping.",
     });
   }
 

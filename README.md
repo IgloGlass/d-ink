@@ -25,9 +25,9 @@ Fallback (no global `pnpm`):
 corepack pnpm install
 ```
 
-## Gemini AI setup
+## Qwen AI setup
 
-The backend now supports Gemini as the primary AI provider for:
+The backend now supports Qwen as the primary AI provider for:
 
 - annual report analysis
 - account mapping
@@ -36,16 +36,16 @@ The backend now supports Gemini as the primary AI provider for:
 Configure secrets in local `.dev.vars` or Wrangler secrets:
 
 ```bash
-GEMINI_API_KEY=your-server-side-gemini-key
-GEMINI_FAST_MODEL=gemini-2.5-flash
-GEMINI_THINKING_MODEL=gemini-2.5-pro
+QWEN_API_KEY=your-qwen-api-key
+QWEN_FAST_MODEL=qwen-plus
+QWEN_THINKING_MODEL=qwen-max
 ```
 
 Notes:
 
-- `GEMINI_API_KEY` is preferred.
+- `QWEN_API_KEY` is preferred.
 - `AI_PROVIDER_API_KEY` remains supported as a backwards-compatible fallback.
-- If no Gemini key is configured, the backend falls back to deterministic/offline behavior for local safety and testability.
+- If no Qwen key is configured, the backend falls back to deterministic/offline behavior for local safety and testability.
 - Do not commit real API keys.
 
 ## Windows quick start

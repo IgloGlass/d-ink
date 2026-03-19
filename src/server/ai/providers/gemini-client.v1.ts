@@ -81,7 +81,7 @@ export type GeminiStructuredOutputResultV1<TOutput> =
 const DASHSCOPE_BASE_URL =
   "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
 
-const DEFAULT_GEMINI_TIMEOUT_MS_V1 = 90_000;
+const DEFAULT_TIMEOUT_MS_V1 = 90_000;
 
 function resolveModelNameV1(
   tier: AiModelTierV1,
@@ -301,7 +301,7 @@ export async function generateGeminiStructuredOutputV1<TOutput>(input: {
       input.request.modelTier,
       input.modelConfig,
     );
-    const timeoutMs = input.request.timeoutMs ?? DEFAULT_GEMINI_TIMEOUT_MS_V1;
+    const timeoutMs = input.request.timeoutMs ?? DEFAULT_TIMEOUT_MS_V1;
 
     const jsonSchema = zodToJsonSchema(input.request.responseSchema, {
       $refStrategy: "none",
@@ -410,12 +410,12 @@ export async function generateGeminiStructuredOutputV1<TOutput>(input: {
       error: {
         code: "MODEL_EXECUTION_FAILED",
         message: isAbortErrorV1(error)
-          ? `Qwen request timed out after ${input.request.timeoutMs ?? DEFAULT_GEMINI_TIMEOUT_MS_V1}ms.`
+          ? `Qwen request timed out after ${input.request.timeoutMs ?? DEFAULT_TIMEOUT_MS_V1}ms.`
           : error instanceof Error
             ? error.message
             : "Unknown Qwen execution failure.",
         context: {
-          timeoutMs: input.request.timeoutMs ?? DEFAULT_GEMINI_TIMEOUT_MS_V1,
+          timeoutMs: input.request.timeoutMs ?? DEFAULT_TIMEOUT_MS_V1,
         },
       },
     };

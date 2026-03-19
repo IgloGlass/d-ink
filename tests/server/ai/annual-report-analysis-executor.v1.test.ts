@@ -1800,7 +1800,7 @@ describe("executeAnnualReportAnalysisV1", () => {
             ok: false,
             error: {
               code: "MODEL_EXECUTION_FAILED",
-              message: "Gemini request timed out after 5000ms.",
+              message: "Qwen request timed out after 5000ms.",
               context: {},
             },
           };
@@ -3783,7 +3783,7 @@ describe("executeAnnualReportAnalysisV1", () => {
           ok: false,
           error: {
             code: "MODEL_EXECUTION_FAILED",
-            message: "Gemini request timed out after 15000ms.",
+            message: "Qwen request timed out after 15000ms.",
             context: {},
           },
         };
