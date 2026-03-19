@@ -2730,6 +2730,23 @@ async function handleRunMappingAiEnrichmentRouteV1(
         }),
       );
 
+      // Queue delivery is the preferred path, but we still schedule the same
+      // background run locally so a queue outage does not leave the workspace
+      // stranded on the deterministic fallback mapping.
+      if (executionContext) {
+        executionContext.waitUntil(
+          backgroundRun().then((result) => {
+            if (!result.ok) {
+              console.warn("mapping.ai_enrichment.background_failed", {
+                code: result.error.code,
+                tenantId: parsedBody.tenantId,
+                workspaceId,
+              });
+            }
+          }),
+        );
+      }
+
       return Response.json(
         parseRunMappingAiEnrichmentResultV1({
           ok: true,

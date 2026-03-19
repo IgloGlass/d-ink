@@ -314,4 +314,71 @@ describe("worker mapping AI enrichment route v1", () => {
       },
     });
   });
+
+  it("queues mapping enrichment and still schedules a local fallback run when waitUntil is available", async () => {
+    const runPipelineResponse = await worker.fetch(
+      buildJsonRequest({
+        method: "POST",
+        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/tb-pipeline-runs`,
+        cookie: buildSessionCookie(SESSION_TOKEN),
+        body: {
+          tenantId: TENANT_ID,
+          fileName: "tb.xlsx",
+          fileBytesBase64: createWorkbookBase64V1(),
+          policyVersion: "deterministic-bas.v1",
+        },
+      }),
+      buildWorkerEnvWithQueue(),
+    );
+    const runPipelinePayload = (await runPipelineResponse.json()) as {
+      ok: true;
+      pipeline: {
+        artifacts: {
+          mapping: {
+            artifactId: string;
+            version: number;
+          };
+        };
+      };
+    };
+
+    expect(runPipelineResponse.status).toBe(200);
+    expect(runPipelinePayload.ok).toBe(true);
+
+    const scheduledPromises: Promise<unknown>[] = [];
+    const enrichmentResponse = await worker.fetch(
+      buildJsonRequest({
+        method: "POST",
+        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/mapping-decisions/ai-enrichment`,
+        cookie: buildSessionCookie(SESSION_TOKEN),
+        body: {
+          tenantId: TENANT_ID,
+          expectedActiveMapping: {
+            artifactId:
+              runPipelinePayload.pipeline.artifacts.mapping.artifactId,
+            version: runPipelinePayload.pipeline.artifacts.mapping.version,
+          },
+        },
+      }),
+      buildWorkerEnvWithQueue(),
+      {
+        waitUntil(promise: Promise<unknown>) {
+          scheduledPromises.push(promise);
+        },
+      },
+    );
+    const enrichmentPayload = (await enrichmentResponse.json()) as {
+      ok: true;
+      status: string;
+      message: string;
+    };
+
+    expect(enrichmentResponse.status).toBe(202);
+    expect(enrichmentPayload.ok).toBe(true);
+    expect(enrichmentPayload.status).toBe("accepted");
+    expect(queuedMappingMessages).toHaveLength(1);
+    expect(scheduledPromises).toHaveLength(1);
+
+    await Promise.allSettled(scheduledPromises);
+  });
 });
