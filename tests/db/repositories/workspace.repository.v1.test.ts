@@ -216,6 +216,53 @@ describe("D1 workspace repository v1", () => {
     expect(listed[1]?.id).toBe("aaaaaaa2-aaaa-4aaa-8aaa-aaaaaaaaaaa2");
   });
 
+  it("normalizes legacy sqlite timestamps when loading workspaces", async () => {
+    const repository = createD1WorkspaceRepositoryV1(env.DB);
+    const workspace = buildWorkspace({
+      id: "aaaaaaa6-aaaa-4aaa-8aaa-aaaaaaaaaaa6",
+    });
+    const normalizedWorkspace = buildWorkspace({
+      id: workspace.id,
+      tenantId: workspace.tenantId,
+      companyId: workspace.companyId,
+      createdAt: "2026-03-19T20:22:27.000Z",
+      updatedAt: "2026-03-19T20:22:27.000Z",
+    });
+
+    await env.DB.prepare(
+      `
+        INSERT INTO workspaces (
+          id,
+          tenant_id,
+          company_id,
+          fiscal_year_start,
+          fiscal_year_end,
+          status,
+          created_at,
+          updated_at
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+      `,
+    )
+      .bind(
+        workspace.id,
+        workspace.tenantId,
+        workspace.companyId,
+        workspace.fiscalYearStart,
+        workspace.fiscalYearEnd,
+        workspace.status,
+        "2026-03-19 20:22:27",
+        "2026-03-19 20:22:27",
+      )
+      .run();
+
+    const listed = await repository.listByTenant({
+      tenantId: workspace.tenantId,
+    });
+
+    expect(listed).toEqual([normalizedWorkspace]);
+  });
+
   it("throws when persisted workspace row fails runtime contract parsing", async () => {
     const repository = createD1WorkspaceRepositoryV1(env.DB);
 

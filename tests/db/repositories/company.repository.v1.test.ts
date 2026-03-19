@@ -117,4 +117,54 @@ describe("D1 company repository v1", () => {
     expect(listed[0]?.id).toBe("aaaaaaa3-aaaa-4aaa-8aaa-aaaaaaaaaaa3");
     expect(listed[1]?.id).toBe("aaaaaaa2-aaaa-4aaa-8aaa-aaaaaaaaaaa2");
   });
+
+  it("normalizes legacy sqlite timestamps when loading companies", async () => {
+    const repository = createD1CompanyRepositoryV1(env.DB);
+    const company = buildCompanyV1({
+      id: "aaaaaaa5-aaaa-4aaa-8aaa-aaaaaaaaaaa5",
+    });
+    const normalizedCompany = buildCompanyV1({
+      id: company.id,
+      tenantId: company.tenantId,
+      legalName: company.legalName,
+      organizationNumber: company.organizationNumber,
+      defaultFiscalYearStart: company.defaultFiscalYearStart,
+      defaultFiscalYearEnd: company.defaultFiscalYearEnd,
+      createdAt: "2026-03-19T20:22:27.000Z",
+      updatedAt: "2026-03-19T20:22:27.000Z",
+    });
+
+    await env.DB.prepare(
+      `
+        INSERT INTO companies_v1 (
+          id,
+          tenant_id,
+          legal_name,
+          organization_number,
+          default_fiscal_year_start,
+          default_fiscal_year_end,
+          created_at,
+          updated_at
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+      `,
+    )
+      .bind(
+        company.id,
+        company.tenantId,
+        company.legalName,
+        company.organizationNumber,
+        company.defaultFiscalYearStart,
+        company.defaultFiscalYearEnd,
+        "2026-03-19 20:22:27",
+        "2026-03-19 20:22:27",
+      )
+      .run();
+
+    const listed = await repository.listByTenant({
+      tenantId: company.tenantId,
+    });
+
+    expect(listed).toEqual([normalizedCompany]);
+  });
 });

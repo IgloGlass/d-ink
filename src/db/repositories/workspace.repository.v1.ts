@@ -8,6 +8,7 @@ import {
   parseWorkspaceV1,
 } from "../../shared/contracts/workspace.v1";
 import type { D1Database } from "../../shared/types/d1";
+import { normalizeSqliteTimestampV1 } from "./sqlite-timestamp.v1";
 import {
   INSERT_AUDIT_EVENT_IF_PREVIOUS_WRITE_APPLIED_SQL_V1,
   INSERT_AUDIT_EVENT_SQL_V1,
@@ -199,13 +200,13 @@ function toErrorMessage(error: unknown): string {
 function mapWorkspaceRowToContract(row: WorkspaceRow): WorkspaceV1 {
   return parseWorkspaceV1({
     companyId: row.company_id,
-    createdAt: row.created_at,
+    createdAt: normalizeSqliteTimestampV1(row.created_at),
     fiscalYearEnd: row.fiscal_year_end,
     fiscalYearStart: row.fiscal_year_start,
     id: row.id,
     status: row.status,
     tenantId: row.tenant_id,
-    updatedAt: row.updated_at,
+    updatedAt: normalizeSqliteTimestampV1(row.updated_at),
   });
 }
 

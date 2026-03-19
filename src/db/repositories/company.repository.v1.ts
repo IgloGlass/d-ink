@@ -3,6 +3,7 @@ import {
   parseCompanyV1,
 } from "../../shared/contracts/company.v1";
 import type { D1Database } from "../../shared/types/d1";
+import { normalizeSqliteTimestampV1 } from "./sqlite-timestamp.v1";
 
 /**
  * Failure codes emitted by create operations.
@@ -165,8 +166,8 @@ function mapCompanyRowToContractV1(row: CompanyRowV1): CompanyV1 {
     organizationNumber: row.organization_number,
     defaultFiscalYearStart: row.default_fiscal_year_start,
     defaultFiscalYearEnd: row.default_fiscal_year_end,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    createdAt: normalizeSqliteTimestampV1(row.created_at),
+    updatedAt: normalizeSqliteTimestampV1(row.updated_at),
   });
 }
 
