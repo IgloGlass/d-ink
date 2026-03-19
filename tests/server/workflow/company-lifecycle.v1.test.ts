@@ -10,6 +10,7 @@ import {
   createCompanyV1,
   getCompanyByIdV1,
   listCompaniesByTenantV1,
+  updateCompanyV1,
 } from "../../../src/server/workflow/company-lifecycle.v1";
 import { applyWorkspaceAuditSchemaForTests } from "../../db/test-schema";
 
@@ -169,6 +170,73 @@ describe("company lifecycle workflow service", () => {
     if (listResult.ok) {
       expect(listResult.companies).toHaveLength(2);
       expect(listResult.companies[0]?.legalName).toBe("Second AB");
+    }
+  });
+
+  it("updates company identity and normalizes the organization number", async () => {
+    const deps = buildDepsForTest({
+      ids: ["30000000-0000-4000-8000-000000000033"],
+      timestamps: [
+        "2026-03-05T12:04:00.000Z",
+        "2026-03-05T12:05:00.000Z",
+      ],
+    });
+
+    const createResult = await createCompanyV1(
+      {
+        tenantId: TENANT_ID,
+        legalName: "Original AB",
+        organizationNumber: "556567-5678",
+        defaultFiscalYearStart: "2025-01-01",
+        defaultFiscalYearEnd: "2025-12-31",
+        actor: {
+          actorType: "user",
+          actorRole: "Admin",
+          actorUserId: USER_ID,
+        },
+      },
+      deps,
+    );
+    expect(createResult.ok).toBe(true);
+    if (!createResult.ok) {
+      return;
+    }
+
+    const updateResult = await updateCompanyV1(
+      {
+        tenantId: TENANT_ID,
+        companyId: createResult.company.id,
+        legalName: "Updated AB",
+        organizationNumber: "556999-9999",
+        actor: {
+          actorType: "user",
+          actorRole: "Editor",
+          actorUserId: USER_ID,
+        },
+      },
+      deps,
+    );
+
+    expect(updateResult.ok).toBe(true);
+    if (!updateResult.ok) {
+      return;
+    }
+
+    expect(updateResult.company.legalName).toBe("Updated AB");
+    expect(updateResult.company.organizationNumber).toBe("5569999999");
+
+    const getResult = await getCompanyByIdV1(
+      {
+        tenantId: TENANT_ID,
+        companyId: createResult.company.id,
+      },
+      deps,
+    );
+
+    expect(getResult.ok).toBe(true);
+    if (getResult.ok) {
+      expect(getResult.company?.legalName).toBe("Updated AB");
+      expect(getResult.company?.organizationNumber).toBe("5569999999");
     }
   });
 });

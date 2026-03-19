@@ -13,7 +13,8 @@ function createQueryClient(): QueryClient {
     defaultOptions: {
       queries: {
         retry: false,
-        staleTime: 10_000,
+        staleTime: 60_000,
+        refetchOnWindowFocus: false,
       },
       mutations: {
         retry: false,

@@ -1340,6 +1340,8 @@ export function generateDeterministicMappingDecisionsV1(
       accountNumber: row.accountNumber,
       sourceAccountNumber: row.sourceAccountNumber,
       accountName: row.accountName,
+      openingBalance: row.openingBalance ?? undefined,
+      closingBalance: row.closingBalance ?? undefined,
       proposedCategory: chosenCategory,
       selectedCategory: chosenCategory,
       confidence,

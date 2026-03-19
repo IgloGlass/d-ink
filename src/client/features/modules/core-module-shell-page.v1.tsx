@@ -2405,11 +2405,6 @@ export function CoreModuleShellPageV1() {
       resolvedWorkspaceId,
     ],
     uploadSuccessInvalidateQueryKeys: [
-      [
-        "latest-annual-report-processing-run",
-        principal.tenantId,
-        resolvedWorkspaceId,
-      ],
       ["active-annual-report", principal.tenantId, resolvedWorkspaceId],
       [
         "active-annual-report-tax-analysis",
@@ -2440,11 +2435,6 @@ export function CoreModuleShellPageV1() {
       ["active-tax-adjustments", principal.tenantId, resolvedWorkspaceId],
       ["active-tax-summary", principal.tenantId, resolvedWorkspaceId],
       ["active-ink2-form", principal.tenantId, resolvedWorkspaceId],
-      [
-        "latest-annual-report-processing-run",
-        principal.tenantId,
-        resolvedWorkspaceId,
-      ],
     ],
     settledRunInvalidateQueryKeys: [
       ["active-annual-report", principal.tenantId, resolvedWorkspaceId],

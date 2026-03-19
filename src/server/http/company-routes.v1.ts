@@ -8,6 +8,7 @@ import {
   createCompanyV1,
   getCompanyByIdV1,
   listCompaniesByTenantV1,
+  updateCompanyV1,
 } from "../workflow/company-lifecycle.v1";
 import {
   createCompanyLifecycleDepsV1,
@@ -60,6 +61,20 @@ const CreateCompanyHttpRequestBodyV1Schema = z
       });
     }
   });
+
+const UpdateCompanyHttpRequestBodyV1Schema = z
+  .object({
+    tenantId: UuidV4Schema,
+    legalName: z.string().trim().min(1).max(200),
+    organizationNumber: z
+      .string()
+      .trim()
+      .regex(
+        /^\d{6}-?\d{4}$/,
+        "Expected organization number in 10-digit format (with optional dash).",
+      ),
+  })
+  .strict();
 
 async function requireTenantSessionPrincipalV1(input: {
   request: Request;
@@ -388,6 +403,67 @@ async function handleGetCompanyRouteV1(
   });
 }
 
+async function handleUpdateCompanyRouteV1(
+  request: Request,
+  env: Env,
+  appBaseUrl: URL,
+  companyId: string,
+): Promise<Response> {
+  const originValidationError = validateOriginForPostV1({
+    request,
+    appBaseUrl,
+  });
+  if (originValidationError) {
+    return originValidationError;
+  }
+
+  const bodyParseResult = await parseJsonBodyWithSchemaV1({
+    request,
+    maxBytes: MAX_UPLOAD_JSON_BODY_BYTES_V1,
+    routeLabel: "Update company",
+    schema: UpdateCompanyHttpRequestBodyV1Schema,
+  });
+  if (!bodyParseResult.ok) {
+    return bodyParseResult.response;
+  }
+  const parsedBody = bodyParseResult.data;
+
+  const sessionGuardResult = await requireTenantSessionPrincipalV1({
+    request,
+    env,
+    tenantId: parsedBody.tenantId,
+  });
+  if (!sessionGuardResult.ok) {
+    return sessionGuardResult.response;
+  }
+
+  const result = await updateCompanyV1(
+    {
+      tenantId: parsedBody.tenantId,
+      companyId,
+      legalName: parsedBody.legalName,
+      organizationNumber: parsedBody.organizationNumber,
+      actor: {
+        actorType: "user",
+        actorRole: sessionGuardResult.principal.role,
+        actorUserId: sessionGuardResult.principal.userId,
+      },
+    },
+    createCompanyLifecycleDepsV1(env),
+  );
+
+  if (!result.ok) {
+    return mapCompanyLifecycleFailureToResponseV1(result);
+  }
+
+  return Response.json(result, {
+    status: 200,
+    headers: {
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 /**
  * Handles V1 company HTTP routes for create, fetch, and list operations.
  */
@@ -434,11 +510,20 @@ export async function handleCompanyRoutesV1(
     .split("/");
 
   if (routeSegments.length === 1 && routeSegments[0]) {
-    if (request.method !== "GET") {
-      return createMethodNotAllowedResponseV1("GET");
+    if (request.method === "GET") {
+      return handleGetCompanyRouteV1(request, env, routeSegments[0]);
     }
 
-    return handleGetCompanyRouteV1(request, env, routeSegments[0]);
+    if (request.method === "PUT") {
+      return handleUpdateCompanyRouteV1(
+        request,
+        env,
+        appBaseUrl,
+        routeSegments[0],
+      );
+    }
+
+    return createMethodNotAllowedResponseV1(["GET", "PUT"]);
   }
 
   return createJsonErrorResponseV1({

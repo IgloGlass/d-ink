@@ -4151,6 +4151,8 @@ async function generateMappingDecisionsWithPrimaryAiV1(input: {
         accountNumber: row.accountNumber,
         sourceAccountNumber: row.sourceAccountNumber,
         accountName: row.accountName,
+        openingBalance: row.openingBalance ?? undefined,
+        closingBalance: row.closingBalance ?? undefined,
         proposedCategory: fallbackCategory,
         selectedCategory: fallbackCategory,
         confidence: 0.25,

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import process from "node:process";
 import { performance } from "node:perf_hooks";
+import process from "node:process";
 
 import { describe, expect, it } from "vitest";
 
@@ -22,10 +22,12 @@ type RegressionConfigFileV1 = {
 };
 
 type RegressionRunV1 = {
+  extractionDurationMs: number;
   durationMs: number;
   extraction: AnnualReportExtractionPayloadV1;
   metrics: ReturnType<typeof collectExtractionMetricsV1>;
   runtimeMode: RuntimeModeV1;
+  taxAnalysisDurationMs: number;
   taxAnalysis: AnnualReportTaxAnalysisPayloadV1;
   taxMetrics: ReturnType<typeof collectTaxAnalysisMetricsV1>;
 };
@@ -47,7 +49,8 @@ const REGRESSION_CONFIG_FILE_PATH_V1 = path.join(
 );
 
 function isRegressionEnabledV1(): boolean {
-  const flag = process.env.DINK_RUN_ANNUAL_REPORT_SPEED_REGRESSION?.trim().toLowerCase();
+  const flag =
+    process.env.DINK_RUN_ANNUAL_REPORT_SPEED_REGRESSION?.trim().toLowerCase();
   return flag === "1" || flag === "true" || flag === "yes";
 }
 
@@ -79,7 +82,11 @@ function resolveRegressionConfigV1() {
     outputDirectory:
       process.env.DINK_ANNUAL_REPORT_SPEED_OUTPUT_DIR ??
       fileConfig?.outputDirectory ??
-      path.join(REPO_ROOT_DIRECTORY_V1, "output", "annual-report-speed-regression"),
+      path.join(
+        REPO_ROOT_DIRECTORY_V1,
+        "output",
+        "annual-report-speed-regression",
+      ),
     pdfPath: process.env.DINK_ANNUAL_REPORT_PDF_PATH ?? fileConfig?.pdfPath,
   };
 }
@@ -124,14 +131,18 @@ function countStatementValuesV1(
   }, 0);
 }
 
-function sumEvidenceCountV1(...evidenceCollections: Array<{ evidence: Array<unknown> } | undefined>) {
+function sumEvidenceCountV1(
+  ...evidenceCollections: Array<{ evidence: Array<unknown> } | undefined>
+) {
   return evidenceCollections.reduce(
     (count, collection) => count + (collection?.evidence.length ?? 0),
     0,
   );
 }
 
-function collectExtractionMetricsV1(extraction: AnnualReportExtractionPayloadV1) {
+function collectExtractionMetricsV1(
+  extraction: AnnualReportExtractionPayloadV1,
+) {
   const taxDeep = extraction.taxDeep;
   if (!taxDeep) {
     return {
@@ -186,13 +197,17 @@ function collectExtractionMetricsV1(extraction: AnnualReportExtractionPayloadV1)
     accountingStandard: extraction.fields.accountingStandard.value,
     autoDetectedFieldCount: extraction.summary.autoDetectedFieldCount,
     balanceRowCount: taxDeep.ink2rExtracted.balanceSheet.length,
-    balanceValueCount: countStatementValuesV1(taxDeep.ink2rExtracted.balanceSheet),
+    balanceValueCount: countStatementValuesV1(
+      taxDeep.ink2rExtracted.balanceSheet,
+    ),
     companyName: extraction.fields.companyName.value,
     depreciationAssetAreas: taxDeep.depreciationContext.assetAreas.length,
     documentWarningCount: extraction.documentWarnings.length,
     groupContributionNotes: taxDeep.groupContributionContext.notes.length,
     incomeRowCount: taxDeep.ink2rExtracted.incomeStatement.length,
-    incomeValueCount: countStatementValuesV1(taxDeep.ink2rExtracted.incomeStatement),
+    incomeValueCount: countStatementValuesV1(
+      taxDeep.ink2rExtracted.incomeStatement,
+    ),
     interestNotes: taxDeep.netInterestContext.notes.length,
     leasingNotes: taxDeep.leasingContext.notes.length,
     noteEvidenceCount: totalNoteEvidence,
@@ -215,7 +230,9 @@ function collectExtractionMetricsV1(extraction: AnnualReportExtractionPayloadV1)
   };
 }
 
-function collectTaxAnalysisMetricsV1(taxAnalysis: AnnualReportTaxAnalysisPayloadV1) {
+function collectTaxAnalysisMetricsV1(
+  taxAnalysis: AnnualReportTaxAnalysisPayloadV1,
+) {
   return {
     accountingStandardStatus: taxAnalysis.accountingStandardAssessment.status,
     findingCount: taxAnalysis.findings.length,
@@ -272,9 +289,11 @@ function collectReliabilityRegressionsV1(input: {
 }) {
   const regressions = collectCoreFactDifferencesV1(input);
   const baselineCoverageScore =
-    input.baseline.taxMetrics.findingCount + input.baseline.taxMetrics.nextActionCount;
+    input.baseline.taxMetrics.findingCount +
+    input.baseline.taxMetrics.nextActionCount;
   const candidateCoverageScore =
-    input.candidate.taxMetrics.findingCount + input.candidate.taxMetrics.nextActionCount;
+    input.candidate.taxMetrics.findingCount +
+    input.candidate.taxMetrics.nextActionCount;
 
   if (
     input.candidate.metrics.totalStatementValues <
@@ -395,6 +414,9 @@ function writeRegressionArtifactsV1(input: {
         comparison: {
           candidateMinusBaselineDurationMs:
             input.candidate.durationMs - input.baseline.durationMs,
+          candidateMinusBaselineExtractionDurationMs:
+            input.candidate.extractionDurationMs -
+            input.baseline.extractionDurationMs,
           candidateMinusBaselineFindingCount:
             input.candidate.taxMetrics.findingCount -
             input.baseline.taxMetrics.findingCount,
@@ -413,6 +435,9 @@ function writeRegressionArtifactsV1(input: {
           candidateMinusBaselineNextActions:
             input.candidate.taxMetrics.nextActionCount -
             input.baseline.taxMetrics.nextActionCount,
+          candidateMinusBaselineTaxAnalysisDurationMs:
+            input.candidate.taxAnalysisDurationMs -
+            input.baseline.taxAnalysisDurationMs,
           reliabilityRegressions: input.reliabilityRegressions,
         },
         outputFiles: {
@@ -424,14 +449,18 @@ function writeRegressionArtifactsV1(input: {
         pdfPath: input.pdfPath,
         runs: {
           baseline: {
+            extractionDurationMs: input.baseline.extractionDurationMs,
             durationMs: input.baseline.durationMs,
             extractionMetrics: input.baseline.metrics,
             taxAnalysisMetrics: input.baseline.taxMetrics,
+            taxAnalysisDurationMs: input.baseline.taxAnalysisDurationMs,
           },
           candidate: {
+            extractionDurationMs: input.candidate.extractionDurationMs,
             durationMs: input.candidate.durationMs,
             extractionMetrics: input.candidate.metrics,
             taxAnalysisMetrics: input.candidate.taxMetrics,
+            taxAnalysisDurationMs: input.candidate.taxAnalysisDurationMs,
           },
         },
       },
@@ -452,7 +481,9 @@ async function runWorkflowForModeV1(input: {
   const env = buildEnvForRuntimeModeV1(input.runtimeMode);
   const deps = createAnnualReportExtractionDepsV1(env);
   if (!deps.extractAnnualReport || !deps.analyzeAnnualReportTax) {
-    throw new Error("Annual-report extraction dependencies were not fully configured.");
+    throw new Error(
+      "Annual-report extraction dependencies were not fully configured.",
+    );
   }
   const start = performance.now();
   const extractionResult = await deps.extractAnnualReport({
@@ -489,10 +520,12 @@ async function runWorkflowForModeV1(input: {
   }
 
   return {
+    extractionDurationMs,
     durationMs: extractionDurationMs + taxDurationMs,
     extraction: extractionResult.extraction,
     metrics: collectExtractionMetricsV1(extractionResult.extraction),
     runtimeMode: input.runtimeMode,
+    taxAnalysisDurationMs: taxDurationMs,
     taxAnalysis: taxAnalysisResult.taxAnalysis,
     taxMetrics: collectTaxAnalysisMetricsV1(taxAnalysisResult.taxAnalysis),
   } satisfies RegressionRunV1;

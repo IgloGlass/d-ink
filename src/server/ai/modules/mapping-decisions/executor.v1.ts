@@ -518,6 +518,8 @@ function buildMappingDecisionSetV1(input: {
       accountNumber: row.accountNumber,
       sourceAccountNumber: row.sourceAccountNumber,
       accountName: row.accountName,
+      openingBalance: row.openingBalance ?? undefined,
+      closingBalance: row.closingBalance ?? undefined,
       proposedCategory,
       selectedCategory,
       confidence: proposal.confidence,

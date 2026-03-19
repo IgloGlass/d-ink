@@ -10,9 +10,12 @@ import {
   type GetCompanyByIdResultV1,
   ListCompaniesByTenantRequestV1Schema,
   type ListCompaniesByTenantResultV1,
+  type UpdateCompanyResultV1,
+  UpdateCompanyRequestV1Schema,
   parseCreateCompanyResultV1,
   parseGetCompanyByIdResultV1,
   parseListCompaniesByTenantResultV1,
+  parseUpdateCompanyResultV1,
 } from "../../shared/contracts/company-lifecycle.v1";
 import {
   normalizeOrganizationNumberV1,
@@ -179,6 +182,119 @@ export async function getCompanyByIdV1(
         "Company could not be loaded due to a storage error.",
         {
           operation: "company.getById",
+        },
+      ),
+    );
+  }
+}
+
+/**
+ * Updates a company identity record in persistent storage.
+ */
+export async function updateCompanyV1(
+  input: unknown,
+  deps: CompanyLifecycleDepsV1,
+): Promise<UpdateCompanyResultV1> {
+  const parsed = UpdateCompanyRequestV1Schema.safeParse(input);
+
+  if (!parsed.success) {
+    return parseUpdateCompanyResultV1(
+      buildFailure(
+        "INPUT_INVALID",
+        "Update company request payload is invalid.",
+        "The company update request is invalid.",
+        buildErrorContextFromZod(parsed.error),
+      ),
+    );
+  }
+
+  try {
+    const current = await deps.companyRepository.getById({
+      companyId: parsed.data.companyId,
+      tenantId: parsed.data.tenantId,
+    });
+
+    if (!current) {
+      return parseUpdateCompanyResultV1(
+        buildFailure(
+          "COMPANY_NOT_FOUND",
+          "Company does not exist for tenant and company ID.",
+          "Company could not be found.",
+          {
+            tenantId: parsed.data.tenantId,
+            companyId: parsed.data.companyId,
+          },
+        ),
+      );
+    }
+
+    const updatedAt = deps.nowIsoUtc();
+    const result = await deps.companyRepository.update(
+      parseCompanyV1({
+        ...current,
+        legalName: parsed.data.legalName,
+        organizationNumber: normalizeOrganizationNumberV1(
+          parsed.data.organizationNumber,
+        ),
+        updatedAt,
+      }),
+    );
+
+    if (!result.ok) {
+      if (result.code === "COMPANY_NOT_FOUND") {
+        return parseUpdateCompanyResultV1(
+          buildFailure(
+            "COMPANY_NOT_FOUND",
+            result.message,
+            "Company could not be found.",
+            {
+              tenantId: parsed.data.tenantId,
+              companyId: parsed.data.companyId,
+            },
+          ),
+        );
+      }
+
+      if (result.code === "DUPLICATE_COMPANY") {
+        return parseUpdateCompanyResultV1(
+          buildFailure(
+            "DUPLICATE_COMPANY",
+            result.message,
+            "A company already exists for this organization number.",
+            {
+              tenantId: current.tenantId,
+              organizationNumber: normalizeOrganizationNumberV1(
+                parsed.data.organizationNumber,
+              ),
+            },
+          ),
+        );
+      }
+
+      return parseUpdateCompanyResultV1(
+        buildFailure(
+          "PERSISTENCE_ERROR",
+          result.message,
+          "Company could not be updated due to a storage error.",
+          {
+            operation: "company.update",
+          },
+        ),
+      );
+    }
+
+    return parseUpdateCompanyResultV1({
+      ok: true,
+      company: result.company,
+    });
+  } catch (error) {
+    return parseUpdateCompanyResultV1(
+      buildFailure(
+        "PERSISTENCE_ERROR",
+        toUnknownErrorMessage(error),
+        "Company could not be updated due to an unexpected error.",
+        {
+          operation: "company.update",
         },
       ),
     );

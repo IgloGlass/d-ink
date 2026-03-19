@@ -36,6 +36,38 @@ export type CompanyRepositoryCreateResultV1 =
   | CompanyRepositoryCreateFailureV1;
 
 /**
+ * Failure codes emitted by update operations.
+ */
+export type CompanyRepositoryUpdateFailureCodeV1 =
+  | "COMPANY_NOT_FOUND"
+  | "DUPLICATE_COMPANY"
+  | "PERSISTENCE_ERROR";
+
+/**
+ * Failure result contract for company updates.
+ */
+export type CompanyRepositoryUpdateFailureV1 = {
+  code: CompanyRepositoryUpdateFailureCodeV1;
+  message: string;
+  ok: false;
+};
+
+/**
+ * Success result contract for company updates.
+ */
+export type CompanyRepositoryUpdateSuccessV1 = {
+  company: CompanyV1;
+  ok: true;
+};
+
+/**
+ * Result contract for company updates.
+ */
+export type CompanyRepositoryUpdateResultV1 =
+  | CompanyRepositoryUpdateSuccessV1
+  | CompanyRepositoryUpdateFailureV1;
+
+/**
  * Company persistence contract for V1 lifecycle operations.
  */
 export interface CompanyRepositoryV1 {
@@ -44,6 +76,7 @@ export interface CompanyRepositoryV1 {
     companyId: string;
     tenantId: string;
   }): Promise<CompanyV1 | null>;
+  update(company: CompanyV1): Promise<CompanyRepositoryUpdateResultV1>;
   listByTenant(input: { tenantId: string }): Promise<CompanyV1[]>;
 }
 
@@ -70,6 +103,17 @@ INSERT INTO companies_v1 (
   updated_at
 )
 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+`;
+
+const UPDATE_COMPANY_SQL_V1 = `
+UPDATE companies_v1
+SET
+  legal_name = ?3,
+  organization_number = ?4,
+  default_fiscal_year_start = ?5,
+  default_fiscal_year_end = ?6,
+  updated_at = ?7
+WHERE tenant_id = ?1 AND id = ?2
 `;
 
 const SELECT_COMPANY_BY_ID_SQL_V1 = `
@@ -195,6 +239,61 @@ export function createD1CompanyRepositoryV1(
       }
 
       return mapCompanyRowToContractV1(row);
+    },
+
+    async update(company: CompanyV1): Promise<CompanyRepositoryUpdateResultV1> {
+      const validatedCompany = parseCompanyV1(company);
+
+      try {
+        const updateResult = await db
+          .prepare(UPDATE_COMPANY_SQL_V1)
+          .bind(
+            validatedCompany.tenantId,
+            validatedCompany.id,
+            validatedCompany.legalName,
+            validatedCompany.organizationNumber,
+            validatedCompany.defaultFiscalYearStart,
+            validatedCompany.defaultFiscalYearEnd,
+            validatedCompany.updatedAt,
+          )
+          .run();
+
+        if (!updateResult.success) {
+          return {
+            ok: false,
+            code: "PERSISTENCE_ERROR",
+            message: updateResult.error ?? "Failed to update company.",
+          };
+        }
+
+        if (Number(updateResult.meta.changes ?? 0) === 0) {
+          return {
+            ok: false,
+            code: "COMPANY_NOT_FOUND",
+            message: "Company does not exist for this tenant and company ID.",
+          };
+        }
+
+        return {
+          ok: true,
+          company: validatedCompany,
+        };
+      } catch (error) {
+        if (isDuplicateCompanyError(error)) {
+          return {
+            ok: false,
+            code: "DUPLICATE_COMPANY",
+            message:
+              "Company already exists for this tenant and organization number.",
+          };
+        }
+
+        return {
+          ok: false,
+          code: "PERSISTENCE_ERROR",
+          message: toErrorMessage(error),
+        };
+      }
     },
 
     async listByTenant(input: { tenantId: string }): Promise<CompanyV1[]> {

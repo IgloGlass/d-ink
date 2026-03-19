@@ -44,11 +44,20 @@ const mappingColumnMinWidthsV1 = {
   account: 92,
   description: 220,
   category: 260,
-  confidence: 340,
+  closingBalance: 160,
+  confidence: 320,
 } as const;
 
 function formatConfidenceLabelV1(confidence: number): string {
   return `${Math.round(confidence * 100)}%`;
+}
+
+function formatBalanceValueV1(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "—";
+  }
+
+  return value.toLocaleString("sv-SE");
 }
 
 function normalizeReasoningTextV1(value: string): string {
@@ -397,6 +406,7 @@ export function AccountMappingGridV1({
     account: 96,
     description: 300,
     category: 300,
+    closingBalance: 160,
     confidence: 430,
   });
 
@@ -552,6 +562,7 @@ export function AccountMappingGridV1({
       account: columnWidths.account,
       description: columnWidths.description + descriptionExtra,
       category: columnWidths.category + categoryExtra,
+      closingBalance: columnWidths.closingBalance,
       confidence: columnWidths.confidence + confidenceExtra,
     };
   }, [columnWidths, tableViewportWidth]);
@@ -920,6 +931,7 @@ export function AccountMappingGridV1({
               { key: "account", label: "Account" },
               { key: "description", label: "Description" },
               { key: "category", label: "Category" },
+              { key: "closingBalance", label: "Closing balance" },
               { key: "confidence", label: "AI review" },
             ].map((column) => (
               <div
@@ -1032,6 +1044,18 @@ export function AccountMappingGridV1({
                           </span>
                           <span className="account-mapper__category-chip-caret" aria-hidden="true">✎</span>
                         </button>
+                      </div>
+
+                      <div
+                        style={{ width: effectiveColumnWidths.closingBalance }}
+                        className="account-mapper__cell account-mapper__cell--balance"
+                      >
+                        <div className="account-mapper__cell-title">
+                          {formatBalanceValueV1(row.closingBalance)}
+                        </div>
+                        <div className="account-mapper__cell-subtle">
+                          Closing balance
+                        </div>
                       </div>
 
                       <div
@@ -1148,6 +1172,11 @@ export function AccountMappingGridV1({
                 <span>Source</span>
                 <strong>{getSourceLabelV1(selectedDecision.source)}</strong>
                 <p>{selectedDecision.policyRuleReference}</p>
+              </div>
+              <div className="account-mapper__detail-metric">
+                <span>Closing balance</span>
+                <strong>{formatBalanceValueV1(selectedDecision.closingBalance)}</strong>
+                <p>Trial balance closing amount</p>
               </div>
             </div>
 

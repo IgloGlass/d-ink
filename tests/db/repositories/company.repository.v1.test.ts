@@ -39,6 +39,33 @@ describe("D1 company repository v1", () => {
     }
   });
 
+  it("updates a company successfully and keeps organization numbers normalized", async () => {
+    const repository = createD1CompanyRepositoryV1(env.DB);
+    const originalCompany = buildCompanyV1();
+    await repository.create(originalCompany);
+
+    const updatedCompany = buildCompanyV1({
+      legalName: "Updated Examplebolaget AB",
+      organizationNumber: "5569999999",
+      updatedAt: "2026-03-05T12:01:00.000Z",
+    });
+
+    const result = await repository.update(updatedCompany);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.company.legalName).toBe("Updated Examplebolaget AB");
+      expect(result.company.organizationNumber).toBe("5569999999");
+    }
+
+    const loaded = await repository.getById({
+      tenantId: originalCompany.tenantId,
+      companyId: originalCompany.id,
+    });
+    expect(loaded?.legalName).toBe("Updated Examplebolaget AB");
+    expect(loaded?.organizationNumber).toBe("5569999999");
+  });
+
   it("rejects duplicate tenant/organization-number company creation", async () => {
     const repository = createD1CompanyRepositoryV1(env.DB);
     await repository.create(buildCompanyV1());

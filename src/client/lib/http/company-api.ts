@@ -1,8 +1,10 @@
 import {
   type CreateCompanyResultV1,
   type ListCompaniesByTenantResultV1,
+  type UpdateCompanyResultV1,
   parseCreateCompanyResultV1,
   parseListCompaniesByTenantResultV1,
+  parseUpdateCompanyResultV1,
 } from "../../../shared/contracts/company-lifecycle.v1";
 import {
   type CompanyV1,
@@ -25,8 +27,20 @@ export type CreateCompanyInputV1 = {
   tenantId: string;
 };
 
+export type UpdateCompanyInputV1 = {
+  companyId: string;
+  legalName: string;
+  organizationNumber: string;
+  tenantId: string;
+};
+
 export type CreateCompanyResponseV1 = Extract<
   CreateCompanyResultV1,
+  { ok: true }
+>;
+
+export type UpdateCompanyResponseV1 = Extract<
+  UpdateCompanyResultV1,
   { ok: true }
 >;
 
@@ -68,6 +82,12 @@ function parseCreateCompanyHttpResponseV1(
   return expectSuccessResultV1(parseCreateCompanyResultV1(payload));
 }
 
+function parseUpdateCompanyHttpResponseV1(
+  payload: unknown,
+): UpdateCompanyResponseV1 {
+  return expectSuccessResultV1(parseUpdateCompanyResultV1(payload));
+}
+
 export async function listCompaniesByTenantV1(input: {
   tenantId: string;
 }): Promise<ListCompaniesResponseV1> {
@@ -93,6 +113,26 @@ export async function createCompanyV1(
     method: "POST",
     body: input,
     parseResponse: parseCreateCompanyHttpResponseV1,
+  });
+
+  return {
+    ...result,
+    company: parseCompanyV1(result.company),
+  };
+}
+
+export async function updateCompanyV1(
+  input: UpdateCompanyInputV1,
+): Promise<UpdateCompanyResponseV1> {
+  const result = await apiRequest<UpdateCompanyResponseV1>({
+    path: `/v1/companies/${input.companyId}`,
+    method: "PUT",
+    body: {
+      tenantId: input.tenantId,
+      legalName: input.legalName,
+      organizationNumber: input.organizationNumber,
+    },
+    parseResponse: parseUpdateCompanyHttpResponseV1,
   });
 
   return {

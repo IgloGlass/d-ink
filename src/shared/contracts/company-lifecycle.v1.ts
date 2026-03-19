@@ -131,6 +131,32 @@ export type CreateCompanyRequestV1 = z.infer<
 >;
 
 /**
+ * Request payload for updating company identity fields.
+ */
+export const UpdateCompanyRequestV1Schema = z
+  .object({
+    tenantId: UuidV4Schema,
+    companyId: UuidV4Schema,
+    legalName: z.string().trim().min(1).max(200),
+    organizationNumber: z
+      .string()
+      .trim()
+      .regex(
+        /^\d{6}-?\d{4}$/,
+        "Expected organization number in 10-digit format (with optional dash).",
+      ),
+    actor: CompanyActorContextV1Schema,
+  })
+  .strict();
+
+/**
+ * Inferred TypeScript type for update company request payloads.
+ */
+export type UpdateCompanyRequestV1 = z.infer<
+  typeof UpdateCompanyRequestV1Schema
+>;
+
+/**
  * Success payload for create company operation.
  */
 export const CreateCompanySuccessV1Schema = z
@@ -176,6 +202,36 @@ export const CreateCompanyResultV1Schema = z.discriminatedUnion("ok", [
  * Inferred TypeScript type for create company result payloads.
  */
 export type CreateCompanyResultV1 = z.infer<typeof CreateCompanyResultV1Schema>;
+
+/**
+ * Success payload for update company operation.
+ */
+export const UpdateCompanySuccessV1Schema = z
+  .object({
+    ok: z.literal(true),
+    company: CompanyV1Schema,
+  })
+  .strict();
+
+/**
+ * Inferred TypeScript type for successful update company results.
+ */
+export type UpdateCompanySuccessV1 = z.infer<
+  typeof UpdateCompanySuccessV1Schema
+>;
+
+/**
+ * Discriminated result payload for update company operation.
+ */
+export const UpdateCompanyResultV1Schema = z.discriminatedUnion("ok", [
+  UpdateCompanySuccessV1Schema,
+  CompanyLifecycleFailureV1Schema,
+]);
+
+/**
+ * Inferred TypeScript type for update company result payloads.
+ */
+export type UpdateCompanyResultV1 = z.infer<typeof UpdateCompanyResultV1Schema>;
 
 /**
  * Request payload for company lookup by tenant + company ID.
@@ -299,6 +355,15 @@ export function parseCreateCompanyResultV1(
   input: unknown,
 ): CreateCompanyResultV1 {
   return CreateCompanyResultV1Schema.parse(input);
+}
+
+/**
+ * Parses unknown input into an update company result payload.
+ */
+export function parseUpdateCompanyResultV1(
+  input: unknown,
+): UpdateCompanyResultV1 {
+  return UpdateCompanyResultV1Schema.parse(input);
 }
 
 /**

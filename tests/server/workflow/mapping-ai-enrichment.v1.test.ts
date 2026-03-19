@@ -190,6 +190,7 @@ function createDeterministicMappingV1() {
         accountNumber: "1030",
         sourceAccountNumber: "1030",
         accountName: "Programvaror, anskaffningsvarde",
+        closingBalance: 100000,
         proposedCategory: getSilverfinTaxCategoryByCodeV1("102000"),
         selectedCategory: getSilverfinTaxCategoryByCodeV1("102000"),
         confidence: 0.88,
@@ -215,6 +216,7 @@ function createDeterministicMappingV1() {
         accountNumber: "1270",
         sourceAccountNumber: "1270",
         accountName: "Forbattringsutgifter pa annans fastighet",
+        closingBalance: 75000,
         proposedCategory: getSilverfinTaxCategoryByCodeV1("100000"),
         selectedCategory: getSilverfinTaxCategoryByCodeV1("100000"),
         confidence: 0.4,
@@ -283,6 +285,7 @@ function createAiSubsetMappingV1() {
         accountNumber: "1030",
         sourceAccountNumber: "1030",
         accountName: "Programvaror, anskaffningsvarde",
+        closingBalance: 100000,
         proposedCategory: getSilverfinTaxCategoryByCodeV1("102000"),
         selectedCategory: getSilverfinTaxCategoryByCodeV1("102000"),
         confidence: 0.91,
@@ -313,6 +316,7 @@ function createAiSubsetMappingV1() {
         accountNumber: "1270",
         sourceAccountNumber: "1270",
         accountName: "Forbattringsutgifter pa annans fastighet",
+        closingBalance: 75000,
         proposedCategory: getSilverfinTaxCategoryByCodeV1("123200"),
         selectedCategory: getSilverfinTaxCategoryByCodeV1("123200"),
         confidence: 0.93,
@@ -578,9 +582,17 @@ describe("mapping AI enrichment workflow v1", () => {
         ?.source,
     ).toBe("ai");
     expect(
+      result.mapping?.decisions.find((decision) => decision.id === "Sheet1:2")
+        ?.closingBalance,
+    ).toBe(100000);
+    expect(
       result.mapping?.decisions.find((decision) => decision.id === "Sheet1:3")
         ?.source,
     ).toBe("ai");
+    expect(
+      result.mapping?.decisions.find((decision) => decision.id === "Sheet1:3")
+        ?.closingBalance,
+    ).toBe(75000);
     expect(
       result.mapping?.decisions.find((decision) => decision.id === "Sheet1:3")
         ?.selectedCategory.code,

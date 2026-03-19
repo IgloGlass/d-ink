@@ -1,7 +1,7 @@
 import { PDFDocument } from "pdf-lib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { buildPopulatedInk2PdfBytesV1 } from "../../../src/client/features/modules/ink2-pdf-download.v1";
+import { populateInk2PdfFormV1 } from "../../../src/client/features/modules/ink2-pdf-download.v1";
 import { parseAnnualReportExtractionPayloadV1 } from "../../../src/shared/contracts/annual-report-extraction.v1";
 import { parseInk2FormDraftPayloadV1 } from "../../../src/shared/contracts/ink2-form.v1";
 
@@ -10,19 +10,16 @@ describe("ink2 pdf download helper v1", () => {
     vi.restoreAllMocks();
   });
 
-  it("builds a valid populated pdf from the checked-in template", async () => {
-    const templatePdf = await PDFDocument.create();
-    templatePdf.addPage();
-    templatePdf.addPage();
-    templatePdf.addPage();
-    templatePdf.addPage();
-    const templateBytes = await templatePdf.save();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(new Blob([new Uint8Array(templateBytes)]), {
-        status: 200,
-        headers: { "Content-Type": "application/pdf" },
+  it("writes 4.15 to its own PDF slot instead of the 4.14c field", async () => {
+    const fieldValues = new Map<string, string>();
+    const mockForm = {
+      flatten: vi.fn(),
+      getTextField: (fieldName: string) => ({
+        setText: (value: string) => {
+          fieldValues.set(fieldName, value);
+        },
       }),
-    );
+    };
 
     const extraction = parseAnnualReportExtractionPayloadV1({
       schemaVersion: "annual_report_extraction_v1",
@@ -103,6 +100,12 @@ describe("ink2 pdf download helper v1", () => {
           sourceReferences: ["ink2_derived:4.1"],
         },
         {
+          fieldId: "4.14c",
+          amount: 5000,
+          provenance: "adjustment",
+          sourceReferences: ["tax_adjustments:adj-1"],
+        },
+        {
           fieldId: "4.3c",
           amount: 5000,
           provenance: "adjustment",
@@ -133,14 +136,15 @@ describe("ink2 pdf download helper v1", () => {
       },
     });
 
-    const populatedBytes = await buildPopulatedInk2PdfBytesV1({
+    populateInk2PdfFormV1({
+      pdfForm: mockForm as unknown as ReturnType<PDFDocument["getForm"]>,
       extraction,
       formDraft,
     });
 
-    expect(populatedBytes.byteLength).toBeGreaterThan(500);
-
-    const parsedPdf = await PDFDocument.load(populatedBytes);
-    expect(parsedPdf.getPageCount()).toBe(4);
+    expect(fieldValues.get("20020434")).toBe("5000");
+    expect(fieldValues.get("20020435")).toBe("1006000");
+    expect(fieldValues.get("20020434")).not.toBe(fieldValues.get("20020435"));
+    expect(fieldValues.get("20020436")).toBe("");
   });
 });

@@ -1822,7 +1822,6 @@ function selectRelevantNoteCandidateBlocksV1(input: {
     .filter(
       (candidate) =>
         !isLikelyIndexOnlyRelevantNoteBlockV1(candidate.block) &&
-        candidate.keywordScore > 0 &&
         (candidate.classification?.score ?? 0) >= 4,
     )
     .sort((left, right) => {

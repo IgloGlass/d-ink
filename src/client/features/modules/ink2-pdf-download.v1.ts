@@ -55,6 +55,54 @@ function setOptionalTextFieldV1(
   }
 }
 
+export function populateInk2PdfFormV1(input: {
+  audited?: boolean;
+  consultantAssisted?: boolean;
+  extraction: AnnualReportExtractionPayloadV1;
+  formDraft: Ink2FormDraftPayloadV1;
+  pdfForm: ReturnType<PDFDocument["getForm"]>;
+}): void {
+  const identityFields = buildInk2PdfIdentityFieldMapV1({
+    companyName: input.extraction.fields.companyName.value,
+    organizationNumber: input.extraction.fields.organizationNumber.value,
+    fiscalYearStart: input.extraction.fields.fiscalYearStart.value,
+    fiscalYearEnd: input.extraction.fields.fiscalYearEnd.value,
+    generatedDateIso: formatIsoDateForPdfV1(new Date()),
+  });
+
+  for (const [fieldName, value] of Object.entries(identityFields)) {
+    setOptionalTextFieldV1(input.pdfForm, fieldName, value);
+  }
+
+  const checkboxFields = buildInk2TemplateCheckboxFieldMapV1({
+    consultantAssisted: input.consultantAssisted,
+    audited: input.audited,
+  });
+  for (const [fieldName, value] of Object.entries(checkboxFields)) {
+    setOptionalTextFieldV1(input.pdfForm, fieldName, value);
+  }
+
+  for (const field of input.formDraft.fields) {
+    const definition = getInk2FieldDefinitionV1(field.fieldId);
+    if (!definition) {
+      continue;
+    }
+
+    definition.pdfFieldNames.forEach((pdfFieldName, slotIndex) => {
+      setOptionalTextFieldV1(
+        input.pdfForm,
+        pdfFieldName,
+        formatPdfAmountSlotV1({
+          amount: field.amount,
+          slotCount: definition.pdfFieldNames.length,
+          slotIndex,
+          sign: definition.sign,
+        }),
+      );
+    });
+  }
+}
+
 export async function buildPopulatedInk2PdfBytesV1(input: {
   audited?: boolean;
   consultantAssisted?: boolean;
@@ -69,47 +117,13 @@ export async function buildPopulatedInk2PdfBytesV1(input: {
   const templateBytes = await templateResponse.arrayBuffer();
   const pdfDocument = await PDFDocument.load(templateBytes);
   const pdfForm = pdfDocument.getForm();
-
-  const identityFields = buildInk2PdfIdentityFieldMapV1({
-    companyName: input.extraction.fields.companyName.value,
-    organizationNumber: input.extraction.fields.organizationNumber.value,
-    fiscalYearStart: input.extraction.fields.fiscalYearStart.value,
-    fiscalYearEnd: input.extraction.fields.fiscalYearEnd.value,
-    generatedDateIso: formatIsoDateForPdfV1(new Date()),
-  });
-
-  for (const [fieldName, value] of Object.entries(identityFields)) {
-    setOptionalTextFieldV1(pdfForm, fieldName, value);
-  }
-
-  const checkboxFields = buildInk2TemplateCheckboxFieldMapV1({
-    consultantAssisted: input.consultantAssisted,
+  populateInk2PdfFormV1({
     audited: input.audited,
+    consultantAssisted: input.consultantAssisted,
+    extraction: input.extraction,
+    formDraft: input.formDraft,
+    pdfForm,
   });
-  for (const [fieldName, value] of Object.entries(checkboxFields)) {
-    setOptionalTextFieldV1(pdfForm, fieldName, value);
-  }
-
-  for (const field of input.formDraft.fields) {
-    const definition = getInk2FieldDefinitionV1(field.fieldId);
-    if (!definition) {
-      continue;
-    }
-
-    definition.pdfFieldNames.forEach((pdfFieldName, slotIndex) => {
-      setOptionalTextFieldV1(
-        pdfForm,
-        pdfFieldName,
-        formatPdfAmountSlotV1({
-          amount: field.amount,
-          slotCount: definition.pdfFieldNames.length,
-          slotIndex,
-          sign: definition.sign,
-        }),
-      );
-    });
-  }
-
   pdfForm.flatten();
   return pdfDocument.save();
 }

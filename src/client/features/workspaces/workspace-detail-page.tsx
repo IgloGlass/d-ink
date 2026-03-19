@@ -2,9 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import {
-  type AnnualReportProcessingRunV1,
-} from "../../../shared/contracts/annual-report-processing-run.v1";
+import type { AnnualReportProcessingRunV1 } from "../../../shared/contracts/annual-report-processing-run.v1";
 import {
   type SilverfinTaxCategoryCodeV1,
   listSilverfinTaxCategoriesV1,
@@ -14,13 +12,10 @@ import { useRequiredSessionPrincipalV1 } from "../../app/session-context";
 import { ConfirmModalV1 } from "../../components/confirm-modal-v1";
 import { StatusPill } from "../../components/status-pill";
 import {
-  isAnnualReportProcessingOpenStatusV1,
-  useAnnualReportUploadControllerV1,
-} from "../annual-report/use-annual-report-upload-controller.v1";
-import {
   ApiClientError,
   toUserFacingErrorMessage,
 } from "../../lib/http/api-client";
+import { updateCompanyV1 } from "../../lib/http/company-api";
 import {
   type ApplyAnnualReportOverridesResponseV1,
   type ApplyInk2OverridesResponseV1,
@@ -31,9 +26,9 @@ import {
   type GenerateMappingReviewSuggestionsResponseV1,
   type GetActiveAnnualReportExtractionResponseV1,
   type GetActiveInk2FormResponseV1,
-  type GetLatestAnnualReportProcessingRunResponseV1,
   type GetActiveTaxAdjustmentsResponseV1,
   type GetActiveTaxSummaryResponseV1,
+  type GetLatestAnnualReportProcessingRunResponseV1,
   type ListCommentsResponseV1,
   type ListTasksResponseV1,
   type ListWorkspaceExportsResponseV1,
@@ -53,10 +48,10 @@ import {
   generateMappingReviewSuggestionsV1,
   getActiveAnnualReportExtractionV1,
   getActiveInk2FormV1,
-  getLatestAnnualReportProcessingRunV1,
   getActiveMappingDecisionsV1,
   getActiveTaxAdjustmentsV1,
   getActiveTaxSummaryV1,
+  getLatestAnnualReportProcessingRunV1,
   getWorkspaceByIdV1,
   listCommentsV1,
   listTasksV1,
@@ -66,6 +61,10 @@ import {
   runTaxSummaryV1,
   runTrialBalancePipelineV1,
 } from "../../lib/http/workspace-api";
+import {
+  isAnnualReportProcessingOpenStatusV1,
+  useAnnualReportUploadControllerV1,
+} from "../annual-report/use-annual-report-upload-controller.v1";
 
 const allStatusesV1: WorkspaceStatusV1[] = [
   "draft",
@@ -183,6 +182,14 @@ async function fileToBase64V1(file: File): Promise<string> {
   return btoa(binary);
 }
 
+function formatBalanceValueV1(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "—";
+  }
+
+  return value.toLocaleString("sv-SE");
+}
+
 export function WorkspaceDetailPage() {
   const { workspaceId } = useParams();
   const principal = useRequiredSessionPrincipalV1();
@@ -193,7 +200,11 @@ export function WorkspaceDetailPage() {
     confirmLabel: string;
     onConfirm: () => void;
   } | null>(null);
-  const requestConfirm = (message: string, confirmLabel: string, onConfirm: () => void) => {
+  const requestConfirm = (
+    message: string,
+    confirmLabel: string,
+    onConfirm: () => void,
+  ) => {
     setConfirmModal({ message, confirmLabel, onConfirm });
   };
 
@@ -256,41 +267,36 @@ export function WorkspaceDetailPage() {
         tenantId: principal.tenantId,
         workspaceId,
       }),
-    retry: (failureCount, error) => {
-      if (
-        error instanceof ApiClientError &&
-        error.code === "EXTRACTION_NOT_FOUND"
-      ) {
-        return false;
-      }
-      return failureCount < 2;
-    },
   });
   const annualReportProcessingRunQuery = useQuery({
     queryKey: latestAnnualReportProcessingRunKeyV1(
       principal.tenantId,
       workspaceId,
     ),
-    queryFn: async (): Promise<GetLatestAnnualReportProcessingRunResponseV1 | null> => {
-      try {
-        return await getLatestAnnualReportProcessingRunV1({
-          tenantId: principal.tenantId,
-          workspaceId,
-        });
-      } catch (error) {
-        if (
-          error instanceof ApiClientError &&
-          error.code === "PROCESSING_RUN_NOT_FOUND"
-        ) {
-          return null;
-        }
+    queryFn:
+      async (): Promise<GetLatestAnnualReportProcessingRunResponseV1 | null> => {
+        try {
+          return await getLatestAnnualReportProcessingRunV1({
+            tenantId: principal.tenantId,
+            workspaceId,
+          });
+        } catch (error) {
+          if (
+            error instanceof ApiClientError &&
+            error.code === "PROCESSING_RUN_NOT_FOUND"
+          ) {
+            return null;
+          }
 
-        throw error;
-      }
-    },
+          throw error;
+        }
+      },
     retry: false,
     refetchInterval: ({ state }) => {
-      const data = state.data as GetLatestAnnualReportProcessingRunResponseV1 | null | undefined;
+      const data = state.data as
+        | GetLatestAnnualReportProcessingRunResponseV1
+        | null
+        | undefined;
       return isAnnualReportProcessingOpenStatusV1(data?.run?.status)
         ? 2_000
         : false;
@@ -300,40 +306,16 @@ export function WorkspaceDetailPage() {
     queryKey: activeTaxAdjustmentsKeyV1(principal.tenantId, workspaceId),
     queryFn: () =>
       getActiveTaxAdjustmentsV1({ tenantId: principal.tenantId, workspaceId }),
-    retry: (failureCount, error) => {
-      if (
-        error instanceof ApiClientError &&
-        error.code === "ADJUSTMENTS_NOT_FOUND"
-      ) {
-        return false;
-      }
-      return failureCount < 2;
-    },
   });
   const taxSummaryQuery = useQuery({
     queryKey: activeTaxSummaryKeyV1(principal.tenantId, workspaceId),
     queryFn: () =>
       getActiveTaxSummaryV1({ tenantId: principal.tenantId, workspaceId }),
-    retry: (failureCount, error) => {
-      if (
-        error instanceof ApiClientError &&
-        error.code === "ADJUSTMENTS_NOT_FOUND"
-      ) {
-        return false;
-      }
-      return failureCount < 2;
-    },
   });
   const ink2FormQuery = useQuery({
     queryKey: activeInk2FormKeyV1(principal.tenantId, workspaceId),
     queryFn: () =>
       getActiveInk2FormV1({ tenantId: principal.tenantId, workspaceId }),
-    retry: (failureCount, error) => {
-      if (error instanceof ApiClientError && error.code === "FORM_NOT_FOUND") {
-        return false;
-      }
-      return failureCount < 2;
-    },
   });
   const exportsQuery = useQuery({
     queryKey: exportsKeyV1(principal.tenantId, workspaceId),
@@ -478,7 +460,7 @@ export function WorkspaceDetailPage() {
         throw new Error("Provide a valid override value.");
       }
 
-      return applyAnnualReportOverridesV1({
+      const result = await applyAnnualReportOverridesV1({
         tenantId: principal.tenantId,
         workspaceId,
         expectedActiveExtraction: {
@@ -493,18 +475,49 @@ export function WorkspaceDetailPage() {
           },
         ],
       });
+
+      if (
+        fieldKey === "companyName" ||
+        fieldKey === "organizationNumber"
+      ) {
+        const companyId = workspaceQuery.data?.workspace.companyId;
+        if (!companyId) {
+          throw new Error("Workspace company ID is not available.");
+        }
+
+        const legalName =
+          result.extraction.fields.companyName.value?.trim() ?? "";
+        const organizationNumber =
+          result.extraction.fields.organizationNumber.value?.trim() ?? "";
+        if (!legalName || !organizationNumber) {
+          throw new Error(
+            "Updated annual report extraction is missing company identity values.",
+          );
+        }
+
+        await updateCompanyV1({
+          tenantId: principal.tenantId,
+          companyId,
+          legalName,
+          organizationNumber,
+        });
+      }
+
+      return result;
     },
-    onSuccess: async () => {
+    onSuccess: async (_, fieldKey) => {
       setAnnualReportFile(null);
-      queryClient.removeQueries({
-        queryKey: latestAnnualReportProcessingRunKeyV1(
-          principal.tenantId,
-          workspaceId,
-        ),
-      });
       queryClient.removeQueries({
         queryKey: activeAnnualReportKeyV1(principal.tenantId, workspaceId),
       });
+      if (
+        fieldKey === "companyName" ||
+        fieldKey === "organizationNumber"
+      ) {
+        await queryClient.invalidateQueries({
+          queryKey: ["companies", principal.tenantId],
+        });
+      }
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: activeAnnualReportKeyV1(principal.tenantId, workspaceId),
@@ -520,12 +533,6 @@ export function WorkspaceDetailPage() {
         }),
         queryClient.invalidateQueries({
           queryKey: exportsKeyV1(principal.tenantId, workspaceId),
-        }),
-        queryClient.invalidateQueries({
-          queryKey: latestAnnualReportProcessingRunKeyV1(
-            principal.tenantId,
-            workspaceId,
-          ),
         }),
       ]);
     },
@@ -888,8 +895,8 @@ export function WorkspaceDetailPage() {
         <p className="eyebrow">Tax workspace</p>
         <h1>Mapping cockpit</h1>
         <p className="hint-text">
-          Upload trial balance files, run AI-first mapping, apply
-          overrides, and test advisory review suggestions.
+          Upload trial balance files, run AI-first mapping, apply overrides, and
+          test advisory review suggestions.
         </p>
         <p>
           <Link to="/app/workspaces">Back to workspace list</Link>
@@ -974,11 +981,11 @@ export function WorkspaceDetailPage() {
                 ? "Processing..."
                 : annualReportRunIsStale
                   ? "Upload replacement report"
-                : annualReportMutation.isPending
-                  ? "Uploading..."
-                : annualReportQuery.isSuccess
-                  ? "Upload a new annual report"
-                  : "Upload annual report"}
+                  : annualReportMutation.isPending
+                    ? "Uploading..."
+                    : annualReportQuery.isSuccess
+                      ? "Upload a new annual report"
+                      : "Upload annual report"}
             </button>
             {(latestAnnualReportRun?.status === "failed" ||
               (latestAnnualReportRun?.status === "partial" &&
@@ -987,7 +994,8 @@ export function WorkspaceDetailPage() {
                 type="button"
                 className="secondary"
                 disabled={
-                  annualReportMutation.isPending || annualReportUploadBlockedByRun
+                  annualReportMutation.isPending ||
+                  annualReportUploadBlockedByRun
                 }
                 onClick={runRecoveryAction}
               >
@@ -1016,8 +1024,8 @@ export function WorkspaceDetailPage() {
           ) : null}
           {annualReportMutationErrorCode === "PROCESSING_RUN_UNAVAILABLE" ? (
             <p className="hint-text">
-              Annual-report processing runtime is unavailable. Verify local queue
-              and file bindings, then retry.
+              Annual-report processing runtime is unavailable. Verify local
+              queue and file bindings, then retry.
             </p>
           ) : null}
           {annualReportMutationErrorCode === "RUNTIME_MISMATCH" ? (
@@ -1315,6 +1323,7 @@ export function WorkspaceDetailPage() {
                   <th>Current mapping</th>
                   <th>Override scope</th>
                   <th>Target category</th>
+                  <th>Closing balance</th>
                   <th>Reason</th>
                   <th>Apply</th>
                 </tr>
@@ -1401,6 +1410,7 @@ export function WorkspaceDetailPage() {
                           ))}
                         </select>
                       </td>
+                      <td>{formatBalanceValueV1(decision.closingBalance)}</td>
                       <td>
                         <input
                           type="text"

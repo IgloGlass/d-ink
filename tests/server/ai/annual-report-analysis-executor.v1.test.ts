@@ -3258,6 +3258,163 @@ describe("executeAnnualReportAnalysisV1", () => {
     );
   });
 
+  it("keeps leasing notes in the relevant-note locator even when the candidate keyword score is zero", async () => {
+    generateGeminiStructuredOutputMock.mockReset();
+    generateGeminiStructuredOutputMock.mockImplementation(async (input) => {
+      const userInstruction = String(input?.request?.userInstruction ?? "");
+      if (userInstruction.includes("Stage: core facts extraction.")) {
+        return {
+          ok: true,
+          model: "qwen-plus",
+          output: {
+            schemaVersion: "annual_report_ai_core_facts_v1",
+            fields: {
+              companyName: { status: "extracted", confidence: 0.99, valueText: "Acme AB" },
+              organizationNumber: { status: "extracted", confidence: 0.99, valueText: "556677-8899" },
+              fiscalYearStart: { status: "extracted", confidence: 0.99, valueText: "2025-01-01", normalizedValue: "2025-01-01" },
+              fiscalYearEnd: { status: "extracted", confidence: 0.99, valueText: "2025-12-31", normalizedValue: "2025-12-31" },
+              accountingStandard: { status: "extracted", confidence: 0.99, valueText: "K3", normalizedValue: "K3" },
+              profitBeforeTax: { status: "extracted", confidence: 0.99, valueText: "500", normalizedValue: 500 },
+            },
+            taxSignals: [],
+            documentWarnings: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: combined extractable-text annual-report extraction.")) {
+        return {
+          ok: true,
+          model: "qwen-plus",
+          output: createCombinedExtractionOutputV1(),
+        };
+      }
+      if (userInstruction.includes("Stage: tax expense note extraction.")) {
+        return {
+          ok: true,
+          model: "qwen-plus",
+          output: {
+            schemaVersion: "annual_report_ai_tax_expense_note_v1",
+            taxExpenseContext: { notes: [], evidence: [] },
+            evidence: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: relevant tax-note locator.")) {
+        return {
+          ok: true,
+          model: "qwen-plus",
+          output: {
+            schemaVersion: "annual_report_ai_relevant_note_locator_v1",
+            relevantNotes: [
+              {
+                blockId: "not-3-24",
+                category: "leasing",
+                noteReference: "Not 3",
+                title: "Hyresavtal",
+                pages: [24],
+                notes: ["Hyresavtal för kontorslokaler löper på ett år."],
+                evidence: [{ snippet: "Not 3 Hyresavtal", page: 24 }],
+              },
+            ],
+            evidence: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: tax notes (assets & reserves).")) {
+        return {
+          ok: true,
+          model: "qwen-plus",
+          output: {
+            schemaVersion: "annual_report_ai_tax_notes_assets_reserves_v1",
+            depreciationContext: { assetAreas: [], evidence: [] },
+            assetMovements: { lines: [], evidence: [] },
+            reserveContext: { movements: [], notes: [], evidence: [] },
+            taxExpenseContext: { notes: [], evidence: [] },
+            evidence: [],
+          },
+        };
+      }
+      if (userInstruction.includes("Stage: tax notes (finance & other).")) {
+        return {
+          ok: true,
+          model: "qwen-plus",
+          output: {
+            schemaVersion: "annual_report_ai_tax_notes_finance_other_v1",
+            netInterestContext: { notes: [], evidence: [] },
+            pensionContext: { flags: [], notes: [], evidence: [] },
+            leasingContext: { flags: [], notes: [], evidence: [] },
+            groupContributionContext: { flags: [], notes: [], evidence: [] },
+            shareholdingContext: { flags: [], notes: [], evidence: [] },
+            evidence: [],
+          },
+        };
+      }
+
+      return {
+        ok: false,
+        error: {
+          code: "MODEL_EXECUTION_FAILED",
+          message: `Unexpected stage for test: ${userInstruction.slice(0, 80)}`,
+          context: {},
+        },
+      };
+    });
+
+    const pageTexts = Array.from({ length: 32 }, (_, index) => {
+      const page = index + 1;
+      if (page === 1) return "Acme AB\nOrg.nr 556677-8899\nArsredovisning";
+      if (page === 2) return "Rakenskapsar 2025-01-01 - 2025-12-31\nK3\nInnehall\nResultatrakning 15\nBalansrakning 16-17\nBokslutskommentarer 20-23\nUpplysningar till enskilda poster 24-31";
+      if (page === 15) return "Resultatrakning\nResultat fore skatt 500";
+      if (page === 16) return "Balansrakning\nKassa och bank 200";
+      if (page === 17) return "Balansrakning, forts.";
+      if (page === 24) return "Not 3 Hyresavtal\nHyresavtal for kontorslokaler lopar pa ett ar.";
+      return `Page ${page}`;
+    });
+    const pdfBytes = await createPdfBytesWithPageLabelsV1({
+      1: pageTexts[0]!,
+      2: pageTexts[1]!,
+      15: pageTexts[14]!,
+      16: pageTexts[15]!,
+      17: pageTexts[16]!,
+      24: pageTexts[23]!,
+    });
+
+    const result = await executeAnnualReportAnalysisV1({
+      apiKey: "test-key",
+      config: getConfigOrThrowV1(),
+      document: createPreparedPdfDocumentV1({
+        classification: "extractable_text_pdf",
+        pdfBytes,
+        pageCount: 32,
+        pageTexts,
+      }),
+      generateId: () => "run-leasing-notes",
+      generatedAt: "2026-03-12T13:00:00.000Z",
+      modelConfig: {
+        fastModel: "qwen-plus",
+        thinkingModel: "qwen-max",
+      },
+      runtimeMode: "ai_overdrive",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(findMockUserInstructionV1("Stage: relevant tax-note locator.")).toContain(
+      "Hyresavtal",
+    );
+    expect(result.extraction.taxDeep.relevantNotes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          category: "leasing",
+          noteReference: "Not 3",
+        }),
+      ]),
+    );
+  });
+
   it("drops uncategorized relevant notes and records an explicit warning instead of routing them to tax expense", async () => {
     generateGeminiStructuredOutputMock.mockReset();
     generateGeminiStructuredOutputMock.mockImplementation(async (input) => {

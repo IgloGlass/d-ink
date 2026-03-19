@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -307,6 +313,297 @@ describe("WorkspaceDetailPage", () => {
       expect(
         screen.getByText("This status change is not allowed."),
       ).toBeInTheDocument();
+    });
+  });
+
+  it("syncs company identity changes from annual-report overrides to the canonical company record", async () => {
+    let companyUpdateBody: unknown = null;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (
+        url.includes("/v1/workspaces/44444444-4444-4444-8444-444444444444?") &&
+        method === "GET"
+      ) {
+        return mockJsonResponse({
+          status: 200,
+          body: {
+            ok: true,
+            workspace: {
+              id: "44444444-4444-4444-8444-444444444444",
+              tenantId: sessionPrincipalMock.tenantId,
+              companyId: "55555555-5555-4555-8555-555555555555",
+              fiscalYearStart: "2025-01-01",
+              fiscalYearEnd: "2025-12-31",
+              status: "draft",
+              createdAt: "2026-02-24T10:00:00.000Z",
+              updatedAt: "2026-02-24T10:00:00.000Z",
+            },
+          },
+        });
+      }
+
+      if (url.includes("/annual-report-extractions/active?")) {
+        return mockJsonResponse({
+          status: 200,
+          body: {
+            ok: true,
+            active: {
+              artifactId: "77777777-7777-4777-8777-777777777777",
+              version: 1,
+              schemaVersion: "annual_report_extraction_v1",
+            },
+            runtime: {
+              extractionEngineVersion: "annual-report-deep-extraction.v3",
+              runtimeFingerprint:
+                "annual-report-deep-extraction.v3|qwen-plus|qwen-max",
+            },
+            extraction: {
+              schemaVersion: "annual_report_extraction_v1",
+              sourceFileName: "annual-report.pdf",
+              sourceFileType: "pdf",
+              policyVersion: "annual-report-manual-first.v1",
+              fields: {
+                companyName: {
+                  status: "manual",
+                  confidence: 1,
+                  value: "Updated Annual AB",
+                },
+                organizationNumber: {
+                  status: "manual",
+                  confidence: 1,
+                  value: "556999-9999",
+                },
+                fiscalYearStart: {
+                  status: "manual",
+                  confidence: 1,
+                  value: "2025-01-01",
+                },
+                fiscalYearEnd: {
+                  status: "manual",
+                  confidence: 1,
+                  value: "2025-12-31",
+                },
+                accountingStandard: {
+                  status: "manual",
+                  confidence: 1,
+                  value: "K3",
+                },
+                profitBeforeTax: {
+                  status: "manual",
+                  confidence: 1,
+                  value: 1000000,
+                },
+              },
+              summary: {
+                autoDetectedFieldCount: 0,
+                needsReviewFieldCount: 0,
+              },
+              engineMetadata: {
+                extractionEngineVersion: "annual-report-deep-extraction.v3",
+                runtimeFingerprint:
+                  "annual-report-deep-extraction.v3|qwen-plus|qwen-max",
+              },
+              confirmation: {
+                isConfirmed: true,
+                confirmedAt: "2026-02-24T10:15:00.000Z",
+                confirmedByUserId: sessionPrincipalMock.userId,
+              },
+            },
+          },
+        });
+      }
+
+      if (
+        url.includes("/annual-report-processing-runs/latest?") &&
+        method === "GET"
+      ) {
+        return mockNotFoundResponse("PROCESSING_RUN_NOT_FOUND");
+      }
+
+      if (url.includes("/mapping-decisions/active?")) {
+        return mockNotFoundResponse("MAPPING_NOT_FOUND");
+      }
+
+      if (url.includes("/tax-adjustments/active?")) {
+        return mockNotFoundResponse("ADJUSTMENTS_NOT_FOUND");
+      }
+
+      if (url.includes("/tax-summary/active?")) {
+        return mockNotFoundResponse("ADJUSTMENTS_NOT_FOUND");
+      }
+
+      if (url.includes("/ink2-form/active?")) {
+        return mockNotFoundResponse("FORM_NOT_FOUND");
+      }
+
+      if (url.includes("/exports?")) {
+        return mockJsonResponse({
+          status: 200,
+          body: { ok: true, exports: [] },
+        });
+      }
+
+      if (url.includes("/comments?")) {
+        return mockJsonResponse({
+          status: 200,
+          body: { ok: true, comments: [] },
+        });
+      }
+
+      if (url.includes("/tasks?")) {
+        return mockJsonResponse({
+          status: 200,
+          body: { ok: true, tasks: [] },
+        });
+      }
+
+      if (
+        url.includes("/annual-report-extractions/overrides") &&
+        method === "POST"
+      ) {
+        return mockJsonResponse({
+          status: 200,
+          body: {
+            ok: true,
+            active: {
+              artifactId: "77777777-7777-4777-8777-777777777777",
+              version: 2,
+              schemaVersion: "annual_report_extraction_v1",
+            },
+            runtime: {
+              extractionEngineVersion: "annual-report-deep-extraction.v3",
+              runtimeFingerprint:
+                "annual-report-deep-extraction.v3|qwen-plus|qwen-max",
+            },
+            extraction: {
+              schemaVersion: "annual_report_extraction_v1",
+              sourceFileName: "annual-report.pdf",
+              sourceFileType: "pdf",
+              policyVersion: "annual-report-manual-first.v1",
+              fields: {
+                companyName: {
+                  status: "manual",
+                  confidence: 1,
+                  value: "Updated Annual AB",
+                },
+                organizationNumber: {
+                  status: "manual",
+                  confidence: 1,
+                  value: "556999-9999",
+                },
+                fiscalYearStart: {
+                  status: "manual",
+                  confidence: 1,
+                  value: "2025-01-01",
+                },
+                fiscalYearEnd: {
+                  status: "manual",
+                  confidence: 1,
+                  value: "2025-12-31",
+                },
+                accountingStandard: {
+                  status: "manual",
+                  confidence: 1,
+                  value: "K3",
+                },
+                profitBeforeTax: {
+                  status: "manual",
+                  confidence: 1,
+                  value: 1000000,
+                },
+              },
+              summary: {
+                autoDetectedFieldCount: 0,
+                needsReviewFieldCount: 0,
+              },
+              engineMetadata: {
+                extractionEngineVersion: "annual-report-deep-extraction.v3",
+                runtimeFingerprint:
+                  "annual-report-deep-extraction.v3|qwen-plus|qwen-max",
+              },
+              confirmation: {
+                isConfirmed: true,
+                confirmedAt: "2026-02-24T10:15:00.000Z",
+                confirmedByUserId: sessionPrincipalMock.userId,
+              },
+            },
+            appliedCount: 1,
+          },
+        });
+      }
+
+      if (
+        url === "/v1/companies/55555555-5555-4555-8555-555555555555" &&
+        method === "PUT"
+      ) {
+        companyUpdateBody = JSON.parse(String(init?.body ?? "{}"));
+        return mockJsonResponse({
+          status: 200,
+          body: {
+            ok: true,
+            company: {
+              id: "55555555-5555-4555-8555-555555555555",
+              tenantId: sessionPrincipalMock.tenantId,
+              legalName: "Updated Annual AB",
+              organizationNumber: "5569999999",
+              defaultFiscalYearStart: "2025-01-01",
+              defaultFiscalYearEnd: "2025-12-31",
+              createdAt: "2026-02-24T10:00:00.000Z",
+              updatedAt: "2026-02-24T10:20:00.000Z",
+            },
+          },
+        });
+      }
+
+      return mockJsonResponse({
+        status: 500,
+        body: {
+          ok: false,
+          error: {
+            code: "UNEXPECTED",
+            message: "Unexpected call",
+            user_message: "Unexpected call",
+            context: {},
+          },
+        },
+      });
+    });
+
+    const user = userEvent.setup();
+    renderWorkspaceDetailPageV1();
+
+    await waitFor(() => {
+      expect(screen.getByText("Updated Annual AB")).toBeInTheDocument();
+    });
+
+    await user.clear(screen.getByLabelText("Company name override value"));
+    await user.type(
+      screen.getByLabelText("Company name override value"),
+      "Updated Annual AB",
+    );
+    await user.clear(screen.getByLabelText("Company name override reason"));
+    await user.type(
+      screen.getByLabelText("Company name override reason"),
+      "sync company record",
+    );
+
+    const companyNameRow = screen.getByText("Company name").closest("tr");
+    expect(companyNameRow).not.toBeNull();
+    await user.click(
+      within(companyNameRow as HTMLTableRowElement).getByRole("button", {
+        name: "Apply",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(companyUpdateBody).toMatchObject({
+        tenantId: sessionPrincipalMock.tenantId,
+        legalName: "Updated Annual AB",
+        organizationNumber: "556999-9999",
+      });
     });
   });
 

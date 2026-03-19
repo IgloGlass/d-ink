@@ -186,4 +186,27 @@ describe("WorkspaceListPage", () => {
       expect(screen.getByText("66666666")).toBeInTheDocument();
     });
   });
+
+  it("shows a specific recovery message when the workspace list stays unavailable", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("offline"));
+
+    render(
+      <AppProviders>
+        <MemoryRouter>
+          <WorkspaceListPage />
+        </MemoryRouter>
+      </AppProviders>,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Workspace list unavailable"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "Could not reach the app service. Check that the local app is running and try again.",
+        ),
+      ).toBeInTheDocument();
+    });
+  });
 });
