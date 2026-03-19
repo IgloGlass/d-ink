@@ -1420,122 +1420,121 @@ export async function uploadAnnualReportSourceV1(
     });
   }
 
-  const session = await deps.uploadSessionRepository.getById({
-    uploadSessionId: input.uploadSessionId,
-    tenantId: input.tenantId,
-    workspaceId: input.workspaceId,
-  });
-  if (!session) {
-    return parseUploadAnnualReportSourceResultV1(
-      buildFailureV1({
-        code: "PROCESSING_RUN_NOT_FOUND",
-        message: "Annual-report upload session could not be found.",
-        userMessage:
-          "The annual report upload session has expired. Upload the file again.",
-        context: {},
-      }),
-    );
-  }
-  if (session.status !== "created") {
-    return parseUploadAnnualReportSourceResultV1(
-      buildFailureV1({
-        code: "INPUT_INVALID",
-        message: "Annual-report upload session is no longer open for upload.",
-        userMessage:
-          "This upload session can no longer accept a file. Start again.",
-        context: {
-          status: session.status,
-        },
-      }),
-    );
-  }
-  if (session.expiresAt <= deps.nowIsoUtc()) {
-    const expired = await deps.uploadSessionRepository.save({
-      ...session,
-      status: "expired",
-      updatedAt: deps.nowIsoUtc(),
-    });
-    void expired;
-    return parseUploadAnnualReportSourceResultV1(
-      buildFailureV1({
-        code: "INPUT_INVALID",
-        message: "Annual-report upload session has expired.",
-        userMessage: "The upload took too long and expired. Start again.",
-        context: {},
-      }),
-    );
-  }
-  if (!input.uploadBody) {
-    return parseUploadAnnualReportSourceResultV1(
-      buildFailureV1({
-        code: "INPUT_INVALID",
-        message: "Annual-report upload request body is empty.",
-        userMessage: "The uploaded annual report could not be read.",
-        context: {},
-      }),
-    );
-  }
-  if (input.contentLengthBytes !== session.fileSizeBytes) {
-    return parseUploadAnnualReportSourceResultV1(
-      buildFailureV1({
-        code: "INPUT_INVALID",
-        message:
-          "Annual-report upload size does not match the created session.",
-        userMessage:
-          "The uploaded annual report did not match the expected file size.",
-        context: {
-          expectedBytes: session.fileSizeBytes,
-          actualBytes: input.contentLengthBytes,
-        },
-      }),
-    );
-  }
-
   try {
+    const session = await deps.uploadSessionRepository.getById({
+      uploadSessionId: input.uploadSessionId,
+      tenantId: input.tenantId,
+      workspaceId: input.workspaceId,
+    });
+    if (!session) {
+      return parseUploadAnnualReportSourceResultV1(
+        buildFailureV1({
+          code: "PROCESSING_RUN_NOT_FOUND",
+          message: "Annual-report upload session could not be found.",
+          userMessage:
+            "The annual report upload session has expired. Upload the file again.",
+          context: {},
+        }),
+      );
+    }
+    if (session.status !== "created") {
+      return parseUploadAnnualReportSourceResultV1(
+        buildFailureV1({
+          code: "INPUT_INVALID",
+          message: "Annual-report upload session is no longer open for upload.",
+          userMessage:
+            "This upload session can no longer accept a file. Start again.",
+          context: {
+            status: session.status,
+          },
+        }),
+      );
+    }
+    if (session.expiresAt <= deps.nowIsoUtc()) {
+      const expired = await deps.uploadSessionRepository.save({
+        ...session,
+        status: "expired",
+        updatedAt: deps.nowIsoUtc(),
+      });
+      void expired;
+      return parseUploadAnnualReportSourceResultV1(
+        buildFailureV1({
+          code: "INPUT_INVALID",
+          message: "Annual-report upload session has expired.",
+          userMessage: "The upload took too long and expired. Start again.",
+          context: {},
+        }),
+      );
+    }
+    if (!input.uploadBody) {
+      return parseUploadAnnualReportSourceResultV1(
+        buildFailureV1({
+          code: "INPUT_INVALID",
+          message: "Annual-report upload request body is empty.",
+          userMessage: "The uploaded annual report could not be read.",
+          context: {},
+        }),
+      );
+    }
+    if (input.contentLengthBytes !== session.fileSizeBytes) {
+      return parseUploadAnnualReportSourceResultV1(
+        buildFailureV1({
+          code: "INPUT_INVALID",
+          message:
+            "Annual-report upload size does not match the created session.",
+          userMessage:
+            "The uploaded annual report did not match the expected file size.",
+          context: {
+            expectedBytes: session.fileSizeBytes,
+            actualBytes: input.contentLengthBytes,
+          },
+        }),
+      );
+    }
+
     await deps.sourceStore.put(session.sourceStorageKey, input.uploadBody, {
       httpMetadata: {
         contentType: resolveMimeTypeV1(session.fileType),
       },
     });
+
+    const queuedRun = await createQueuedProcessingRunForStoredSourceV1({
+      createdByUserId: input.createdByUserId ?? session.createdByUserId,
+      deps,
+      fileName: session.fileName,
+      fileType: session.fileType,
+      policyVersion: session.policyVersion,
+      sourceSizeBytes: session.fileSizeBytes,
+      sourceStorageKey: session.sourceStorageKey,
+      tenantId: session.tenantId,
+      workspaceId: session.workspaceId,
+    });
+    if (!queuedRun.ok) {
+      return parseUploadAnnualReportSourceResultV1(queuedRun);
+    }
+
+    await deps.uploadSessionRepository.save({
+      ...session,
+      status: "consumed",
+      processingRunId: queuedRun.run.runId,
+      updatedAt: deps.nowIsoUtc(),
+    });
+
+    return parseUploadAnnualReportSourceResultV1({
+      ok: true,
+      run: queuedRun.run,
+    });
   } catch (error) {
     return parseUploadAnnualReportSourceResultV1(
       buildFailureV1({
         code: "PERSISTENCE_ERROR",
-        message:
-          error instanceof Error ? error.message : "Source store failed.",
+        message: error instanceof Error ? error.message : "Upload failed.",
         userMessage:
           "The uploaded annual report could not be stored for analysis.",
         context: {},
       }),
     );
   }
-
-  const queuedRun = await createQueuedProcessingRunForStoredSourceV1({
-    createdByUserId: input.createdByUserId ?? session.createdByUserId,
-    deps,
-    fileName: session.fileName,
-    fileType: session.fileType,
-    policyVersion: session.policyVersion,
-    sourceSizeBytes: session.fileSizeBytes,
-    sourceStorageKey: session.sourceStorageKey,
-    tenantId: session.tenantId,
-    workspaceId: session.workspaceId,
-  });
-  if (!queuedRun.ok) {
-    return parseUploadAnnualReportSourceResultV1(queuedRun);
-  }
-
-  await deps.uploadSessionRepository.save({
-    ...session,
-    status: "consumed",
-    processingRunId: queuedRun.run.runId,
-    updatedAt: deps.nowIsoUtc(),
-  });
-
-  return parseUploadAnnualReportSourceResultV1({
-    ok: true,
-    run: queuedRun.run,
-  });
 }
 
 /** Non-terminal statuses that a background Worker can get stuck in if
