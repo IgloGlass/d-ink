@@ -90,10 +90,10 @@ import {
 } from "../ai/modules/tax-adjustments-representation-entertainment/prompt-text.v1";
 import { executeTaxAdjustmentSubmoduleV1 } from "../ai/modules/tax-adjustments-shared/executor.v1";
 import {
-  getGeminiApiKeyV1,
-  getGeminiModelConfigV1,
-} from "../ai/providers/gemini-config.v1";
-import { toBase64V1 } from "../ai/providers/gemini-client.v1";
+  getAiApiKeyV1,
+  getAiModelConfigV1,
+} from "../ai/providers/ai-provider-config.v1";
+import { toBase64V1 } from "../ai/providers/ai-provider-client.v1";
 import {
   projectRoutedTaxAdjustmentCandidatesV1,
   projectTaxAdjustmentModuleContextV1,
@@ -164,7 +164,7 @@ export function resolveAnnualReportProcessingRuntimeV1(env: Env): {
 export function buildAnnualReportRuntimeMetadataV1(
   env: Env,
 ): AnnualReportRuntimeMetadataV1 {
-  const modelConfig = getGeminiModelConfigV1(env);
+  const modelConfig = getAiModelConfigV1(env);
 
   return {
     extractionEngineVersion: ANNUAL_REPORT_EXTRACTION_ENGINE_VERSION_V1,
@@ -3281,9 +3281,9 @@ async function extractAnnualReportWithPrimaryAiV1(input: {
     technicalDetails?: string[],
   ) => Promise<void>;
 }): Promise<ReturnType<typeof parseAnnualReportExtractionV1>> {
-  const apiKey = getGeminiApiKeyV1(input.env);
+  const apiKey = getAiApiKeyV1(input.env);
   const generatedAt = new Date().toISOString();
-  const modelConfig = getGeminiModelConfigV1(input.env);
+  const modelConfig = getAiModelConfigV1(input.env);
   const runtimeMetadata = buildAnnualReportRuntimeMetadataV1(input.env);
   const fallbackModelName = modelConfig.fastModel;
   const resolvedFileType =
@@ -4000,10 +4000,10 @@ async function analyzeAnnualReportTaxWithPrimaryAiV1(input: {
       };
     }
 > {
-  const apiKey = getGeminiApiKeyV1(input.env);
+  const apiKey = getAiApiKeyV1(input.env);
   const configResult = loadAnnualReportTaxAnalysisModuleConfigV1();
   const config = configResult.ok ? configResult.config : null;
-  const modelConfig = getGeminiModelConfigV1(input.env);
+  const modelConfig = getAiModelConfigV1(input.env);
   const fallbackModelName = modelConfig.fastModel;
   const configFailureMessage = configResult.ok
     ? undefined
@@ -4128,7 +4128,7 @@ async function generateMappingDecisionsWithPrimaryAiV1(input: {
             input.request.annualReportInput.taxAnalysisArtifactId,
         }
       : undefined;
-  const modelConfig = getGeminiModelConfigV1(input.env);
+  const modelConfig = getAiModelConfigV1(input.env);
   const stampConservativeFallbackMappingV1 = (fallbackReason: {
     code: MappingDegradationReasonCodeV1;
     message: string;
@@ -4216,7 +4216,7 @@ async function generateMappingDecisionsWithPrimaryAiV1(input: {
       }),
     };
   };
-  const apiKey = getGeminiApiKeyV1(input.env);
+  const apiKey = getAiApiKeyV1(input.env);
   if (!apiKey) {
     console.warn("mapping-decisions.ai.unavailable", {
       reason: "missing_api_key",
@@ -4375,12 +4375,12 @@ async function generateTaxAdjustmentsWithPrimaryAiV1(input: {
     policyVersion: input.policyVersion,
     trialBalance: input.trialBalance,
   };
-  const apiKey = getGeminiApiKeyV1(input.env);
+  const apiKey = getAiApiKeyV1(input.env);
   if (!apiKey) {
     return generateTaxAdjustmentsV1(deterministicInput);
   }
 
-  const modelConfig = getGeminiModelConfigV1(input.env);
+  const modelConfig = getAiModelConfigV1(input.env);
   const annualReportTaxContext =
     input.annualReportTaxContext ??
     projectAnnualReportTaxContextV1({

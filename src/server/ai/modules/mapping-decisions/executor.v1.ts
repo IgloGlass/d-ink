@@ -18,8 +18,8 @@ import {
   getTrialBalanceRowBalanceValueV1,
   type TrialBalanceNormalizedArtifactV1,
 } from "../../../../shared/contracts/trial-balance.v1";
-import { generateGeminiStructuredOutputV1 } from "../../providers/gemini-client.v1";
-import type { GeminiModelConfigV1 } from "../../providers/gemini-client.v1";
+import { generateAiStructuredOutputV1 } from "../../providers/ai-provider-client.v1";
+import type { AiModelConfigV1 } from "../../providers/ai-provider-client.v1";
 import {
   executeChunksWithRetryAndSplitV1,
   isRetryableAiErrorV1,
@@ -72,7 +72,7 @@ export type ExecuteMappingDecisionsInputV1 = {
   executionBudgetMs?: number;
   generateId: () => string;
   generatedAt: string;
-  modelConfig: GeminiModelConfigV1;
+  modelConfig: AiModelConfigV1;
   policyVersion: string;
   trialBalance: TrialBalanceNormalizedArtifactV1;
 };
@@ -232,7 +232,7 @@ async function runBatchV1(input: {
   apiKey?: string;
   annualReportContext?: AnnualReportMappingContextV1;
   config: MappingDecisionsRuntimeConfigV1;
-  modelConfig: GeminiModelConfigV1;
+  modelConfig: AiModelConfigV1;
   rows: MappingRowProjectionV1[];
   modelTier: "fast" | "thinking";
 }): Promise<
@@ -250,7 +250,7 @@ async function runBatchV1(input: {
       };
     }
 > {
-  const result = await generateGeminiStructuredOutputV1({
+  const result = await generateAiStructuredOutputV1({
     apiKey: input.apiKey,
     modelConfig: input.modelConfig,
     request: {
@@ -283,7 +283,7 @@ async function runBatchWithTierFallbackV1(input: {
   annualReportContext?: AnnualReportMappingContextV1;
   config: MappingDecisionsRuntimeConfigV1;
   fallbackTier?: "fast" | "thinking";
-  modelConfig: GeminiModelConfigV1;
+  modelConfig: AiModelConfigV1;
   preferredTier: "fast" | "thinking";
   rows: MappingRowProjectionV1[];
 }): Promise<

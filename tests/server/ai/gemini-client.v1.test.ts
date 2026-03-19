@@ -5,7 +5,7 @@ const fetchMock = vi.fn();
 
 vi.stubGlobal("fetch", fetchMock);
 
-import { generateGeminiStructuredOutputV1 } from "../../../src/server/ai/providers/gemini-client.v1";
+import { generateAiStructuredOutputV1 } from "../../../src/server/ai/providers/ai-provider-client.v1";
 
 function makeDashScopeResponse(content: string) {
   return {
@@ -18,7 +18,7 @@ function makeDashScopeResponse(content: string) {
   } as unknown as Response;
 }
 
-describe("generateGeminiStructuredOutputV1", () => {
+describe("generateAiStructuredOutputV1", () => {
   beforeEach(() => {
     fetchMock.mockReset();
   });
@@ -30,7 +30,7 @@ describe("generateGeminiStructuredOutputV1", () => {
   it("returns parsed output when DashScope responds with valid JSON", async () => {
     fetchMock.mockResolvedValue(makeDashScopeResponse('{"answer":"ok"}'));
 
-    const result = await generateGeminiStructuredOutputV1({
+    const result = await generateAiStructuredOutputV1({
       apiKey: "test-key",
       modelConfig: {
         fastModel: "qwen-plus",
@@ -67,7 +67,7 @@ describe("generateGeminiStructuredOutputV1", () => {
     vi.useFakeTimers();
     fetchMock.mockReturnValue(new Promise(() => {}));
 
-    const resultPromise = generateGeminiStructuredOutputV1({
+    const resultPromise = generateAiStructuredOutputV1({
       apiKey: "test-key",
       modelConfig: {
         fastModel: "qwen-plus",
@@ -104,7 +104,7 @@ describe("generateGeminiStructuredOutputV1", () => {
       makeDashScopeResponse('{"answer":123,"extra":"value"}'),
     );
 
-    const result = await generateGeminiStructuredOutputV1({
+    const result = await generateAiStructuredOutputV1({
       apiKey: "test-key",
       modelConfig: {
         fastModel: "qwen-plus",

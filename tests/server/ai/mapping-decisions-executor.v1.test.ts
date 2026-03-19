@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../src/server/ai/providers/gemini-client.v1", async () => {
+vi.mock("../../../src/server/ai/providers/ai-provider-client.v1", async () => {
   const actual = await vi.importActual<
-    typeof import("../../../src/server/ai/providers/gemini-client.v1")
-  >("../../../src/server/ai/providers/gemini-client.v1");
+    typeof import("../../../src/server/ai/providers/ai-provider-client.v1")
+  >("../../../src/server/ai/providers/ai-provider-client.v1");
 
   return {
     ...actual,
-    generateGeminiStructuredOutputV1: vi.fn(),
+    generateAiStructuredOutputV1: vi.fn(),
   };
 });
 
@@ -20,7 +20,7 @@ import {
   MAPPING_DECISIONS_SYSTEM_RULES_V1,
 } from "../../../src/server/ai/modules/mapping-decisions/guideline-rules.v1";
 import { loadMappingDecisionsModuleConfigV1 } from "../../../src/server/ai/modules/mapping-decisions/loader.v1";
-import { generateGeminiStructuredOutputV1 } from "../../../src/server/ai/providers/gemini-client.v1";
+import { generateAiStructuredOutputV1 } from "../../../src/server/ai/providers/ai-provider-client.v1";
 import { parseTrialBalanceNormalizedV1 } from "../../../src/shared/contracts/trial-balance.v1";
 
 type ProjectionRow = {
@@ -583,7 +583,7 @@ describe("mapping decisions executor reliability v1", () => {
 
     vi.useFakeTimers();
     try {
-      vi.mocked(generateGeminiStructuredOutputV1).mockImplementation(
+      vi.mocked(generateAiStructuredOutputV1).mockImplementation(
         () => new Promise(() => undefined),
       );
 
@@ -632,7 +632,7 @@ describe("mapping decisions executor reliability v1", () => {
     }
 
     let largeChunkAttempts = 0;
-    vi.mocked(generateGeminiStructuredOutputV1).mockImplementation(async (input) => {
+    vi.mocked(generateAiStructuredOutputV1).mockImplementation(async (input) => {
       const rows = parseRowsFromInstruction(input.request.userInstruction);
       // Exhaust both runtime-tier and tier-fallback calls across both retry
       // attempts so the chunk-retry runtime is forced to split.
@@ -708,7 +708,7 @@ describe("mapping decisions executor reliability v1", () => {
       return;
     }
 
-    vi.mocked(generateGeminiStructuredOutputV1).mockImplementation(async (input) => {
+    vi.mocked(generateAiStructuredOutputV1).mockImplementation(async (input) => {
       const rows = parseRowsFromInstruction(input.request.userInstruction);
       if (rows.some((row) => row.rowId === "TB:2" || row.rowId === "TB:3")) {
         return {
@@ -781,7 +781,7 @@ describe("mapping decisions executor reliability v1", () => {
       return;
     }
 
-    vi.mocked(generateGeminiStructuredOutputV1).mockResolvedValue({
+    vi.mocked(generateAiStructuredOutputV1).mockResolvedValue({
       ok: false,
       error: {
         code: "MODEL_EXECUTION_FAILED",
@@ -845,7 +845,7 @@ describe("mapping decisions executor reliability v1", () => {
     }
 
     const observedBatchSizes: number[] = [];
-    vi.mocked(generateGeminiStructuredOutputV1).mockImplementation(async (input) => {
+    vi.mocked(generateAiStructuredOutputV1).mockImplementation(async (input) => {
       const rows = parseRowsFromInstruction(input.request.userInstruction);
       observedBatchSizes.push(rows.length);
       return {
@@ -899,7 +899,7 @@ describe("mapping decisions executor reliability v1", () => {
     }
 
     const observedBatchSizes: number[] = [];
-    vi.mocked(generateGeminiStructuredOutputV1).mockImplementation(async (input) => {
+    vi.mocked(generateAiStructuredOutputV1).mockImplementation(async (input) => {
       const rows = parseRowsFromInstruction(input.request.userInstruction);
       observedBatchSizes.push(rows.length);
       return {
@@ -949,7 +949,7 @@ describe("mapping decisions executor reliability v1", () => {
       return;
     }
 
-    vi.mocked(generateGeminiStructuredOutputV1).mockImplementation(async (input) => {
+    vi.mocked(generateAiStructuredOutputV1).mockImplementation(async (input) => {
       const rows = parseRowsFromInstruction(input.request.userInstruction);
       return {
         ok: true,
@@ -1001,7 +1001,7 @@ describe("mapping decisions executor reliability v1", () => {
       return;
     }
 
-    vi.mocked(generateGeminiStructuredOutputV1).mockImplementation(async (input) => {
+    vi.mocked(generateAiStructuredOutputV1).mockImplementation(async (input) => {
       const rows = parseRowsFromInstruction(input.request.userInstruction);
       return {
         ok: true,
@@ -1084,7 +1084,7 @@ describe("mapping decisions executor reliability v1", () => {
     }
 
     let batchCallCount = 0;
-    vi.mocked(generateGeminiStructuredOutputV1).mockImplementation(async (input) => {
+    vi.mocked(generateAiStructuredOutputV1).mockImplementation(async (input) => {
       const rows = parseRowsFromInstruction(input.request.userInstruction);
       batchCallCount += 1;
 
@@ -1163,7 +1163,7 @@ describe("mapping decisions executor reliability v1", () => {
       return;
     }
 
-    vi.mocked(generateGeminiStructuredOutputV1).mockResolvedValue({
+    vi.mocked(generateAiStructuredOutputV1).mockResolvedValue({
       ok: true,
       model: "qwen-test",
       output: {
@@ -1334,11 +1334,11 @@ describe("mapping decisions executor reliability v1", () => {
 
     expect(result.ok).toBe(true);
     const instruction = String(
-      vi.mocked(generateGeminiStructuredOutputV1).mock.calls[0]?.[0]?.request
+      vi.mocked(generateAiStructuredOutputV1).mock.calls[0]?.[0]?.request
         ?.userInstruction ?? "",
     );
     const systemInstruction = String(
-      vi.mocked(generateGeminiStructuredOutputV1).mock.calls[0]?.[0]?.request
+      vi.mocked(generateAiStructuredOutputV1).mock.calls[0]?.[0]?.request
         ?.systemInstruction ?? "",
     );
     const serializedContext = parseAnnualReportContextFromInstruction(instruction);
@@ -1436,7 +1436,7 @@ describe("mapping decisions executor reliability v1", () => {
       return;
     }
 
-    vi.mocked(generateGeminiStructuredOutputV1).mockResolvedValue({
+    vi.mocked(generateAiStructuredOutputV1).mockResolvedValue({
       ok: true,
       model: "qwen-test",
       output: {
@@ -1494,7 +1494,7 @@ describe("mapping decisions executor reliability v1", () => {
       return;
     }
 
-    vi.mocked(generateGeminiStructuredOutputV1).mockResolvedValue({
+    vi.mocked(generateAiStructuredOutputV1).mockResolvedValue({
       ok: false,
       error: {
         code: "MODEL_EXECUTION_FAILED",
@@ -1539,7 +1539,7 @@ describe("mapping decisions executor reliability v1", () => {
       return;
     }
 
-    vi.mocked(generateGeminiStructuredOutputV1).mockResolvedValue({
+    vi.mocked(generateAiStructuredOutputV1).mockResolvedValue({
       ok: true,
       model: "qwen-test",
       output: {

@@ -1,19 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../src/server/ai/providers/gemini-client.v1", async () => {
+vi.mock("../../../src/server/ai/providers/ai-provider-client.v1", async () => {
   const actual = await vi.importActual<
-    typeof import("../../../src/server/ai/providers/gemini-client.v1")
-  >("../../../src/server/ai/providers/gemini-client.v1");
+    typeof import("../../../src/server/ai/providers/ai-provider-client.v1")
+  >("../../../src/server/ai/providers/ai-provider-client.v1");
 
   return {
     ...actual,
-    generateGeminiStructuredOutputV1: vi.fn(),
+    generateAiStructuredOutputV1: vi.fn(),
   };
 });
 
 import { executeTaxAdjustmentSubmoduleV1 } from "../../../src/server/ai/modules/tax-adjustments-shared/executor.v1";
 import { loadTaxAdjustmentsNonDeductibleExpensesModuleConfigV1 } from "../../../src/server/ai/modules/tax-adjustments-non-deductible-expenses/loader.v1";
-import { generateGeminiStructuredOutputV1 } from "../../../src/server/ai/providers/gemini-client.v1";
+import { generateAiStructuredOutputV1 } from "../../../src/server/ai/providers/ai-provider-client.v1";
 import { parseTaxAdjustmentModuleContextV1 } from "../../../src/shared/contracts/tax-adjustment-routing.v1";
 
 function parseCandidatesFromInstruction(userInstruction: string): Array<{
@@ -59,7 +59,7 @@ describe("tax-adjustment submodule executor reliability v1", () => {
       return;
     }
 
-    vi.mocked(generateGeminiStructuredOutputV1).mockImplementation(async (input) => {
+    vi.mocked(generateAiStructuredOutputV1).mockImplementation(async (input) => {
       const candidates = parseCandidatesFromInstruction(input.request.userInstruction);
       if (
         candidates.some((candidate) =>

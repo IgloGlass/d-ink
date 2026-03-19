@@ -5,8 +5,8 @@ const { generateGeminiStructuredOutputMock } = vi.hoisted(() => ({
   generateGeminiStructuredOutputMock: vi.fn(),
 }));
 
-vi.mock("../../../src/server/ai/providers/gemini-client.v1", () => ({
-  generateGeminiStructuredOutputV1: generateGeminiStructuredOutputMock,
+vi.mock("../../../src/server/ai/providers/ai-provider-client.v1", () => ({
+  generateAiStructuredOutputV1: generateGeminiStructuredOutputMock,
   toBase64V1: vi.fn(() => "base64"),
 }));
 

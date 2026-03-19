@@ -4,14 +4,14 @@ const { generateGeminiStructuredOutputMock } = vi.hoisted(() => ({
   generateGeminiStructuredOutputMock: vi.fn(),
 }));
 
-vi.mock("../../../src/server/ai/providers/gemini-client.v1", async () => {
+vi.mock("../../../src/server/ai/providers/ai-provider-client.v1", async () => {
   const actual = await vi.importActual<
-    typeof import("../../../src/server/ai/providers/gemini-client.v1")
-  >("../../../src/server/ai/providers/gemini-client.v1");
+    typeof import("../../../src/server/ai/providers/ai-provider-client.v1")
+  >("../../../src/server/ai/providers/ai-provider-client.v1");
 
   return {
     ...actual,
-    generateGeminiStructuredOutputV1: generateGeminiStructuredOutputMock,
+    generateAiStructuredOutputV1: generateGeminiStructuredOutputMock,
   };
 });
 

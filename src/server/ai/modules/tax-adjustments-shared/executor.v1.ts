@@ -8,8 +8,8 @@ import type {
   MappedAdjustmentCandidateV1,
   TaxAdjustmentModuleContextV1,
 } from "../../../../shared/contracts/tax-adjustment-routing.v1";
-import type { GeminiModelConfigV1 } from "../../providers/gemini-client.v1";
-import { generateGeminiStructuredOutputV1 } from "../../providers/gemini-client.v1";
+import type { AiModelConfigV1 } from "../../providers/ai-provider-client.v1";
+import { generateAiStructuredOutputV1 } from "../../providers/ai-provider-client.v1";
 import type { AiModuleSpecV1 } from "../../runtime/module-config.v1";
 import { executeChunksWithRetryAndSplitV1 } from "../../runtime/chunk-retry.v1";
 
@@ -52,7 +52,7 @@ export type ExecuteTaxAdjustmentSubmoduleInputV1<TPolicy> = {
   config: TaxAdjustmentModuleRuntimeConfigV1<TPolicy & TaxAdjustmentPolicyRuntimeV1>;
   generateId: () => string;
   generatedAt: string;
-  modelConfig: GeminiModelConfigV1;
+  modelConfig: AiModelConfigV1;
   systemPrompt: string;
   userPrompt: string;
 };
@@ -143,7 +143,7 @@ export async function executeTaxAdjustmentSubmoduleV1<TPolicy>(
         minRowsPerChunk: input.config.policyPack.batching.minRowsPerChunk,
       }),
     executeChunk: async (chunk) => {
-      const result = await generateGeminiStructuredOutputV1({
+      const result = await generateAiStructuredOutputV1({
         apiKey: input.apiKey,
         modelConfig: input.modelConfig,
         request: {

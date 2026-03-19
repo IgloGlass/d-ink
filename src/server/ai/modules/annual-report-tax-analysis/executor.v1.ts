@@ -3,8 +3,8 @@ import { parseAiRunMetadataV1 } from "../../../../shared/contracts/ai-run.v1";
 import type { AnnualReportExtractionPayloadV1 } from "../../../../shared/contracts/annual-report-extraction.v1";
 import type { AnnualReportTaxAnalysisPayloadV1 } from "../../../../shared/contracts/annual-report-tax-analysis.v1";
 import type { AnnualReportPreparedDocumentV1 } from "../../document-prep/annual-report-document.v1";
-import type { GeminiModelConfigV1 } from "../../providers/gemini-client.v1";
-import { generateGeminiStructuredOutputV1 } from "../../providers/gemini-client.v1";
+import type { AiModelConfigV1 } from "../../providers/ai-provider-client.v1";
+import { generateAiStructuredOutputV1 } from "../../providers/ai-provider-client.v1";
 import type { loadAnnualReportTaxAnalysisModuleConfigV1 } from "./loader.v1";
 import {
   ANNUAL_REPORT_TAX_ANALYSIS_SYSTEM_PROMPT_V1,
@@ -26,7 +26,7 @@ export type ExecuteAnnualReportTaxAnalysisInputV1 = {
   extractionArtifactId: string;
   generateId: () => string;
   generatedAt: string;
-  modelConfig: GeminiModelConfigV1;
+  modelConfig: AiModelConfigV1;
   policyVersion: string;
   sourceDiagnostics?: string[];
 };
@@ -706,7 +706,7 @@ export async function executeAnnualReportTaxAnalysisV1(
     accountingStandard: input.extraction.fields.accountingStandard.value,
     profitBeforeTax: input.extraction.fields.profitBeforeTax.value,
   };
-  const result = await generateGeminiStructuredOutputV1<
+  const result = await generateAiStructuredOutputV1<
     Record<string, unknown>
   >({
     apiKey: input.apiKey,

@@ -30,10 +30,10 @@ import {
 import type { AnnualReportProcessingRunStatusV1 } from "../../../../shared/contracts/annual-report-processing-run.v1";
 import { parseAiRunMetadataV1 } from "../../../../shared/contracts/ai-run.v1";
 import {
-  generateGeminiStructuredOutputV1,
+  generateAiStructuredOutputV1,
   toBase64V1,
-} from "../../providers/gemini-client.v1";
-import type { GeminiModelConfigV1 } from "../../providers/gemini-client.v1";
+} from "../../providers/ai-provider-client.v1";
+import type { AiModelConfigV1 } from "../../providers/ai-provider-client.v1";
 import {
   extractAnnualReportPdfChunkDocumentsV1,
   normalizeAnnualReportPageRangesV1,
@@ -63,7 +63,7 @@ export type ExecuteAnnualReportAnalysisInputV1 = {
   document: AnnualReportPreparedDocumentV1;
   generateId: () => string;
   generatedAt: string;
-  modelConfig: GeminiModelConfigV1;
+  modelConfig: AiModelConfigV1;
   runtimeMode?: "default" | "ai_overdrive";
   onProgress?: (
     status: AnnualReportProcessingRunStatusV1,
@@ -812,7 +812,7 @@ function createEmptyTaxDeepV1(): AnnualReportAiExtractionResultV1["taxDeep"] {
 
 async function executeAnnualReportStageV1<TOutput>(input: {
   apiKey?: string;
-  modelConfig: GeminiModelConfigV1;
+  modelConfig: AiModelConfigV1;
   modelTier: "fast" | "thinking";
   document: AnnualReportPreparedDocumentV1;
   responseSchema: {
@@ -837,7 +837,7 @@ async function executeAnnualReportStageV1<TOutput>(input: {
   timeoutMs?: number;
   useResponseJsonSchema?: boolean;
 }) {
-  return generateGeminiStructuredOutputV1<TOutput>({
+  return generateAiStructuredOutputV1<TOutput>({
     apiKey: input.apiKey,
     modelConfig: input.modelConfig,
     request: {
@@ -1956,7 +1956,7 @@ async function executeAnnualReportStageWithChunkFallbackV1<TOutput>(input: {
   chunkLabel: string;
   document: AnnualReportPreparedDocumentV1;
   focusRanges: AnnualReportAiSectionLocatorRangeV1[];
-  modelConfig: GeminiModelConfigV1;
+  modelConfig: AiModelConfigV1;
   onProgress?: (
     status: AnnualReportProcessingRunStatusV1,
     technicalDetails?: string[],
