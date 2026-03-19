@@ -1378,12 +1378,16 @@ async function handleUploadAnnualReportSourceRouteV1(
     return sessionGuardResult.response;
   }
 
+  const uploadBody = request.body
+    ? new Uint8Array(await request.arrayBuffer())
+    : null;
+
   const result = await uploadAnnualReportSourceV1(
     {
       contentLengthBytes,
       createdByUserId: sessionGuardResult.principal.userId,
       tenantId: parsedQuery.data.tenantId,
-      uploadBody: request.body,
+      uploadBody,
       uploadSessionId,
       workspaceId,
     },

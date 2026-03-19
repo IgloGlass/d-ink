@@ -1406,7 +1406,7 @@ export async function uploadAnnualReportSourceV1(
     contentLengthBytes: number;
     createdByUserId?: string;
     tenantId: string;
-    uploadBody: ReadableStream<Uint8Array> | null;
+    uploadBody: Uint8Array | null;
     uploadSessionId: string;
     workspaceId: string;
   },
