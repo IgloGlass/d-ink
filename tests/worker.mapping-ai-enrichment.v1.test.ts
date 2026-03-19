@@ -14,12 +14,26 @@ const WORKSPACE_ID = "94000000-0000-4000-8000-000000000002";
 const COMPANY_ID = "94000000-0000-4000-8000-000000000003";
 const USER_ID = "94000000-0000-4000-8000-000000000004";
 const SESSION_TOKEN = "mapping-ai-enrichment-session";
+const queuedMappingMessages: Array<unknown> = [];
 
 function buildWorkerEnv(): Env {
   return {
     DB: env.DB,
     AUTH_TOKEN_HMAC_SECRET,
     APP_BASE_URL,
+  };
+}
+
+function buildWorkerEnvWithQueue(): Env {
+  return {
+    DB: env.DB,
+    AUTH_TOKEN_HMAC_SECRET,
+    APP_BASE_URL,
+    ANNUAL_REPORT_QUEUE: {
+      async send(message) {
+        queuedMappingMessages.push(message);
+      },
+    },
   };
 }
 
@@ -156,6 +170,7 @@ async function seedSessionAndWorkspace(): Promise<void> {
 
 describe("worker mapping AI enrichment route v1", () => {
   beforeEach(async () => {
+    queuedMappingMessages.length = 0;
     await applyWorkspaceAuditSchemaForTests();
     await seedSessionAndWorkspace();
   });
@@ -227,5 +242,76 @@ describe("worker mapping AI enrichment route v1", () => {
     expect(scheduledPromises).toHaveLength(1);
 
     await Promise.allSettled(scheduledPromises);
+  });
+
+  it("enqueues mapping enrichment work when the queue binding is available", async () => {
+    const runPipelineResponse = await worker.fetch(
+      buildJsonRequest({
+        method: "POST",
+        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/tb-pipeline-runs`,
+        cookie: buildSessionCookie(SESSION_TOKEN),
+        body: {
+          tenantId: TENANT_ID,
+          fileName: "tb.xlsx",
+          fileBytesBase64: createWorkbookBase64V1(),
+          policyVersion: "deterministic-bas.v1",
+        },
+      }),
+      buildWorkerEnvWithQueue(),
+    );
+    const runPipelinePayload = (await runPipelineResponse.json()) as {
+      ok: true;
+      pipeline: {
+        artifacts: {
+          mapping: {
+            artifactId: string;
+            version: number;
+          };
+        };
+      };
+    };
+
+    expect(runPipelineResponse.status).toBe(200);
+    expect(runPipelinePayload.ok).toBe(true);
+
+    const enrichmentResponse = await worker.fetch(
+      buildJsonRequest({
+        method: "POST",
+        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/mapping-decisions/ai-enrichment`,
+        cookie: buildSessionCookie(SESSION_TOKEN),
+        body: {
+          tenantId: TENANT_ID,
+          expectedActiveMapping: {
+            artifactId:
+              runPipelinePayload.pipeline.artifacts.mapping.artifactId,
+            version: runPipelinePayload.pipeline.artifacts.mapping.version,
+          },
+        },
+      }),
+      buildWorkerEnvWithQueue(),
+    );
+    const enrichmentPayload = (await enrichmentResponse.json()) as {
+      ok: true;
+      status: string;
+      message: string;
+    };
+
+    expect(enrichmentResponse.status).toBe(202);
+    expect(enrichmentPayload.ok).toBe(true);
+    expect(enrichmentPayload.status).toBe("accepted");
+    expect(queuedMappingMessages).toHaveLength(1);
+    expect(queuedMappingMessages[0]).toMatchObject({
+      taskType: "mapping_ai_enrichment",
+      actorUserId: USER_ID,
+      request: {
+        tenantId: TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        expectedActiveMapping: {
+          artifactId:
+            runPipelinePayload.pipeline.artifacts.mapping.artifactId,
+          version: runPipelinePayload.pipeline.artifacts.mapping.version,
+        },
+      },
+    });
   });
 });

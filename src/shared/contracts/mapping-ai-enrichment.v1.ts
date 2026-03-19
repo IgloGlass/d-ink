@@ -24,6 +24,31 @@ export type RunMappingAiEnrichmentRequestV1 = z.infer<
 >;
 
 /**
+ * Queue message for durable AI account-mapping reruns.
+ *
+ * The queue carries the full request payload so the worker consumer can
+ * rehydrate the workflow without depending on the original HTTP request
+ * lifecycle.
+ */
+export const MappingAiEnrichmentQueueMessageV1Schema = z
+  .object({
+    taskType: z.literal("mapping_ai_enrichment"),
+    request: RunMappingAiEnrichmentRequestV1Schema,
+    actorUserId: UuidV4Schema,
+  })
+  .strict();
+
+export type MappingAiEnrichmentQueueMessageV1 = z.infer<
+  typeof MappingAiEnrichmentQueueMessageV1Schema
+>;
+
+export function parseMappingAiEnrichmentQueueMessageV1(
+  input: unknown,
+): MappingAiEnrichmentQueueMessageV1 {
+  return MappingAiEnrichmentQueueMessageV1Schema.parse(input);
+}
+
+/**
  * Successful enrichment outcomes for the two-phase mapping flow.
  */
 export const MappingAiEnrichmentStatusV1Schema = z.enum([

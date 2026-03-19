@@ -26,6 +26,7 @@ import {
 } from "../../shared/contracts/ink2-form.v1";
 import {
   RunMappingAiEnrichmentRequestV1Schema,
+  parseMappingAiEnrichmentQueueMessageV1,
   parseRunMappingAiEnrichmentResultV1,
 } from "../../shared/contracts/mapping-ai-enrichment.v1";
 import {
@@ -2710,15 +2711,52 @@ async function handleRunMappingAiEnrichmentRouteV1(
   const actor = {
     actorUserId: sessionGuardResult.principal.userId,
   };
-
-  if (!executionContext) {
-    const result = await runMappingAiEnrichmentV1(
+  const backgroundRun = () =>
+    runMappingAiEnrichmentV1(
       workflowInput,
       actor,
       createMappingAiEnrichmentDepsV1(env, {
         executionBudgetMs: MAPPING_AI_ENRICHMENT_BACKGROUND_EXECUTION_BUDGET_MS,
       }),
     );
+
+  if (env.ANNUAL_REPORT_QUEUE) {
+    try {
+      await env.ANNUAL_REPORT_QUEUE.send(
+        parseMappingAiEnrichmentQueueMessageV1({
+          taskType: "mapping_ai_enrichment",
+          request: workflowInput,
+          actorUserId: actor.actorUserId,
+        }),
+      );
+
+      return Response.json(
+        parseRunMappingAiEnrichmentResultV1({
+          ok: true,
+          status: "accepted",
+          activeBefore: activeMappingResult.active,
+          activeAfter: activeMappingResult.active,
+          message:
+            "AI account mapping started in the background. This page will refresh automatically when the latest mapping is ready.",
+        }),
+        {
+          status: 202,
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        },
+      );
+    } catch (error) {
+      console.warn("mapping.ai_enrichment.queue_failed", {
+        tenantId: parsedBody.tenantId,
+        workspaceId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (!executionContext) {
+    const result = await backgroundRun();
     if (!result.ok) {
       return mapMappingAiEnrichmentFailureToResponseV1(result);
     }
@@ -2732,13 +2770,7 @@ async function handleRunMappingAiEnrichmentRouteV1(
   }
 
   executionContext.waitUntil(
-    runMappingAiEnrichmentV1(
-      workflowInput,
-      actor,
-      createMappingAiEnrichmentDepsV1(env, {
-        executionBudgetMs: MAPPING_AI_ENRICHMENT_BACKGROUND_EXECUTION_BUDGET_MS,
-      }),
-    ).then((result) => {
+    backgroundRun().then((result) => {
       if (!result.ok) {
         console.warn("mapping.ai_enrichment.background_failed", {
           code: result.error.code,

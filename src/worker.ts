@@ -2,8 +2,18 @@ import { handleAuthMagicLinkRoutesV1 } from "./server/http/auth-magic-link-route
 import { handleCompanyRoutesV1 } from "./server/http/company-routes.v1";
 import { handleWorkspaceRoutesV1 } from "./server/http/workspace-routes.v1";
 import { redactSensitiveLogFieldsV1 } from "./server/security/redaction.v1";
+import { runMappingAiEnrichmentV1 } from "./server/workflow/mapping-ai-enrichment.v1";
 import { processAnnualReportProcessingRunV1 } from "./server/workflow/annual-report-processing.v1";
-import { createAnnualReportProcessingDepsV1 } from "./server/workflow/workflow-deps.v1";
+import {
+  createAnnualReportProcessingDepsV1,
+  createMappingAiEnrichmentDepsV1,
+} from "./server/workflow/workflow-deps.v1";
+import {
+  AnnualReportProcessingQueueMessageV1Schema,
+} from "./shared/contracts/annual-report-processing-run.v1";
+import {
+  MappingAiEnrichmentQueueMessageV1Schema,
+} from "./shared/contracts/mapping-ai-enrichment.v1";
 import type { Env } from "./shared/types/env";
 
 const SCAFFOLD_MARKER = "dink_scaffold_ready";
@@ -95,8 +105,31 @@ export default {
   ): Promise<void> {
     for (const message of batch.messages) {
       try {
+        const mappingMessage = MappingAiEnrichmentQueueMessageV1Schema.safeParse(
+          message.body,
+        );
+        if (mappingMessage.success) {
+          await runMappingAiEnrichmentV1(
+            mappingMessage.data.request,
+            {
+              actorUserId: mappingMessage.data.actorUserId,
+            },
+            createMappingAiEnrichmentDepsV1(env, {
+              executionBudgetMs: 900_000,
+            }),
+          );
+          message.ack?.();
+          continue;
+        }
+
+        const annualReportMessage =
+          AnnualReportProcessingQueueMessageV1Schema.safeParse(message.body);
+        if (!annualReportMessage.success) {
+          throw new Error("Unrecognized worker queue message body.");
+        }
+
         await processAnnualReportProcessingRunV1(
-          message.body as never,
+          annualReportMessage.data as never,
           createAnnualReportProcessingDepsV1(env),
         );
         message.ack?.();
