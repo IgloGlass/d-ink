@@ -42,6 +42,7 @@ import {
   stampMappingExecutionMetadataV1,
   resolveConfirmedAnnualReportMappingContextForRequestV1,
 } from "../../shared/contracts/mapping.v1";
+import type { MappingAiEnrichmentQueueMessageV1 } from "../../shared/contracts/mapping-ai-enrichment.v1";
 import {
   TRIAL_BALANCE_IMPORT_AI_INLINE_ROW_LIMIT_V1,
   TRIAL_BALANCE_IMPORT_DETERMINISTIC_FALLBACK_REASON_V1,
@@ -4753,6 +4754,11 @@ export function createTrialBalancePipelineRunDepsV1(
         request: mappingRequest,
       });
     },
+    enqueueMappingAiEnrichment: env.ANNUAL_REPORT_QUEUE
+      ? async (message: MappingAiEnrichmentQueueMessageV1) => {
+          await env.ANNUAL_REPORT_QUEUE.send(message);
+        }
+      : undefined,
     mappingPreferenceRepository: createD1MappingPreferenceRepositoryV1(env.DB),
     generateId: () => crypto.randomUUID(),
     nowIsoUtc: () => new Date().toISOString(),

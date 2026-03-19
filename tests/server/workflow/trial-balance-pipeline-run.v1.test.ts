@@ -25,6 +25,7 @@ import {
   getSilverfinTaxCategoryByCodeV1,
   parseGenerateMappingDecisionsResultV1,
 } from "../../../src/shared/contracts/mapping.v1";
+import { TRIAL_BALANCE_IMPORT_DETERMINISTIC_FALLBACK_REASON_V1 } from "../../../src/shared/contracts/tb-pipeline-run.v1";
 import { ACCOUNT_MAPPER_REFERENCE_TRIAL_BALANCE_BASE64 } from "../../fixtures/account-mapper-reference-trial-balance.fixture";
 
 type PersistedByTypeV1 = {
@@ -749,6 +750,160 @@ describe("trial-balance pipeline run workflow v1", () => {
       },
       aiRun: {
         provider: "qwen",
+      },
+    });
+  });
+
+  it("queues a background AI rerun after saving a deterministic import fallback", async () => {
+    const repository = new InMemoryTbPipelineArtifactRepositoryV1(
+      new Set([`${tenantId}:${workspaceId}`]),
+      tenantId,
+    );
+    const queuedMessages: Array<{
+      actorUserId: string;
+      request: {
+        expectedActiveMapping: {
+          artifactId: string;
+          version: number;
+        };
+        tenantId: string;
+        workspaceId: string;
+      };
+      taskType: string;
+    }> = [];
+
+    const workbookBase64 = createWorkbookBase64V1({
+      rows: [
+        [
+          "Account Name",
+          "Account Number",
+          "Opening Balance",
+          "Closing Balance",
+        ],
+        ["Software", "1030", "0", "1000"],
+      ],
+    });
+
+    const result = await executeTrialBalancePipelineRunV1(
+      {
+        tenantId,
+        workspaceId,
+        createdByUserId: userId,
+        fileName: "tb.xlsx",
+        fileBytesBase64: workbookBase64,
+        policyVersion: "mapping-ai.v1",
+      },
+      {
+        ...createDeps({
+          artifactRepository: repository,
+          mappingPreferenceRepository:
+            new InMemoryMappingPreferenceRepositoryV1(),
+          auditRepository: new InMemoryAuditRepositoryV1(),
+        }),
+        generateMappingDecisions: async () =>
+          parseGenerateMappingDecisionsResultV1({
+            ok: true,
+            mapping: {
+              schemaVersion: "mapping_decisions_v2",
+              policyVersion: "mapping-ai.v1",
+              aiRun: {
+                runId: "tb-import-fallback-run",
+                moduleId: "mapping-decisions",
+                moduleVersion: "v1",
+                promptVersion: "mapping-decisions.prompts.v1",
+                policyVersion: "mapping-ai.v1",
+                activePatchVersions: [],
+                provider: "qwen",
+                model: "qwen-test",
+                modelTier: "fast",
+                generatedAt: "2026-03-02T12:00:00.000Z",
+                usedFallback: true,
+              },
+              executionMetadata: {
+                requestedStrategy: "ai_primary",
+                actualStrategy: "deterministic",
+                degraded: true,
+                degradedReasonCode: "model_execution_failed",
+                degradedReason:
+                  TRIAL_BALANCE_IMPORT_DETERMINISTIC_FALLBACK_REASON_V1,
+                annualReportContextAvailable: false,
+                usedAiRunFallback: false,
+              },
+              summary: {
+                totalRows: 1,
+                deterministicDecisions: 1,
+                manualReviewRequired: 1,
+                fallbackDecisions: 1,
+                matchedByAccountNumber: 0,
+                matchedByAccountName: 0,
+                unmatchedRows: 0,
+              },
+              decisions: [
+                {
+                  id: "Trial Balance:2",
+                  trialBalanceRowIdentity: {
+                    rowKey: "Trial Balance:2",
+                    source: {
+                      sheetName: "Trial Balance",
+                      rowNumber: 2,
+                    },
+                  },
+                  accountNumber: "1030",
+                  sourceAccountNumber: "1030",
+                  accountName: "Software",
+                  openingBalance: 0,
+                  closingBalance: 1000,
+                  proposedCategory: getSilverfinTaxCategoryByCodeV1("100000"),
+                  selectedCategory: getSilverfinTaxCategoryByCodeV1("100000"),
+                  confidence: 0.25,
+                  evidence: [
+                    {
+                      type: "tb_row",
+                      reference: "Trial Balance:2",
+                      snippet: "1030 Software",
+                      source: {
+                        sheetName: "Trial Balance",
+                        rowNumber: 2,
+                      },
+                    },
+                  ],
+                  policyRuleReference: "mapping.ai.fallback.test.v1",
+                  reviewFlag: true,
+                  status: "proposed",
+                  source: "deterministic",
+                },
+              ],
+            },
+          }),
+        enqueueMappingAiEnrichment: async (message) => {
+          queuedMessages.push(message);
+        },
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.pipeline.mapping.executionMetadata).toMatchObject({
+      requestedStrategy: "ai_primary",
+      actualStrategy: "deterministic",
+      degraded: true,
+      degradedReason: TRIAL_BALANCE_IMPORT_DETERMINISTIC_FALLBACK_REASON_V1,
+    });
+    expect(result.pipeline.artifacts.mapping.version).toBe(1);
+    expect(queuedMessages).toHaveLength(1);
+    expect(queuedMessages[0]).toMatchObject({
+      taskType: "mapping_ai_enrichment",
+      actorUserId: userId,
+      request: {
+        tenantId,
+        workspaceId,
+        expectedActiveMapping: {
+          artifactId: result.pipeline.artifacts.mapping.artifactId,
+          version: result.pipeline.artifacts.mapping.version,
+        },
       },
     });
   });

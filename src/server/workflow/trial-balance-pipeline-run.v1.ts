@@ -7,6 +7,7 @@ import type { WorkspaceArtifactRepositoryV1 } from "../../db/repositories/worksp
 import type { WorkspaceArtifactTypeV1 } from "../../db/repositories/workspace-artifact.repository.v1";
 import { AUDIT_EVENT_TYPES_V1 } from "../../shared/audit/audit-event-catalog.v1";
 import { parseAuditEventV2 } from "../../shared/contracts/audit-event.v2";
+import type { MappingAiEnrichmentQueueMessageV1 } from "../../shared/contracts/mapping-ai-enrichment.v1";
 import type { GenerateMappingDecisionsResultV1 } from "../../shared/contracts/mapping.v1";
 import type { ReconciliationResultPayloadV1 } from "../../shared/contracts/reconciliation.v1";
 import {
@@ -14,6 +15,7 @@ import {
   type ClearTrialBalancePipelineDataResultV1,
   ExecuteTrialBalancePipelineRequestV1Schema,
   type ExecuteTrialBalancePipelineResultV1,
+  TRIAL_BALANCE_IMPORT_DETERMINISTIC_FALLBACK_REASON_V1,
   type TbPipelineArtifactTypeV1,
   parseClearTrialBalancePipelineDataResultV1,
   parseExecuteTrialBalancePipelineResultV1,
@@ -38,6 +40,9 @@ export interface TrialBalancePipelineRunDepsV1 {
     trialBalance: TrialBalanceNormalizedArtifactV1;
     reconciliation: ReconciliationResultPayloadV1;
   }) => Promise<GenerateMappingDecisionsResultV1>;
+  enqueueMappingAiEnrichment?: (
+    message: MappingAiEnrichmentQueueMessageV1,
+  ) => Promise<void>;
   mappingPreferenceRepository: MappingPreferenceRepositoryV1;
   workspaceArtifactRepository?: WorkspaceArtifactRepositoryV1;
   generateId: () => string;
@@ -664,6 +669,36 @@ export async function executeTrialBalancePipelineRunV1(
       await deps.auditRepository.append(autoAppliedEvent);
     if (!autoAppliedAuditWrite.ok) {
       // Pipeline artifacts are already committed; audit append is best-effort.
+    }
+  }
+
+  const mappingExecutionMetadata = mappingResult.mapping.executionMetadata;
+  const shouldQueueFollowUpMappingRefresh =
+    Boolean(request.createdByUserId) &&
+    mappingExecutionMetadata?.requestedStrategy === "ai_primary" &&
+    mappingExecutionMetadata?.actualStrategy === "deterministic" &&
+    mappingExecutionMetadata?.degradedReason ===
+      TRIAL_BALANCE_IMPORT_DETERMINISTIC_FALLBACK_REASON_V1;
+  if (shouldQueueFollowUpMappingRefresh && deps.enqueueMappingAiEnrichment) {
+    try {
+      await deps.enqueueMappingAiEnrichment({
+        taskType: "mapping_ai_enrichment",
+        request: {
+          tenantId: request.tenantId,
+          workspaceId: request.workspaceId,
+          expectedActiveMapping: {
+            artifactId: mappingPersisted.artifact.id,
+            version: mappingPersisted.artifact.version,
+          },
+        },
+        actorUserId: request.createdByUserId,
+      });
+    } catch (error) {
+      console.warn("tb_pipeline.mapping_ai_enrichment.queue_failed", {
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
