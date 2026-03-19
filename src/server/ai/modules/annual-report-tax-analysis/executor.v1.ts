@@ -800,7 +800,7 @@ export async function executeAnnualReportTaxAnalysisV1(
         promptVersion: input.config.moduleSpec.promptVersion,
         policyVersion: input.config.policyPack.policyVersion,
         activePatchVersions: input.config.moduleSpec.policy.activePatchVersions,
-        provider: "qwen",
+        provider: input.env?.AI_PROVIDER === "openai" ? "openai" : "qwen",
         model: result.model,
         modelTier: input.config.moduleSpec.runtime.modelTier,
         generatedAt: input.generatedAt,

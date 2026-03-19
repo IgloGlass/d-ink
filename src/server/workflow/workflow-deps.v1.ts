@@ -4192,7 +4192,7 @@ async function generateMappingDecisionsWithPrimaryAiV1(input: {
           promptVersion: "mapping-decisions.prompts.v1",
           policyVersion: input.request.policyVersion,
           activePatchVersions: [],
-          provider: "qwen",
+          provider: input.env.AI_PROVIDER === "openai" ? "openai" : "qwen",
           model: modelConfig.fastModel,
           modelTier: "fast",
           generatedAt,
@@ -4673,7 +4673,7 @@ export function createCompanyLifecycleDepsV1(env: Env): CompanyLifecycleDepsV1 {
 export function createTrialBalancePipelineRunDepsV1(
   env: Env,
 ): TrialBalancePipelineRunDepsV1 {
-  const trialBalanceImportAiExecutionBudgetMs = 900_000;
+  const trialBalanceImportAiExecutionBudgetMs = 120_000;
 
   return {
     artifactRepository: createD1TbPipelineArtifactRepositoryV1(env.DB),

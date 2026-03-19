@@ -11,7 +11,7 @@
     "maxAttempts": 2
   },
   "timeouts": {
-    "requestTimeoutMs": 90000
+    "requestTimeoutMs": 30000
   },
   "classificationStrategy": {
     "mode": "ai_primary",

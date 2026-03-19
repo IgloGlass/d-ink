@@ -997,7 +997,7 @@ export async function executeMappingDecisionsModelV1(
               policyVersion: input.config.policyPack.policyVersion,
               activePatchVersions:
                 input.config.moduleSpec.policy.activePatchVersions,
-              provider: "qwen",
+              provider: input.env?.AI_PROVIDER === "openai" ? "openai" : "qwen",
               model: primaryModel,
               modelTier:
                 escalatedRows.length > 0
