@@ -4417,13 +4417,18 @@ async function generateTaxAdjustmentsWithPrimaryAiV1(input: {
     routedCandidates.map((candidate) => [candidate.mappingDecisionId, candidate]),
   );
 
-  const allDecisions: TaxAdjustmentAiProposalDecisionV1[] = [];
-  const aiRuns: AiRunMetadataV1[] = [];
+  type ModuleGroupResult = {
+    decisions: TaxAdjustmentAiProposalDecisionV1[];
+    aiRun?: AiRunMetadataV1;
+  };
 
-  for (const candidates of groupedCandidates.values()) {
+  const processModuleGroup = async (
+    candidates: (typeof routedCandidates),
+  ): Promise<ModuleGroupResult> => {
+    const groupDecisions: TaxAdjustmentAiProposalDecisionV1[] = [];
     const bridgeAiModule = candidates[0]?.bridgeAiModule;
     if (!bridgeAiModule) {
-      continue;
+      return { decisions: groupDecisions };
     }
 
     let configResult:
@@ -4456,7 +4461,7 @@ async function generateTaxAdjustmentsWithPrimaryAiV1(input: {
         userPrompt = TAX_ADJUSTMENTS_DEPRECIATION_USER_PROMPT_V1;
         break;
       default:
-        continue;
+        return { decisions: groupDecisions };
     }
 
     if (!configResult.ok) {
@@ -4465,7 +4470,7 @@ async function generateTaxAdjustmentsWithPrimaryAiV1(input: {
         moduleCode: candidates[0]?.moduleCode,
         mappingArtifactId: input.mappingArtifactId,
       });
-      continue;
+      return { decisions: groupDecisions };
     }
 
     const moduleResult = await executeTaxAdjustmentSubmoduleV1({
@@ -4485,7 +4490,7 @@ async function generateTaxAdjustmentsWithPrimaryAiV1(input: {
     });
     if (!moduleResult.ok) {
       for (const candidate of candidates) {
-        allDecisions.push({
+        groupDecisions.push({
           decisionId: `adj-fallback-${candidate.moduleCode}-${candidate.mappingDecisionId}`,
           module: candidate.moduleCode,
           sourceMappingDecisionId: candidate.mappingDecisionId,
@@ -4498,13 +4503,10 @@ async function generateTaxAdjustmentsWithPrimaryAiV1(input: {
             "AI submodule failed; deterministic fallback proposal applied for this candidate.",
         });
       }
-      continue;
+      return { decisions: groupDecisions };
     }
 
-    if (moduleResult.aiRun) {
-      aiRuns.push(moduleResult.aiRun);
-    }
-    allDecisions.push(
+    groupDecisions.push(
       ...moduleResult.decisions.flatMap((decision) => {
         const routedCandidate = routedCandidateByDecisionId.get(
           decision.sourceMappingDecisionId,
@@ -4542,13 +4544,10 @@ async function generateTaxAdjustmentsWithPrimaryAiV1(input: {
           ];
         }
 
-        return [
-          {
-            ...decision,
-          },
-        ];
+        return [{ ...decision }];
       }),
     );
+
     if (moduleResult.failedCandidates.length > 0) {
       for (const candidate of moduleResult.failedCandidates) {
         const routedCandidate = routedCandidateByDecisionId.get(
@@ -4558,7 +4557,7 @@ async function generateTaxAdjustmentsWithPrimaryAiV1(input: {
           continue;
         }
 
-        allDecisions.push({
+        groupDecisions.push({
           decisionId: `adj-fallback-${routedCandidate.moduleCode}-${candidate.mappingDecisionId}`,
           module: routedCandidate.moduleCode,
           sourceMappingDecisionId: candidate.mappingDecisionId,
@@ -4585,6 +4584,21 @@ async function generateTaxAdjustmentsWithPrimaryAiV1(input: {
         totalAttempts: moduleResult.telemetry.totalAttempts,
         mappingArtifactId: input.mappingArtifactId,
       });
+    }
+
+    return { decisions: groupDecisions, aiRun: moduleResult.aiRun };
+  };
+
+  const groupResults = await Promise.all(
+    [...groupedCandidates.values()].map(processModuleGroup),
+  );
+
+  const allDecisions: TaxAdjustmentAiProposalDecisionV1[] = [];
+  const aiRuns: AiRunMetadataV1[] = [];
+  for (const groupResult of groupResults) {
+    allDecisions.push(...groupResult.decisions);
+    if (groupResult.aiRun) {
+      aiRuns.push(groupResult.aiRun);
     }
   }
 

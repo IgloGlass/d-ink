@@ -3,7 +3,6 @@ import {
   TaxAdjustmentAiProposalResultV1Schema,
   type TaxAdjustmentAiProposalDecisionV1,
 } from "../../../../shared/contracts/tax-adjustment-ai.v1";
-import type { MappingDecisionSetArtifactV1 } from "../../../../shared/contracts/mapping.v1";
 import type {
   MappedAdjustmentCandidateV1,
   TaxAdjustmentModuleContextV1,
@@ -80,28 +79,6 @@ export type ExecuteTaxAdjustmentSubmoduleResultV1 =
       };
     };
 
-export function projectTaxAdjustmentCandidatesV1(input: {
-  mapping: MappingDecisionSetArtifactV1;
-  allowedCategoryCodes: string[];
-  closingBalanceBySourceAccount: Map<string, number>;
-}): CandidateRowV1[] {
-  return input.mapping.decisions
-    .filter((decision) =>
-      input.allowedCategoryCodes.includes(decision.selectedCategory.code),
-    )
-    .map((decision) => ({
-      mappingDecisionId: decision.id,
-      accountNumber: decision.accountNumber,
-      sourceAccountNumber: decision.sourceAccountNumber,
-      accountName: decision.accountName,
-      moduleCode: undefined,
-      openingBalance: undefined,
-      selectedCategory: decision.selectedCategory,
-      closingBalance:
-        input.closingBalanceBySourceAccount.get(decision.sourceAccountNumber) ?? 0,
-      mappingReviewFlag: decision.reviewFlag,
-    }));
-}
 
 function chunkRowsV1(rows: CandidateRowV1[], chunkSize: number): CandidateRowV1[][] {
   const chunks: CandidateRowV1[][] = [];

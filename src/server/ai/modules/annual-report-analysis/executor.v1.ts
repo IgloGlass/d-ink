@@ -5372,42 +5372,57 @@ export async function executeAnnualReportAnalysisV1(
         "progress.stage=extracting_tax_notes",
       ]);
     }
-    await runTaxExpenseNoteV1();
-    await runRelevantNotesCatalogV1();
+    await Promise.all([runTaxExpenseNoteV1(), runRelevantNotesCatalogV1()]);
 
-    if (shouldRunAssetsFollowUp) {
-      const assetsResult = await executeAnnualReportStageWithChunkFallbackV1<AnnualReportAiTaxNotesAssetsAndReservesResultV1>({
-        apiKey: input.apiKey,
-        currentStatus: "extracting_tax_notes",
-        chunkLabel: "tax_notes_assets",
-        document: taxNotesAssetsStageDocument.document,
-        modelConfig: input.modelConfig,
-        onProgress: input.onProgress,
-        responseSchema: AnnualReportAiTaxNotesAssetsAndReservesResultV1Schema,
-        stageInstruction: ANNUAL_REPORT_STAGE_INSTRUCTIONS_V1.taxNotesAssets,
-        focusRanges: taxNotesAssetsFocusRanges,
-        primaryModelTier: resolveAnnualReportModelTierV1({
-          preferred: "fast",
-          runtimeMode,
-        }),
-        fallbackModelTier: resolveAnnualReportModelTierV1({
-          preferred: "fast",
-          runtimeMode,
-        }),
-        useResponseJsonSchema: false,
-        primaryRequestTimeoutMs: stageTimeouts.taxNotesAssets.primaryRequestTimeoutMs,
-        retryRequestTimeoutMs: stageTimeouts.taxNotesAssets.retryRequestTimeoutMs,
-        stageBudgetMs: stageTimeouts.taxNotesAssets.stageBudgetMs,
-        totalDeadlineMs: extractionDeadlineMs,
-        minimumRetryBudgetMs: stageTimeouts.taxNotesAssets.minimumRetryBudgetMs,
-        primaryMaxCharsPerChunk: runtimeMode === "ai_overdrive" ? 12_000 : 6_000,
-        fallbackMaxCharsPerChunk: runtimeMode === "ai_overdrive" ? 8_000 : 4_000,
-        warnings,
-        primaryChunkPages: stageChunking.taxNotesPrimary,
-        fallbackChunkPages: stageChunking.taxNotesFallback,
-        skipWhenMissingRanges: true,
-      });
+    const [assetsResult, financeResult] = await Promise.all([
+      shouldRunAssetsFollowUp
+        ? executeAnnualReportStageWithChunkFallbackV1<AnnualReportAiTaxNotesAssetsAndReservesResultV1>({
+            apiKey: input.apiKey,
+            currentStatus: "extracting_tax_notes",
+            chunkLabel: "tax_notes_assets",
+            document: taxNotesAssetsStageDocument.document,
+            modelConfig: input.modelConfig,
+            onProgress: input.onProgress,
+            responseSchema: AnnualReportAiTaxNotesAssetsAndReservesResultV1Schema,
+            stageInstruction: ANNUAL_REPORT_STAGE_INSTRUCTIONS_V1.taxNotesAssets,
+            focusRanges: taxNotesAssetsFocusRanges,
+            primaryModelTier: resolveAnnualReportModelTierV1({
+              preferred: "fast",
+              runtimeMode,
+            }),
+            fallbackModelTier: resolveAnnualReportModelTierV1({
+              preferred: "fast",
+              runtimeMode,
+            }),
+            useResponseJsonSchema: false,
+            primaryRequestTimeoutMs: stageTimeouts.taxNotesAssets.primaryRequestTimeoutMs,
+            retryRequestTimeoutMs: stageTimeouts.taxNotesAssets.retryRequestTimeoutMs,
+            stageBudgetMs: stageTimeouts.taxNotesAssets.stageBudgetMs,
+            totalDeadlineMs: extractionDeadlineMs,
+            minimumRetryBudgetMs: stageTimeouts.taxNotesAssets.minimumRetryBudgetMs,
+            primaryMaxCharsPerChunk: runtimeMode === "ai_overdrive" ? 12_000 : 6_000,
+            fallbackMaxCharsPerChunk: runtimeMode === "ai_overdrive" ? 8_000 : 4_000,
+            warnings,
+            primaryChunkPages: stageChunking.taxNotesPrimary,
+            fallbackChunkPages: stageChunking.taxNotesFallback,
+            skipWhenMissingRanges: true,
+          })
+        : Promise.resolve(null),
+      shouldRunFinanceFollowUp
+        ? executeFinanceNotesStageV1({
+            primaryModelTier: resolveAnnualReportModelTierV1({
+              preferred: "fast",
+              runtimeMode,
+            }),
+            fallbackModelTier: resolveAnnualReportModelTierV1({
+              preferred: "fast",
+              runtimeMode,
+            }),
+          })
+        : Promise.resolve(null),
+    ]);
 
+    if (assetsResult) {
       if (assetsResult.ok) {
         selectedModelName = assetsResult.model;
         const merged = mergeAssetsOutputsV1(assetsResult.outputs);
@@ -5424,18 +5439,7 @@ export async function executeAnnualReportAnalysisV1(
       }
     }
 
-    if (shouldRunFinanceFollowUp) {
-      const financeResult = await executeFinanceNotesStageV1({
-        primaryModelTier: resolveAnnualReportModelTierV1({
-          preferred: "fast",
-          runtimeMode,
-        }),
-        fallbackModelTier: resolveAnnualReportModelTierV1({
-          preferred: "fast",
-          runtimeMode,
-        }),
-      });
-
+    if (financeResult) {
       if (financeResult.ok) {
         selectedModelName = financeResult.model;
         mergeFinanceContextIntoTaxDeepV1({
@@ -5502,38 +5506,47 @@ export async function executeAnnualReportAnalysisV1(
         "progress.stage=extracting_tax_notes",
       ]);
     }
-    await runTaxExpenseNoteV1();
-    await runRelevantNotesCatalogV1();
+    await Promise.all([runTaxExpenseNoteV1(), runRelevantNotesCatalogV1()]);
 
-    const assetsResult = await executeAnnualReportStageWithChunkFallbackV1<AnnualReportAiTaxNotesAssetsAndReservesResultV1>({
-      apiKey: input.apiKey,
-      currentStatus: "extracting_tax_notes",
-      chunkLabel: "tax_notes_assets",
-      document: taxNotesAssetsStageDocument.document,
-      modelConfig: input.modelConfig,
-      onProgress: input.onProgress,
-      responseSchema: AnnualReportAiTaxNotesAssetsAndReservesResultV1Schema,
-      stageInstruction: ANNUAL_REPORT_STAGE_INSTRUCTIONS_V1.taxNotesAssets,
-      focusRanges: taxNotesAssetsFocusRanges,
-      primaryModelTier: "fast",
-      fallbackModelTier: resolveAnnualReportModelTierV1({
-        preferred: "thinking",
-        runtimeMode,
+    const [assetsResult2, financeResult2] = await Promise.all([
+      executeAnnualReportStageWithChunkFallbackV1<AnnualReportAiTaxNotesAssetsAndReservesResultV1>({
+        apiKey: input.apiKey,
+        currentStatus: "extracting_tax_notes",
+        chunkLabel: "tax_notes_assets",
+        document: taxNotesAssetsStageDocument.document,
+        modelConfig: input.modelConfig,
+        onProgress: input.onProgress,
+        responseSchema: AnnualReportAiTaxNotesAssetsAndReservesResultV1Schema,
+        stageInstruction: ANNUAL_REPORT_STAGE_INSTRUCTIONS_V1.taxNotesAssets,
+        focusRanges: taxNotesAssetsFocusRanges,
+        primaryModelTier: "fast",
+        fallbackModelTier: resolveAnnualReportModelTierV1({
+          preferred: "thinking",
+          runtimeMode,
+        }),
+        primaryRequestTimeoutMs: stageTimeouts.taxNotesAssets.primaryRequestTimeoutMs,
+        retryRequestTimeoutMs: stageTimeouts.taxNotesAssets.retryRequestTimeoutMs,
+        stageBudgetMs: stageTimeouts.taxNotesAssets.stageBudgetMs,
+        totalDeadlineMs: extractionDeadlineMs,
+        minimumRetryBudgetMs: stageTimeouts.taxNotesAssets.minimumRetryBudgetMs,
+        warnings,
+        primaryChunkPages: stageChunking.taxNotesPrimary,
+        fallbackChunkPages: stageChunking.taxNotesFallback,
+        skipWhenMissingRanges: true,
       }),
-      primaryRequestTimeoutMs: stageTimeouts.taxNotesAssets.primaryRequestTimeoutMs,
-      retryRequestTimeoutMs: stageTimeouts.taxNotesAssets.retryRequestTimeoutMs,
-      stageBudgetMs: stageTimeouts.taxNotesAssets.stageBudgetMs,
-      totalDeadlineMs: extractionDeadlineMs,
-      minimumRetryBudgetMs: stageTimeouts.taxNotesAssets.minimumRetryBudgetMs,
-      warnings,
-      primaryChunkPages: stageChunking.taxNotesPrimary,
-      fallbackChunkPages: stageChunking.taxNotesFallback,
-      skipWhenMissingRanges: true,
-    });
+      executeFinanceNotesStageV1({
+        primaryModelTier: "fast",
+        fallbackModelTier: resolveAnnualReportModelTierV1({
+          preferred: "thinking",
+          runtimeMode,
+        }),
+      }),
+    ]);
 
-    if (assetsResult.ok) {
-      selectedModelName = assetsResult.model;
-      const merged = mergeAssetsOutputsV1(assetsResult.outputs);
+    // Apply assets first so taxExpenseContext priority is respected by finance merge
+    if (assetsResult2.ok) {
+      selectedModelName = assetsResult2.model;
+      const merged = mergeAssetsOutputsV1(assetsResult2.outputs);
       taxDeep.depreciationContext = merged.depreciationContext;
       taxDeep.assetMovements = merged.assetMovements;
       taxDeep.reserveContext = merged.reserveContext;
@@ -5543,38 +5556,30 @@ export async function executeAnnualReportAnalysisV1(
     } else {
       const stageError = formatAnnualReportStageErrorV1({
         stage: ANNUAL_REPORT_STAGE_LABELS_V1.taxNotesAssets,
-        error: assetsResult.error,
+        error: assetsResult2.error,
       });
       warnings.push(`degraded.tax_notes_assets.unavailable:${stageError.message}`);
     }
 
-    const financeResult = await executeFinanceNotesStageV1({
-      primaryModelTier: "fast",
-      fallbackModelTier: resolveAnnualReportModelTierV1({
-        preferred: "thinking",
-        runtimeMode,
-      }),
-    });
-
-    if (financeResult.ok) {
-      selectedModelName = financeResult.model;
-      taxDeep.netInterestContext = financeResult.output.netInterestContext;
-      taxDeep.pensionContext = financeResult.output.pensionContext;
-      taxDeep.leasingContext = financeResult.output.leasingContext;
+    if (financeResult2.ok) {
+      selectedModelName = financeResult2.model;
+      taxDeep.netInterestContext = financeResult2.output.netInterestContext;
+      taxDeep.pensionContext = financeResult2.output.pensionContext;
+      taxDeep.leasingContext = financeResult2.output.leasingContext;
       taxDeep.groupContributionContext =
-        financeResult.output.groupContributionContext;
-      taxDeep.shareholdingContext = financeResult.output.shareholdingContext;
+        financeResult2.output.groupContributionContext;
+      taxDeep.shareholdingContext = financeResult2.output.shareholdingContext;
 
       if (
-        financeResult.output.taxExpenseContext &&
+        financeResult2.output.taxExpenseContext &&
         (!taxDeep.taxExpenseContext || taxDeep.taxExpenseContext.notes.length === 0)
       ) {
-        taxDeep.taxExpenseContext = financeResult.output.taxExpenseContext;
+        taxDeep.taxExpenseContext = financeResult2.output.taxExpenseContext;
       }
     } else {
       const stageError = formatAnnualReportStageErrorV1({
         stage: ANNUAL_REPORT_STAGE_LABELS_V1.taxNotesFinance,
-        error: financeResult.error,
+        error: financeResult2.error,
       });
       warnings.push(`degraded.tax_notes_finance.unavailable:${stageError.message}`);
     }

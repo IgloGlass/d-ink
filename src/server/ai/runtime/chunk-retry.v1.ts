@@ -129,13 +129,13 @@ export async function executeChunksWithRetryAndSplitV1<TChunk, TOutput>(input: {
     }
 
     telemetry.splitCount += 1;
-    await executeRecursively(split[0], splitDepth + 1);
-    await executeRecursively(split[1], splitDepth + 1);
+    await Promise.all([
+      executeRecursively(split[0], splitDepth + 1),
+      executeRecursively(split[1], splitDepth + 1),
+    ]);
   };
 
-  for (const chunk of input.chunks) {
-    await executeRecursively(chunk, 0);
-  }
+  await Promise.all(input.chunks.map((chunk) => executeRecursively(chunk, 0)));
 
   return {
     successes,

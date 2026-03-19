@@ -205,7 +205,19 @@ async function callOpenAi(input: {
     signal: input.signal,
   });
 
-  return response.json() as Promise<OpenAiResponse>;
+  let parsed: OpenAiResponse;
+  try {
+    parsed = (await response.json()) as OpenAiResponse;
+  } catch {
+    throw new Error(`OpenAI HTTP ${response.status}: ${response.statusText}`);
+  }
+  if (!response.ok && !parsed.error) {
+    parsed.error = {
+      message: `HTTP ${response.status}: ${response.statusText}`,
+      code: String(response.status),
+    };
+  }
+  return parsed;
 }
 
 // ---------------------------------------------------------------------------
@@ -264,6 +276,19 @@ async function generateStructuredOutput<TOutput>(adapterInput: {
             errorType: apiResponse.error.type,
             errorCode: apiResponse.error.code,
           },
+        },
+      };
+    }
+
+    const finishReason = apiResponse.choices?.[0]?.finish_reason;
+    if (finishReason === "length") {
+      return {
+        ok: false,
+        error: {
+          code: "MODEL_RESPONSE_INVALID",
+          message:
+            "OpenAI response was truncated (finish_reason: length). Reduce batch size or increase max_tokens.",
+          context: { model, finishReason },
         },
       };
     }

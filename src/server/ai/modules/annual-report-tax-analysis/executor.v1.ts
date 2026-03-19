@@ -6,6 +6,7 @@ import type { AnnualReportPreparedDocumentV1 } from "../../document-prep/annual-
 import type { Env } from "../../../../shared/types/env";
 import type { AiModelConfigV1 } from "../../providers/ai-provider-client.v1";
 import { generateAiStructuredOutputV1 } from "../../providers/ai-provider-client.v1";
+import { isRetryableAiErrorV1 } from "../../runtime/chunk-retry.v1";
 import type { loadAnnualReportTaxAnalysisModuleConfigV1 } from "./loader.v1";
 import {
   ANNUAL_REPORT_TAX_ANALYSIS_SYSTEM_PROMPT_V1,
@@ -708,51 +709,58 @@ export async function executeAnnualReportTaxAnalysisV1(
     accountingStandard: input.extraction.fields.accountingStandard.value,
     profitBeforeTax: input.extraction.fields.profitBeforeTax.value,
   };
-  const result = await generateAiStructuredOutputV1<
-    Record<string, unknown>
-  >({
-    env: input.env,
-    apiKey: input.apiKey,
-    modelConfig: input.modelConfig,
-    request: {
-      modelTier: input.config.moduleSpec.runtime.modelTier,
-      responseSchema: AnnualReportTaxAnalysisAiEnvelopeV1Schema,
-      systemInstruction: ANNUAL_REPORT_TAX_ANALYSIS_SYSTEM_PROMPT_V1,
-      timeoutMs: 600_000,
-      temperature: 0.2,
-      maxOutputTokens: 8_192,
-      useResponseJsonSchema: false,
-      userInstruction: [
-        ANNUAL_REPORT_TAX_ANALYSIS_USER_PROMPT_V1,
-        sourceDocumentContext,
-        "Structured extraction:",
-        JSON.stringify(structuredExtraction, null, 2),
-        input.document?.fileType === "docx" &&
-        input.document.text.trim().length > 0
-          ? ["Source document text:", input.document.text].join("\n\n")
-          : undefined,
-      ].join("\n\n"),
-      documents: input.document?.inlineDataBase64
+  const aiRequest = {
+    modelTier: input.config.moduleSpec.runtime.modelTier,
+    responseSchema: AnnualReportTaxAnalysisAiEnvelopeV1Schema,
+    systemInstruction: ANNUAL_REPORT_TAX_ANALYSIS_SYSTEM_PROMPT_V1,
+    timeoutMs: 120_000,
+    temperature: 0.2,
+    maxOutputTokens: 8_192,
+    useResponseJsonSchema: false,
+    userInstruction: [
+      ANNUAL_REPORT_TAX_ANALYSIS_USER_PROMPT_V1,
+      sourceDocumentContext,
+      "Structured extraction:",
+      JSON.stringify(structuredExtraction, null, 2),
+      input.document?.fileType === "docx" &&
+      input.document.text.trim().length > 0
+        ? ["Source document text:", input.document.text].join("\n\n")
+        : undefined,
+    ].join("\n\n"),
+    documents: input.document?.inlineDataBase64
+      ? [
+          {
+            dataBase64: input.document.inlineDataBase64,
+            mimeType: input.document.mimeType,
+          },
+        ]
+      : input.document?.uri
         ? [
             {
-              dataBase64: input.document.inlineDataBase64,
+              kind: "uri",
+              uri: input.document.uri,
               mimeType: input.document.mimeType,
             },
           ]
-        : input.document?.uri
-          ? [
-              {
-                kind: "uri",
-                uri: input.document.uri,
-                mimeType: input.document.mimeType,
-              },
-            ]
-          : undefined,
-    },
-  });
+        : undefined,
+  } as const;
 
-  if (!result.ok) {
-    return result;
+  const MAX_ATTEMPTS = 2;
+  const BACKOFF_MS = 500;
+  let result: Awaited<ReturnType<typeof generateAiStructuredOutputV1<Record<string, unknown>>>> | null = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    result = await generateAiStructuredOutputV1<Record<string, unknown>>({
+      env: input.env,
+      apiKey: input.apiKey,
+      modelConfig: input.modelConfig,
+      request: aiRequest,
+    });
+    if (result.ok || !isRetryableAiErrorV1(result.error) || attempt >= MAX_ATTEMPTS) break;
+    await new Promise((resolve) => globalThis.setTimeout(resolve, BACKOFF_MS * attempt));
+  }
+
+  if (!result || !result.ok) {
+    return result ?? { ok: false, error: { code: "MODEL_EXECUTION_FAILED", message: "No result returned.", context: {} } };
   }
 
   const normalizedOutput = normalizeAnnualReportTaxAnalysisAiOutputV1({

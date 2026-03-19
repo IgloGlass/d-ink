@@ -111,10 +111,13 @@ async function withAbortTimeout<TValue>(input: {
  * Builds the user message string from the instruction and any text documents.
  * Binary PDF and URI document parts are dropped — DashScope doesn't support them.
  */
-function buildUserContent(input: {
-  userInstruction: string;
-  documents?: AiDocumentPartV1[];
-}): string {
+function buildUserContent(
+  input: {
+    userInstruction: string;
+    documents?: AiDocumentPartV1[];
+  },
+  onWarn?: (msg: string) => void,
+): string {
   const parts: string[] = [input.userInstruction];
 
   for (const doc of input.documents ?? []) {
@@ -127,8 +130,13 @@ function buildUserContent(input: {
       } catch {
         // ignore malformed base64
       }
+    } else {
+      // Binary PDF / other binary mimeTypes are not supported and are dropped.
+      // Log a warning so the caller knows content was silently excluded.
+      onWarn?.(
+        `[qwen-adapter] Dropping unsupported document part (mimeType: ${doc.mimeType}). DashScope does not accept binary inline documents.`,
+      );
     }
-    // Binary PDF / other binary mimeTypes dropped intentionally
   }
 
   return parts.join("\n\n");
@@ -207,7 +215,19 @@ async function callDashScope(input: {
     signal: input.signal,
   });
 
-  return response.json() as Promise<DashScopeResponse>;
+  let parsed: DashScopeResponse;
+  try {
+    parsed = (await response.json()) as DashScopeResponse;
+  } catch {
+    throw new Error(`DashScope HTTP ${response.status}: ${response.statusText}`);
+  }
+  if (!response.ok && !parsed.error) {
+    parsed.error = {
+      message: `HTTP ${response.status}: ${response.statusText}`,
+      code: String(response.status),
+    };
+  }
+  return parsed;
 }
 
 // ---------------------------------------------------------------------------
@@ -234,10 +254,13 @@ async function generateStructuredOutput<TOutput>(adapterInput: {
       JSON.stringify(jsonSchema, null, 2),
     ].join("\n\n");
 
-    const userMessage = buildUserContent({
-      userInstruction: adapterInput.request.userInstruction,
-      documents: adapterInput.request.documents,
-    });
+    const userMessage = buildUserContent(
+      {
+        userInstruction: adapterInput.request.userInstruction,
+        documents: adapterInput.request.documents,
+      },
+      (msg) => console.warn(msg),
+    );
 
     const apiResponse = await withAbortTimeout({
       label: "Qwen request",
@@ -266,6 +289,19 @@ async function generateStructuredOutput<TOutput>(adapterInput: {
             errorType: apiResponse.error.type,
             errorCode: apiResponse.error.code,
           },
+        },
+      };
+    }
+
+    const finishReason = apiResponse.choices?.[0]?.finish_reason;
+    if (finishReason === "length") {
+      return {
+        ok: false,
+        error: {
+          code: "MODEL_RESPONSE_INVALID",
+          message:
+            "Qwen response was truncated (finish_reason: length). Reduce batch size or increase max_tokens.",
+          context: { model, finishReason },
         },
       };
     }
