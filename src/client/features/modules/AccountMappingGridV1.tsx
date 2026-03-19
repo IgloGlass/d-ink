@@ -120,12 +120,30 @@ function buildReasoningSummaryV1(decision: MappingDecisionRecordV1): string {
   return `${decision.accountName} should be treated as ${decision.selectedCategory.name}.`;
 }
 
+// Pre-computed once at module load — listSilverfinTaxCategoriesV1 returns a
+// constant catalog so there is no point re-filtering on every row render.
+const CATEGORIES_BY_STATEMENT_TYPE: Record<
+  SilverfinTaxCategoryStatementTypeV1,
+  ReturnType<typeof listSilverfinTaxCategoriesV1>
+> = (() => {
+  const all = listSilverfinTaxCategoriesV1();
+  const map = {} as Record<
+    SilverfinTaxCategoryStatementTypeV1,
+    ReturnType<typeof listSilverfinTaxCategoriesV1>
+  >;
+  for (const category of all) {
+    if (!map[category.statementType]) {
+      map[category.statementType] = [];
+    }
+    map[category.statementType].push(category);
+  }
+  return map;
+})();
+
 function getStatementTypeCategoriesV1(
   statementType: SilverfinTaxCategoryStatementTypeV1,
 ) {
-  return listSilverfinTaxCategoriesV1().filter(
-    (category) => category.statementType === statementType,
-  );
+  return CATEGORIES_BY_STATEMENT_TYPE[statementType] ?? [];
 }
 
 function getDecisionToneV1(
@@ -528,7 +546,9 @@ export function AccountMappingGridV1({
     return () => {
       observer.disconnect();
     };
-  }, []);
+  // Re-run when rows first appear so the scroll div (conditionally rendered)
+  // gets observed. Using a boolean avoids re-running on every filter change.
+  }, [mappingAllRows.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedDecision =
     mappingRows.find((decision) => decision.id === selectedDecisionId) ??

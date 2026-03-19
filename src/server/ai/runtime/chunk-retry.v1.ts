@@ -77,6 +77,12 @@ export async function executeChunksWithRetryAndSplitV1<TChunk, TOutput>(input: {
   const successes: ChunkExecutionSuccessV1<TChunk, TOutput>[] = [];
   const failures: ChunkExecutionFailureV1<TChunk>[] = [];
   const retryableClassifier = input.shouldRetryError ?? isRetryableAiErrorV1;
+  // Guard: NaN or non-positive maxAttempts would cause the while-loop to never
+  // run, silently losing chunks. Clamp to at least 1.
+  const effectiveMaxAttempts =
+    Number.isFinite(input.maxAttempts) && input.maxAttempts >= 1
+      ? Math.ceil(input.maxAttempts)
+      : 1;
   const telemetry: ChunkRetryTelemetryV1 = {
     splitCount: 0,
     totalAttempts: 0,
@@ -89,7 +95,7 @@ export async function executeChunksWithRetryAndSplitV1<TChunk, TOutput>(input: {
     let attempt = 0;
     let lastFailure: RetryableAiErrorV1 | null = null;
 
-    while (attempt < Math.max(1, input.maxAttempts)) {
+    while (attempt < effectiveMaxAttempts) {
       attempt += 1;
       telemetry.totalAttempts += 1;
       const result = await input.executeChunk(chunk);
@@ -106,7 +112,7 @@ export async function executeChunksWithRetryAndSplitV1<TChunk, TOutput>(input: {
       lastFailure = result.error;
       if (
         !retryableClassifier(result.error) ||
-        attempt >= Math.max(1, input.maxAttempts)
+        attempt >= effectiveMaxAttempts
       ) {
         break;
       }

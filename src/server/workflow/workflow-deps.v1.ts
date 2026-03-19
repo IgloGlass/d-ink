@@ -4125,7 +4125,7 @@ async function generateMappingDecisionsWithPrimaryAiV1(input: {
     input.request.annualReportInput.status === "confirmed"
       ? {
           sourceExtractionArtifactId:
-            input.request.annualReportInput.extractionArtifactId!,
+            input.request.annualReportInput.extractionArtifactId ?? "",
           sourceTaxAnalysisArtifactId:
             input.request.annualReportInput.taxAnalysisArtifactId,
         }
@@ -4228,7 +4228,7 @@ async function generateMappingDecisionsWithPrimaryAiV1(input: {
     });
     return stampConservativeFallbackMappingV1({
       code: "missing_api_key",
-      message: "Qwen API key is not configured for AI-primary mapping.",
+      message: `AI provider API key is not configured for AI-primary mapping (provider: ${input.env.AI_PROVIDER ?? "qwen"}).`,
     });
   }
 
