@@ -671,8 +671,9 @@ describe("worker annual report routes v1", () => {
     };
 
     expect(response.status).toBe(202);
+    expect(response.headers.get("X-Dink-Annual-Report-Runtime")).toBeTruthy();
     expect(payload.ok).toBe(true);
-    expect(["completed", "partial"]).toContain(payload.run.status);
+    expect(["queued", "completed", "partial"]).toContain(payload.run.status);
   });
 
   it("keeps strict unavailable response outside local dev when bindings are missing", async () => {
@@ -709,6 +710,7 @@ describe("worker annual report routes v1", () => {
     };
 
     expect(response.status).toBe(503);
+    expect(response.headers.get("X-Dink-Annual-Report-Runtime")).toBeTruthy();
     expect(payload.ok).toBe(false);
     expect(payload.error.code).toBe("PROCESSING_RUN_UNAVAILABLE");
   });

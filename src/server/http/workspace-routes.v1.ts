@@ -2910,12 +2910,14 @@ export async function handleWorkspaceRoutesV1(
       return createMethodNotAllowedResponseV1("POST");
     }
 
-    return handleAnnualReportProcessingRunRouteV1(
-      request,
-      env,
-      appBaseUrl,
-      routeSegments[0],
-      executionContext,
+    return withAnnualReportRuntimeHeaderV1(env, () =>
+      handleAnnualReportProcessingRunRouteV1(
+        request,
+        env,
+        appBaseUrl,
+        routeSegments[0],
+        executionContext,
+      ),
     );
   }
 
