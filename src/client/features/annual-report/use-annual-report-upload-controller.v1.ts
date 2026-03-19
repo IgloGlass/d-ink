@@ -27,7 +27,9 @@ const ANNUAL_REPORT_OPEN_RUN_STATUSES_V1 = new Set<
   "extracting_tax_notes",
   "running_tax_analysis",
 ]);
-const ANNUAL_REPORT_STALE_RUN_THRESHOLD_MS_V1 = 90 * 1_000;
+// Keep the stale warning aligned with the UI copy: a run is only "stale"
+// after several minutes without progress, not after a short AI pause.
+const ANNUAL_REPORT_STALE_RUN_THRESHOLD_MS_V1 = 5 * 60 * 1_000;
 
 const REPLACE_ANNUAL_REPORT_CONFIRMATION_V1 =
   "Upload a new annual report? This will replace the active annual-report dataset and dependent tax outputs for this workspace. Previous versions will still be kept in history.";

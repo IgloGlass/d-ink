@@ -1,5 +1,5 @@
 import { env } from "cloudflare:test";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createD1AuditRepositoryV1 } from "../../../src/db/repositories/audit.repository.v1";
 import {
@@ -993,5 +993,82 @@ describe("annual report processing workflow v1", () => {
         "degraded.extraction.partial Missing required core facts: accountingStandard.",
       ]),
     );
+  });
+
+  it("does not mark an open run as stuck before the timeout window elapses", async () => {
+    await createQueuedRun();
+    await env.DB.prepare(
+      `
+        UPDATE annual_report_processing_runs_v1
+        SET updated_at = ?1
+        WHERE id = ?2
+      `,
+    )
+      .bind("2026-03-03T12:03:00.000Z", RUN_ID)
+      .run();
+
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(
+      Date.parse("2026-03-03T12:10:00.000Z"),
+    );
+    try {
+      const latest = await getLatestAnnualReportProcessingRunV1(
+        {
+          tenantId: TENANT_ID,
+          workspaceId: WORKSPACE_ID,
+        },
+        createBaseDeps(),
+      );
+      expect(latest.ok).toBe(true);
+      if (!latest.ok) {
+        return;
+      }
+
+      expect(latest.run.status).toBe("queued");
+      expect(latest.run.technicalDetails).not.toContain(
+        "processing.runtime.stuck_run_detected_on_poll",
+      );
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it("marks an open run as failed after the stuck timeout elapses", async () => {
+    await createQueuedRun();
+    await env.DB.prepare(
+      `
+        UPDATE annual_report_processing_runs_v1
+        SET updated_at = ?1
+        WHERE id = ?2
+      `,
+    )
+      .bind("2026-03-03T12:01:00.000Z", RUN_ID)
+      .run();
+
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(
+      Date.parse("2026-03-03T12:10:00.000Z"),
+    );
+    try {
+      const latest = await getLatestAnnualReportProcessingRunV1(
+        {
+          tenantId: TENANT_ID,
+          workspaceId: WORKSPACE_ID,
+        },
+        createBaseDeps(),
+      );
+      expect(latest.ok).toBe(true);
+      if (!latest.ok) {
+        return;
+      }
+
+      expect(latest.run.status).toBe("failed");
+      expect(latest.run.technicalDetails).toEqual(
+        expect.arrayContaining([
+          "processing.runtime.stuck_run_detected_on_poll",
+        ]),
+      );
+      expect(latest.run.error?.code).toBe("PROCESSING_RUN_UNAVAILABLE");
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });

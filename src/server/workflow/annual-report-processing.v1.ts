@@ -1555,7 +1555,9 @@ const STUCK_PROCESSING_STATUSES_V1 = new Set([
  *  than this threshold without any progress update. Chosen to be comfortably
  *  above the Gemini round-trip time (~30-90 s) while still giving the user
  *  timely feedback when the background Worker is killed by Cloudflare. */
-const STUCK_RUN_TIMEOUT_MS_V1 = 3 * 60 * 1000; // 3 minutes
+// Give long-running annual-report extraction enough time to survive slow AI
+// stages before we declare the run abandoned by the hosting environment.
+const STUCK_RUN_TIMEOUT_MS_V1 = 8 * 60 * 1000; // 8 minutes
 
 export async function getLatestAnnualReportProcessingRunV1(
   input: {
