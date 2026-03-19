@@ -4516,10 +4516,33 @@ async function generateTaxAdjustmentsWithPrimaryAiV1(input: {
           return [];
         }
 
+        if (decision.module !== routedCandidate.moduleCode) {
+          console.warn("tax-adjustments.ai.module_mismatch", {
+            bridgeAiModule,
+            sourceMappingDecisionId: decision.sourceMappingDecisionId,
+            expectedModuleCode: routedCandidate.moduleCode,
+            receivedModuleCode: decision.module,
+            mappingArtifactId: input.mappingArtifactId,
+          });
+          return [
+            {
+              decisionId: `adj-fallback-${routedCandidate.moduleCode}-${decision.sourceMappingDecisionId}`,
+              module: routedCandidate.moduleCode,
+              sourceMappingDecisionId: decision.sourceMappingDecisionId,
+              direction: routedCandidate.direction,
+              targetField: routedCandidate.targetField,
+              reviewFlag: true,
+              confidence: 0.25,
+              policyRuleReference: `adj.ai.fallback.${routedCandidate.moduleCode}.${bridgeAiModule}.module_mismatch.v1`,
+              rationale:
+                "AI submodule returned a decision for the wrong module, so a conservative fallback was applied instead.",
+            },
+          ];
+        }
+
         return [
           {
             ...decision,
-            module: routedCandidate.moduleCode,
           },
         ];
       }),

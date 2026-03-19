@@ -58,6 +58,8 @@ export type AiStructuredOutputRequestV1 = {
   documents?: AiDocumentPartV1[];
   /** Abort the request after this many milliseconds. */
   timeoutMs?: number;
+  /** Abort the request when the caller cancels the enclosing execution budget. */
+  signal?: AbortSignal;
 };
 
 // ---------------------------------------------------------------------------

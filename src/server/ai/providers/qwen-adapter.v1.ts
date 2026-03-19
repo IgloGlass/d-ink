@@ -47,8 +47,25 @@ async function withAbortTimeout<TValue>(input: {
   label: string;
   timeoutMs: number;
   execute: (signal: AbortSignal) => Promise<TValue>;
+  signal?: AbortSignal;
 }): Promise<TValue> {
   const controller = new AbortController();
+  const externalSignal = input.signal;
+  const onExternalAbort = () => {
+    controller.abort(
+      externalSignal?.reason ??
+        new DOMException(
+          `${input.label} was aborted by the caller.`,
+          "AbortError",
+        ),
+    );
+  };
+
+  if (externalSignal?.aborted) {
+    onExternalAbort();
+  } else if (externalSignal) {
+    externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+  }
 
   const abortPromise = new Promise<never>((_resolve, reject) => {
     controller.signal.addEventListener(
@@ -84,6 +101,9 @@ async function withAbortTimeout<TValue>(input: {
     return await Promise.race([executePromise, abortPromise]);
   } finally {
     globalThis.clearTimeout(timeoutHandle);
+    if (externalSignal) {
+      externalSignal.removeEventListener("abort", onExternalAbort);
+    }
   }
 }
 
@@ -222,6 +242,7 @@ async function generateStructuredOutput<TOutput>(adapterInput: {
     const apiResponse = await withAbortTimeout({
       label: "Qwen request",
       timeoutMs,
+      signal: adapterInput.request.signal,
       execute: (signal) =>
         callDashScope({
           apiKey: adapterInput.apiKey,

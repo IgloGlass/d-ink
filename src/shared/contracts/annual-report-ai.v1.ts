@@ -10,7 +10,7 @@ import {
 function createAiSchemaVersionV1<TSchemaVersion extends string>(
   schemaVersion: TSchemaVersion,
 ) {
-  return z.literal(schemaVersion).catch(schemaVersion);
+  return z.literal(schemaVersion);
 }
 
 function normalizeOptionalTextV1(value: unknown): string | undefined {

@@ -1582,10 +1582,90 @@ function detectAnnualReportNoteHeadingV1(input: {
   };
 }
 
+function buildRelevantNoteBlocksFromTextV1(input: {
+  text: string;
+}): AnnualReportRelevantNoteBlockV1[] {
+  const lines = input.text
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0);
+
+  const blocks: AnnualReportRelevantNoteBlockV1[] = [];
+  let currentBlock:
+    | {
+        noteReference?: string;
+        pages: number[];
+        lines: string[];
+        title?: string;
+      }
+    | null = null;
+
+  const flushCurrentBlock = () => {
+    if (!currentBlock) {
+      return;
+    }
+
+    const text = currentBlock.lines
+      .map((line) => line.trimEnd())
+      .join("\n")
+      .trim();
+    if (text.length === 0) {
+      currentBlock = null;
+      return;
+    }
+
+    const pages = [...new Set(currentBlock.pages)].sort((left, right) => left - right);
+    blocks.push({
+      blockId: [
+        currentBlock.noteReference?.toLowerCase().replace(/[^a-z0-9]+/g, "-") ??
+          "note",
+        pages[0] ?? "page",
+      ].join("-"),
+      noteReference: currentBlock.noteReference,
+      pages,
+      text,
+      title: currentBlock.title,
+    });
+    currentBlock = null;
+  };
+
+  for (const line of lines) {
+    const heading = detectAnnualReportNoteHeadingV1({ line });
+    if (heading) {
+      flushCurrentBlock();
+      currentBlock = {
+        noteReference: `Not ${heading.noteNumber}`,
+        pages: [1],
+        lines: [line.trim()],
+        title: heading.title,
+      };
+      continue;
+    }
+
+    if (!currentBlock) {
+      continue;
+    }
+
+    currentBlock.lines.push(line);
+  }
+
+  flushCurrentBlock();
+  return blocks;
+}
+
 function buildRelevantNoteBlocksV1(input: {
   document: AnnualReportPreparedDocumentV1;
   focusRanges: AnnualReportAiSectionLocatorRangeV1[];
 }): AnnualReportRelevantNoteBlockV1[] {
+  if (
+    input.document.fileType === "docx" &&
+    input.document.sourceText?.fileType === "docx"
+  ) {
+    return buildRelevantNoteBlocksFromTextV1({
+      text: input.document.sourceText.text,
+    });
+  }
+
   if (
     input.document.fileType !== "pdf" ||
     !input.document.sourceText ||
@@ -2002,6 +2082,7 @@ async function executeAnnualReportStageWithChunkFallbackV1<TOutput>(input: {
   | {
       ok: true;
       outputs: TOutput[];
+      model: string;
     }
   | {
       ok: false;
@@ -2014,6 +2095,7 @@ async function executeAnnualReportStageWithChunkFallbackV1<TOutput>(input: {
 > {
   const normalizedFocusContext = formatPageRanges(input.focusRanges);
   const stageStartedAt = Date.now();
+  let lastSuccessfulModel = input.modelConfig.fastModel;
 
   const getRemainingBudgetMs = (): number => {
     const stageRemaining = input.stageBudgetMs - (Date.now() - stageStartedAt);
@@ -2125,6 +2207,7 @@ async function executeAnnualReportStageWithChunkFallbackV1<TOutput>(input: {
     | {
         ok: true;
         outputs: TOutput[];
+        model: string;
       }
     | {
         ok: false;
@@ -2194,6 +2277,7 @@ async function executeAnnualReportStageWithChunkFallbackV1<TOutput>(input: {
         if (!stageResult.ok) {
           return stageResult;
         }
+        lastSuccessfulModel = stageResult.model;
         outputs.push(stageResult.output);
       }
 
@@ -2203,6 +2287,7 @@ async function executeAnnualReportStageWithChunkFallbackV1<TOutput>(input: {
       return {
         ok: true,
         outputs,
+        model: lastSuccessfulModel,
       };
     }
 
@@ -2232,9 +2317,11 @@ async function executeAnnualReportStageWithChunkFallbackV1<TOutput>(input: {
       if (!stageResult.ok) {
         return stageResult;
       }
+      lastSuccessfulModel = stageResult.model;
       return {
         ok: true,
         outputs: [stageResult.output],
+        model: stageResult.model,
       };
     }
 
@@ -2279,6 +2366,7 @@ async function executeAnnualReportStageWithChunkFallbackV1<TOutput>(input: {
       return {
         ok: true,
         outputs: [stageResult.output],
+        model: stageResult.model,
       };
     }
 
@@ -2317,6 +2405,7 @@ async function executeAnnualReportStageWithChunkFallbackV1<TOutput>(input: {
       if (!stageResult.ok) {
         return stageResult;
       }
+      lastSuccessfulModel = stageResult.model;
       outputs.push(stageResult.output);
     }
 
@@ -2327,6 +2416,7 @@ async function executeAnnualReportStageWithChunkFallbackV1<TOutput>(input: {
     return {
       ok: true,
       outputs,
+      model: lastSuccessfulModel,
     };
   };
 
@@ -2414,6 +2504,7 @@ async function executeAnnualReportStageWithChunkFallbackV1<TOutput>(input: {
   return {
     ok: true,
     outputs: [fullDocumentResult.output],
+    model: fullDocumentResult.model,
   };
 }
 
@@ -4845,6 +4936,7 @@ export async function executeAnnualReportAnalysisV1(
     };
   }
 
+  selectedModelName = coreFactsResult.model;
   const rawCoreFacts = coreFactsResult.outputs[0];
   const coreFacts = rawCoreFacts
     ? applyCoreFactsSeedFallbackV1({
@@ -4930,6 +5022,7 @@ export async function executeAnnualReportAnalysisV1(
         continue;
       }
 
+      selectedModelName = taxExpenseNoteResult.model;
       mergeTaxExpenseNoteIntoTaxDeepV1({
         taxDeep,
         next: taxExpenseNoteResult.output,
@@ -4989,6 +5082,7 @@ export async function executeAnnualReportAnalysisV1(
         continue;
       }
 
+      selectedModelName = relevantNotesResult.model;
       mergedRelevantNotes.push(
         ...materializeRelevantNotesFromLocatorV1({
           blocks: blockChunk,
@@ -5012,6 +5106,7 @@ export async function executeAnnualReportAnalysisV1(
     | {
         ok: true;
         output: AnnualReportAiTaxNotesFinanceAndOtherResultV1;
+        model: string;
       }
     | {
         ok: false;
@@ -5085,6 +5180,7 @@ export async function executeAnnualReportAnalysisV1(
       return {
         ok: true as const,
         output: mergeFinanceOutputsV1(pdfFallbackResult.outputs),
+        model: pdfFallbackResult.model,
       };
     }
 
@@ -5093,6 +5189,7 @@ export async function executeAnnualReportAnalysisV1(
       return {
         ok: true as const,
         output: mergedPrimary,
+        model: primaryResult.model,
       };
     }
 
@@ -5110,6 +5207,7 @@ export async function executeAnnualReportAnalysisV1(
         mergedPrimary,
         ...pdfFallbackResult.outputs,
       ]),
+      model: pdfFallbackResult.model,
     };
   };
   if (executionProfile === "extractable_text_pdf") {
@@ -5139,6 +5237,7 @@ export async function executeAnnualReportAnalysisV1(
     if (combinedStageGate.skip) {
       warnings.push(
         `combined_extractable.skipped reason=${combinedStageGate.reason ?? "unknown"} text_chunks=${combinedStageGate.textChunks ?? 0} text_chars=${combinedStageGate.textChars ?? 0}`,
+        `fallback.combined_extractable.skipped reason=${combinedStageGate.reason ?? "unknown"} text_chunks=${combinedStageGate.textChunks ?? 0} text_chars=${combinedStageGate.textChars ?? 0}`,
       );
       warnings.push(
         `combined_extractable.follow_up_required=1 statements=${shouldRunStatementsFollowUp ? 1 : 0} assets=${shouldRunAssetsFollowUp ? 1 : 0} finance=${shouldRunFinanceFollowUp ? 1 : 0}`,
@@ -5177,6 +5276,7 @@ export async function executeAnnualReportAnalysisV1(
       });
 
       if (combinedResult.ok) {
+        selectedModelName = combinedResult.model;
         const merged = mergeCombinedOutputsV1(combinedResult.outputs);
         warnings.push(...merged.documentWarnings);
         taxDeep.ink2rExtracted = merged.ink2rExtracted;
@@ -5218,6 +5318,7 @@ export async function executeAnnualReportAnalysisV1(
           deterministicStatementsFallback.priorYearComparatives;
         warnings.push(
           `statements.skipped=deterministic_extractable_pdf_rebuild income_rows=${deterministicStatementsFallback.metrics.incomeRows} income_values=${deterministicStatementsFallback.metrics.incomeValues} balance_rows=${deterministicStatementsFallback.metrics.balanceRows} balance_values=${deterministicStatementsFallback.metrics.balanceValues}`,
+          `fallback.statements.skipped=deterministic_extractable_pdf_rebuild income_rows=${deterministicStatementsFallback.metrics.incomeRows} income_values=${deterministicStatementsFallback.metrics.incomeValues} balance_rows=${deterministicStatementsFallback.metrics.balanceRows} balance_values=${deterministicStatementsFallback.metrics.balanceValues}`,
         );
       } else {
         const statementsResult = await executeAnnualReportStageWithChunkFallbackV1<AnnualReportAiStatementsOnlyResultV1>({
@@ -5253,6 +5354,7 @@ export async function executeAnnualReportAnalysisV1(
         });
 
         if (statementsResult.ok) {
+          selectedModelName = statementsResult.model;
           const merged = mergeStatementsOutputsV1(statementsResult.outputs);
           taxDeep.ink2rExtracted = merged.ink2rExtracted;
           taxDeep.priorYearComparatives = merged.priorYearComparatives;
@@ -5308,6 +5410,7 @@ export async function executeAnnualReportAnalysisV1(
       });
 
       if (assetsResult.ok) {
+        selectedModelName = assetsResult.model;
         const merged = mergeAssetsOutputsV1(assetsResult.outputs);
         mergeAssetsContextIntoTaxDeepV1({
           taxDeep,
@@ -5335,6 +5438,7 @@ export async function executeAnnualReportAnalysisV1(
       });
 
       if (financeResult.ok) {
+        selectedModelName = financeResult.model;
         mergeFinanceContextIntoTaxDeepV1({
           taxDeep,
           next: financeResult.output,
@@ -5382,6 +5486,7 @@ export async function executeAnnualReportAnalysisV1(
     });
 
     if (statementsResult.ok) {
+      selectedModelName = statementsResult.model;
       const merged = mergeStatementsOutputsV1(statementsResult.outputs);
       taxDeep.ink2rExtracted = merged.ink2rExtracted;
       taxDeep.priorYearComparatives = merged.priorYearComparatives;
@@ -5428,6 +5533,7 @@ export async function executeAnnualReportAnalysisV1(
     });
 
     if (assetsResult.ok) {
+      selectedModelName = assetsResult.model;
       const merged = mergeAssetsOutputsV1(assetsResult.outputs);
       taxDeep.depreciationContext = merged.depreciationContext;
       taxDeep.assetMovements = merged.assetMovements;
@@ -5452,6 +5558,7 @@ export async function executeAnnualReportAnalysisV1(
     });
 
     if (financeResult.ok) {
+      selectedModelName = financeResult.model;
       taxDeep.netInterestContext = financeResult.output.netInterestContext;
       taxDeep.pensionContext = financeResult.output.pensionContext;
       taxDeep.leasingContext = financeResult.output.leasingContext;

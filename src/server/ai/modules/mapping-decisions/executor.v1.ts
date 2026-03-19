@@ -238,6 +238,7 @@ async function runBatchV1(input: {
   modelConfig: AiModelConfigV1;
   rows: MappingRowProjectionV1[];
   modelTier: "fast" | "thinking";
+  signal?: AbortSignal;
 }): Promise<
   | {
       ok: true;
@@ -262,6 +263,7 @@ async function runBatchV1(input: {
       responseSchema: MappingAiProposalProviderResultV1Schema,
       systemInstruction: MAPPING_DECISIONS_SYSTEM_PROMPT_V1,
       timeoutMs: input.config.policyPack.timeouts.requestTimeoutMs,
+      signal: input.signal,
       userInstruction: buildInstructionV1({
         annualReportContext: input.annualReportContext,
         rows: input.rows,
@@ -291,6 +293,7 @@ async function runBatchWithTierFallbackV1(input: {
   modelConfig: AiModelConfigV1;
   preferredTier: "fast" | "thinking";
   rows: MappingRowProjectionV1[];
+  signal?: AbortSignal;
 }): Promise<
   | {
       ok: true;
@@ -316,6 +319,7 @@ async function runBatchWithTierFallbackV1(input: {
     modelConfig: input.modelConfig,
     rows: input.rows,
     modelTier: input.preferredTier,
+    signal: input.signal,
   });
   if (preferredResult.ok) {
     return {
@@ -343,6 +347,7 @@ async function runBatchWithTierFallbackV1(input: {
     modelConfig: input.modelConfig,
     rows: input.rows,
     modelTier: input.fallbackTier,
+    signal: input.signal,
   });
   if (!fallbackResult.ok) {
     return {
@@ -490,15 +495,18 @@ function buildMappingDecisionSetV1(input: {
   decisionsByRowId: Map<string, MappingAiProposalDecisionV1>;
 }): MappingDecisionSetPayloadV2 {
   const decisions = input.rows.map((row) => {
+    const originalProposal =
+      input.decisionsByRowId.get(row.rowId) ??
+      buildConservativeFallbackProposalV1(row);
     const proposal = applyProposalGuardrailsV1({
       row,
-      proposal:
-        input.decisionsByRowId.get(row.rowId) ??
-        buildConservativeFallbackProposalV1(row),
+      proposal: originalProposal,
     });
-    const selectedCategoryCode = proposal.selectedCategoryCode;
+    const proposedCategory = getSilverfinTaxCategoryByCodeV1(
+      originalProposal.selectedCategoryCode as SilverfinTaxCategoryCodeV1,
+    );
     const selectedCategory = getSilverfinTaxCategoryByCodeV1(
-      selectedCategoryCode as SilverfinTaxCategoryCodeV1,
+      proposal.selectedCategoryCode as SilverfinTaxCategoryCodeV1,
     );
 
     return {
@@ -510,7 +518,7 @@ function buildMappingDecisionSetV1(input: {
       accountNumber: row.accountNumber,
       sourceAccountNumber: row.sourceAccountNumber,
       accountName: row.accountName,
-      proposedCategory: selectedCategory,
+      proposedCategory,
       selectedCategory,
       confidence: proposal.confidence,
       evidence: [
@@ -574,7 +582,7 @@ function buildMappingDecisionSetV1(input: {
         .length,
       fallbackDecisions,
       matchedByAccountNumber: 0,
-      matchedByAccountName: decisions.length - fallbackDecisions,
+      matchedByAccountName: 0,
       unmatchedRows: 0,
     },
     decisions,
@@ -621,20 +629,24 @@ function buildExecutionBudgetErrorV1(input: {
 
 async function withExecutionBudgetV1<TValue>(input: {
   label: string;
-  operation: () => Promise<TValue>;
+  operation: (signal: AbortSignal) => Promise<TValue>;
   timeoutMs?: number;
 }): Promise<TValue> {
   if (!input.timeoutMs) {
-    return input.operation();
+    return input.operation(new AbortController().signal);
   }
 
+  const controller = new AbortController();
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
   try {
     return await Promise.race([
-      input.operation(),
+      input.operation(controller.signal),
       new Promise<TValue>((_resolve, reject) => {
         timeoutId = setTimeout(() => {
+          controller.abort(
+            new Error(`${input.label} timed out after ${input.timeoutMs}ms.`),
+          );
           reject(
             new Error(`${input.label} timed out after ${input.timeoutMs}ms.`),
           );
@@ -669,7 +681,7 @@ export async function executeMappingDecisionsModelV1(
     return await withExecutionBudgetV1({
       label: "Mapping decisions AI execution",
       timeoutMs: input.executionBudgetMs,
-      operation: async () => {
+      operation: async (signal) => {
         const rows = buildRowsV1(input.trialBalance);
         const effectiveBatchSize = resolveEffectiveBatchSizeV1(input.config);
         const batches = chunkRowsV1(
@@ -686,12 +698,24 @@ export async function executeMappingDecisionsModelV1(
           chunks: batches,
           maxAttempts: input.config.policyPack.retries.maxAttempts,
           backoffMs: input.config.policyPack.retries.backoffMs,
-            splitChunk: (chunk) =>
+          shouldRetryError: (error) =>
+            !error.context.aborted && isRetryableAiErrorV1(error),
+          splitChunk: (chunk) =>
               splitRowsForRetryV1({
                 rows: chunk,
                 minRowsPerChunk: input.config.policyPack.batching.minRowsPerChunk,
               }),
             executeChunk: async (chunk) => {
+              if (signal.aborted) {
+                return {
+                  ok: false as const,
+                  error: {
+                    code: "MODEL_EXECUTION_FAILED" as const,
+                    message: "Mapping decisions execution was aborted.",
+                    context: { aborted: true },
+                  },
+                };
+              }
               const result = await runBatchWithTierFallbackV1({
                 apiKey: input.apiKey,
                 annualReportContext: input.annualReportContext,
@@ -700,7 +724,18 @@ export async function executeMappingDecisionsModelV1(
                 rows: chunk,
                 preferredTier: input.config.moduleSpec.runtime.modelTier,
                 fallbackTier: input.config.policyPack.escalation.modelTier,
+                signal,
               });
+              if (signal.aborted) {
+                return {
+                  ok: false as const,
+                  error: {
+                    code: "MODEL_EXECUTION_FAILED" as const,
+                    message: "Mapping decisions execution was aborted.",
+                    context: { aborted: true },
+                  },
+                };
+              }
               if (!result.ok) {
                 return result;
               }
@@ -759,8 +794,20 @@ export async function executeMappingDecisionsModelV1(
             chunks: chunkRowsV1(omittedRowsFromInitialPass, 1),
             maxAttempts: input.config.policyPack.retries.maxAttempts,
             backoffMs: input.config.policyPack.retries.backoffMs,
+            shouldRetryError: (error) =>
+              !error.context.aborted && isRetryableAiErrorV1(error),
             splitChunk: () => null,
             executeChunk: async (chunk) => {
+              if (signal.aborted) {
+                return {
+                  ok: false as const,
+                  error: {
+                    code: "MODEL_EXECUTION_FAILED" as const,
+                    message: "Mapping decisions execution was aborted.",
+                    context: { aborted: true },
+                  },
+                };
+              }
               const result = await runBatchWithTierFallbackV1({
                 apiKey: input.apiKey,
                 annualReportContext: input.annualReportContext,
@@ -769,7 +816,18 @@ export async function executeMappingDecisionsModelV1(
                 rows: chunk,
                 preferredTier: input.config.moduleSpec.runtime.modelTier,
                 fallbackTier: input.config.policyPack.escalation.modelTier,
+                signal,
               });
+              if (signal.aborted) {
+                return {
+                  ok: false as const,
+                  error: {
+                    code: "MODEL_EXECUTION_FAILED" as const,
+                    message: "Mapping decisions execution was aborted.",
+                    context: { aborted: true },
+                  },
+                };
+              }
               if (!result.ok) {
                 return result;
               }
@@ -831,12 +889,24 @@ export async function executeMappingDecisionsModelV1(
             chunks: escalatedBatches,
             maxAttempts: input.config.policyPack.retries.maxAttempts,
             backoffMs: input.config.policyPack.retries.backoffMs,
+            shouldRetryError: (error) =>
+              !error.context.aborted && isRetryableAiErrorV1(error),
             splitChunk: (chunk) =>
               splitRowsForRetryV1({
                 rows: chunk,
                 minRowsPerChunk: input.config.policyPack.batching.minRowsPerChunk,
               }),
             executeChunk: async (chunk) => {
+              if (signal.aborted) {
+                return {
+                  ok: false as const,
+                  error: {
+                    code: "MODEL_EXECUTION_FAILED" as const,
+                    message: "Mapping decisions execution was aborted.",
+                    context: { aborted: true },
+                  },
+                };
+              }
               const result = await runBatchWithTierFallbackV1({
                 apiKey: input.apiKey,
                 annualReportContext: input.annualReportContext,
@@ -845,7 +915,18 @@ export async function executeMappingDecisionsModelV1(
                 rows: chunk,
                 preferredTier: input.config.policyPack.escalation.modelTier,
                 fallbackTier: input.config.moduleSpec.runtime.modelTier,
+                signal,
               });
+              if (signal.aborted) {
+                return {
+                  ok: false as const,
+                  error: {
+                    code: "MODEL_EXECUTION_FAILED" as const,
+                    message: "Mapping decisions execution was aborted.",
+                    context: { aborted: true },
+                  },
+                };
+              }
               if (!result.ok) {
                 return result;
               }

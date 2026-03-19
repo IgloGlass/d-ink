@@ -55,6 +55,7 @@ export type ExecuteTaxAdjustmentSubmoduleInputV1<TPolicy> = {
   generateId: () => string;
   generatedAt: string;
   modelConfig: AiModelConfigV1;
+  signal?: AbortSignal;
   systemPrompt: string;
   userPrompt: string;
 };
@@ -139,12 +140,23 @@ export async function executeTaxAdjustmentSubmoduleV1<TPolicy>(
     chunks: candidateChunks,
     maxAttempts: input.config.policyPack.retries.maxAttempts,
     backoffMs: input.config.policyPack.retries.backoffMs,
+    shouldRetryError: (error) => !error.context.aborted && error.code !== "CONFIG_INVALID",
     splitChunk: (chunk) =>
       splitChunkV1({
         rows: chunk,
         minRowsPerChunk: input.config.policyPack.batching.minRowsPerChunk,
       }),
     executeChunk: async (chunk) => {
+      if (input.signal?.aborted) {
+        return {
+          ok: false as const,
+          error: {
+            code: "MODEL_EXECUTION_FAILED" as const,
+            message: "Tax adjustment submodule execution was aborted.",
+            context: { aborted: true },
+          },
+        };
+      }
       const result = await generateAiStructuredOutputV1({
         env: input.env,
         apiKey: input.apiKey,
@@ -154,6 +166,7 @@ export async function executeTaxAdjustmentSubmoduleV1<TPolicy>(
           responseSchema: TaxAdjustmentAiProposalResultV1Schema,
           systemInstruction: input.systemPrompt,
           timeoutMs: input.config.policyPack.timeouts.requestTimeoutMs,
+          signal: input.signal,
           userInstruction: [
             input.userPrompt,
             "Annual report context:",
@@ -170,6 +183,27 @@ export async function executeTaxAdjustmentSubmoduleV1<TPolicy>(
       const output = result.output as {
         decisions: TaxAdjustmentAiProposalDecisionV1[];
       };
+      const expectedModuleCode = chunk[0]?.moduleCode;
+      const receivedModuleCodes = [
+        ...new Set(output.decisions.map((decision) => decision.module)),
+      ];
+      if (
+        expectedModuleCode &&
+        receivedModuleCodes.some((moduleCode) => moduleCode !== expectedModuleCode)
+      ) {
+        return {
+          ok: false as const,
+          error: {
+            code: "MODEL_RESPONSE_INVALID" as const,
+            message:
+              "Tax adjustment AI returned decisions for a module that does not match the routed submodule.",
+            context: {
+              expectedModuleCode,
+              receivedModuleCodes,
+            },
+          },
+        };
+      }
 
       return {
         ok: true as const,

@@ -164,4 +164,76 @@ describe("tax-adjustment submodule executor reliability v1", () => {
     expect(result.decisions).toHaveLength(1);
     expect(result.aiRun?.usedFallback).toBe(true);
   });
+
+  it("fails closed when the AI returns a decision for the wrong module", async () => {
+    const configResult = loadTaxAdjustmentsNonDeductibleExpensesModuleConfigV1();
+    expect(configResult.ok).toBe(true);
+    if (!configResult.ok) {
+      return;
+    }
+
+    vi.mocked(generateAiStructuredOutputV1).mockResolvedValue({
+      ok: true,
+      model: "qwen-test",
+      output: {
+        schemaVersion: "tax_adjustment_ai_proposal_v1",
+        decisions: [
+          {
+            decisionId: "adj-ai-map-1",
+            module: "representation_entertainment",
+            sourceMappingDecisionId: "map-1",
+            direction: "increase_taxable_income",
+            targetField: "INK2S.non_deductible_expenses",
+            reviewFlag: false,
+            confidence: 0.9,
+            policyRuleReference: "adj.non_deductible.ai.v1",
+            rationale: "wrong module",
+          },
+        ],
+      },
+    });
+
+    const result = await executeTaxAdjustmentSubmoduleV1({
+      apiKey: "test-key",
+      annualReportTaxContext: taxContext,
+      candidates: [
+        {
+          mappingDecisionId: "map-1",
+          moduleCode: "non_deductible_expenses",
+          accountNumber: "6072",
+          sourceAccountNumber: "6072",
+          accountName: "Representation",
+          selectedCategory: {
+            code: "607200",
+            name: "Entertainment - internal and external - presumed non-deductible",
+            statementType: "income_statement",
+          },
+          closingBalance: 100,
+          mappingReviewFlag: false,
+        },
+      ],
+      config: {
+        ...configResult.config,
+        policyPack: {
+          ...configResult.config.policyPack,
+          batching: { maxRowsPerBatch: 2, minRowsPerChunk: 1 },
+          retries: { maxAttempts: 1, backoffMs: 0 },
+        },
+      },
+      generateId: () => "adj-run-2",
+      generatedAt: "2026-03-07T10:00:00.000Z",
+      modelConfig: { fastModel: "fast", thinkingModel: "thinking" },
+      systemPrompt: "system",
+      userPrompt: "user",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.decisions).toHaveLength(0);
+    expect(result.failedCandidates).toHaveLength(1);
+    expect(result.aiRun).toBeUndefined();
+  });
 });
