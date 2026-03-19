@@ -3,7 +3,7 @@
   "moduleId": "mapping-decisions",
   "policyVersion": "mapping-decisions.v1",
   "batching": {
-    "maxRowsPerBatch": 40,
+    "maxRowsPerBatch": 24,
     "minRowsPerChunk": 10
   },
   "retries": {

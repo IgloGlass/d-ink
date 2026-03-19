@@ -11,8 +11,8 @@ const MappingDecisionsPolicyPackV1Schema = z
     policyVersion: z.string().trim().min(1),
     batching: z
       .object({
-        // Keep mapper prompts small for stable classification quality.
-        maxRowsPerBatch: z.number().int().positive().max(40),
+        // Keep mapper prompts small enough for stable provider latency.
+        maxRowsPerBatch: z.number().int().positive().max(24),
         minRowsPerChunk: z.number().int().positive(),
       })
       .strict(),

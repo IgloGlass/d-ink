@@ -102,8 +102,8 @@ function chunkRowsV1<TValue>(rows: TValue[], chunkSize: number): TValue[][] {
 }
 
 function resolveEffectiveBatchSizeV1(config: MappingDecisionsRuntimeConfigV1) {
-  // Hard guardrail: never exceed 40 rows per model call even if config drifts.
-  return Math.min(config.policyPack.batching.maxRowsPerBatch, 40);
+  // Hard guardrail: keep mapper batches small enough for fast provider turns.
+  return Math.min(config.policyPack.batching.maxRowsPerBatch, 24);
 }
 
 function buildRowsV1(
@@ -575,7 +575,7 @@ function buildMappingDecisionSetV1(input: {
         input.aiRun?.usedFallback === true ? "ai_chunk_fallback" : undefined,
       degradedReason:
         input.aiRun?.usedFallback === true
-          ? `AI mapping required chunk splitting or conservative row-level fallback for part of the run.${degradedReasonDetail}`
+          ? `AI mapping required fallback handling for part of the run.${degradedReasonDetail}`
           : undefined,
       annualReportContextAvailable: input.annualReportContextAvailable,
       usedAiRunFallback: input.aiRun?.usedFallback ?? false,
@@ -760,6 +760,7 @@ export async function executeMappingDecisionsModelV1(
         for (const success of initialPass.successes) {
           primaryModel = success.output.model;
           if (success.output.usedTierFallback) {
+            usedFallback = true;
             degradedDiagnostics.add(
               "Model-tier fallback applied for at least one batch.",
             );
@@ -853,6 +854,7 @@ export async function executeMappingDecisionsModelV1(
           for (const success of omittedRowRepairPass.successes) {
             primaryModel = success.output.model;
             if (success.output.usedTierFallback) {
+              usedFallback = true;
               degradedDiagnostics.add(
                 "Model-tier fallback applied during omitted-row repair.",
               );
@@ -953,6 +955,7 @@ export async function executeMappingDecisionsModelV1(
           for (const success of escalationPass.successes) {
             primaryModel = success.output.model;
             if (success.output.usedTierFallback) {
+              usedFallback = true;
               degradedDiagnostics.add(
                 "Model-tier fallback applied for at least one escalation batch.",
               );

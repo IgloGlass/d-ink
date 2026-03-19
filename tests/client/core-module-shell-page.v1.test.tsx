@@ -3338,7 +3338,7 @@ describe("CoreModuleShellPageV1", () => {
   it("surfaces degraded mapping when trial-balance import falls back for reviewability", async () => {
     let importCompleted = false;
     const degradedReason =
-      "AI mapping exceeded the synchronous import budget, so a conservative fallback mapping was saved for immediate review.";
+      "AI mapping exceeded the synchronous import budget, so an AI fallback mapping was saved for immediate review.";
 
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
@@ -3510,7 +3510,7 @@ describe("CoreModuleShellPageV1", () => {
     let enrichmentRunCount = 0;
     let activeMappingReadCount = 0;
     const degradedReason =
-      "AI mapping exceeded the synchronous import budget, so a conservative fallback mapping was saved for immediate review.";
+      "AI mapping exceeded the synchronous import budget, so an AI fallback mapping was saved for immediate review.";
 
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url = String(input);

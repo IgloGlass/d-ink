@@ -732,6 +732,10 @@ export function AccountMappingGridV1({
   }
 
   const executionMetadata = mappingArtifact?.executionMetadata;
+  const degradedExecutionLabel =
+    executionMetadata?.usedAiRunFallback === true
+      ? "AI fallback mapping"
+      : executionMetadata?.actualStrategy;
 
   return (
     <div className="account-mapper">
@@ -743,8 +747,8 @@ export function AccountMappingGridV1({
           <p>
             Requested strategy was{" "}
             <strong>{executionMetadata.requestedStrategy}</strong>, but the
-            saved run executed as{" "}
-            <strong>{executionMetadata.actualStrategy}</strong>.
+            saved run resolved as{" "}
+            <strong>{degradedExecutionLabel}</strong>.
           </p>
           {executionMetadata.degradedReason ? (
             <p>{executionMetadata.degradedReason}</p>

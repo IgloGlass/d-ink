@@ -2675,7 +2675,7 @@ export function CoreModuleShellPageV1() {
     latestTrialBalanceImportExecutionMetadata?.degraded ?? false;
   const latestTrialBalanceImportDegradedReason =
     latestTrialBalanceImportExecutionMetadata?.degradedReason ??
-    "AI mapping exceeded the synchronous import budget, so a conservative fallback mapping was saved for immediate review.";
+    "AI mapping exceeded the synchronous import budget, so an AI fallback mapping was saved for immediate review.";
   const mappingAiEnrichmentStatus =
     mappingAiEnrichmentMonitor !== null
       ? "accepted"

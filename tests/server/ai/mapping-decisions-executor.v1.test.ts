@@ -701,6 +701,84 @@ describe("mapping decisions executor reliability v1", () => {
     expect(result.mapping.decisions[0]?.aiTrace?.rationale).toContain("Mapped");
   });
 
+  it("marks tier fallback batches as degraded too", async () => {
+    const configResult = loadMappingDecisionsModuleConfigV1();
+    expect(configResult.ok).toBe(true);
+    if (!configResult.ok) {
+      return;
+    }
+
+    vi.mocked(generateAiStructuredOutputV1).mockImplementation(async (input) => {
+      const rows = parseRowsFromInstruction(input.request.userInstruction);
+
+      if (input.request.modelTier === "thinking") {
+        return {
+          ok: false,
+          error: {
+            code: "MODEL_EXECUTION_FAILED",
+            message: "timed out",
+            context: {},
+          },
+        };
+      }
+
+      return {
+        ok: true,
+        model: "qwen-test",
+        output: {
+          schemaVersion: "mapping_ai_proposal_v1",
+          decisions: rows.map((row, index) => ({
+            rowId: row.rowId,
+            selectedCategoryCode: index === 0 ? "607100" : "655000",
+            confidence: index === 0 ? 0.12 : 0.92,
+            reviewFlag: false,
+            policyRuleReference:
+              index === 0
+                ? "mapping.ai.rule.tier-fallback-target.v1"
+                : "mapping.ai.rule.test.v1",
+            rationale: `Mapped ${row.accountName}`,
+          })),
+        },
+      };
+    });
+
+    const result = await executeMappingDecisionsModelV1({
+      apiKey: "test-key",
+      annualReportContext: undefined,
+      config: {
+        ...configResult.config,
+        policyPack: {
+          ...configResult.config.policyPack,
+          batching: { maxRowsPerBatch: 4, minRowsPerChunk: 1 },
+          retries: { maxAttempts: 1, backoffMs: 0 },
+        },
+      },
+      generateId: () => "run-tier-fallback",
+      generatedAt: "2026-03-07T10:30:00.000Z",
+      modelConfig: { fastModel: "fast", thinkingModel: "thinking" },
+      policyVersion: "mapping-ai.v1",
+      trialBalance: buildTrialBalance(),
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.mapping.aiRun?.usedFallback).toBe(true);
+    expect(result.mapping.executionMetadata).toMatchObject({
+      requestedStrategy: "ai_primary",
+      actualStrategy: "ai",
+      degraded: true,
+      degradedReasonCode: "ai_chunk_fallback",
+      annualReportContextAvailable: false,
+      usedAiRunFallback: true,
+    });
+    expect(result.mapping.executionMetadata.degradedReason).toContain(
+      "Model-tier fallback applied for at least one escalation batch.",
+    );
+  });
+
   it("fills failed chunks with conservative fallback decisions", async () => {
     const configResult = loadMappingDecisionsModuleConfigV1();
     expect(configResult.ok).toBe(true);
@@ -881,7 +959,7 @@ describe("mapping decisions executor reliability v1", () => {
       return;
     }
 
-    expect(observedBatchSizes).toEqual([2, 2]);
+    expect(observedBatchSizes).toEqual([2]);
     expect(
       result.mapping.decisions.every(
         (decision) =>
@@ -891,7 +969,7 @@ describe("mapping decisions executor reliability v1", () => {
     ).toBe(true);
   });
 
-  it("caps each AI request to at most 40 rows even if runtime config exceeds the limit", async () => {
+  it("caps each AI request to at most 24 rows even if runtime config exceeds the limit", async () => {
     const configResult = loadMappingDecisionsModuleConfigV1();
     expect(configResult.ok).toBe(true);
     if (!configResult.ok) {
@@ -938,8 +1016,8 @@ describe("mapping decisions executor reliability v1", () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(observedBatchSizes).toEqual([40, 40, 15]);
-    expect(Math.max(...observedBatchSizes)).toBeLessThanOrEqual(40);
+    expect(observedBatchSizes).toEqual([24, 24, 24, 23]);
+    expect(Math.max(...observedBatchSizes)).toBeLessThanOrEqual(24);
   });
 
   it("accepts model outputs when only schemaVersion label drifts", async () => {
