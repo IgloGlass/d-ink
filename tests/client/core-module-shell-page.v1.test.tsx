@@ -8,7 +8,10 @@ import { CoreModuleShellPageV1 } from "../../src/client/features/modules/core-mo
 import { parseRunMappingAiEnrichmentResultV1 } from "../../src/shared/contracts/mapping-ai-enrichment.v1";
 import { getSilverfinTaxCategoryByCodeV1 } from "../../src/shared/contracts/mapping.v1";
 import { parseReconciliationResultPayloadV1 } from "../../src/shared/contracts/reconciliation.v1";
-import { parseExecuteTrialBalancePipelineResultV1 } from "../../src/shared/contracts/tb-pipeline-run.v1";
+import {
+  TRIAL_BALANCE_IMPORT_AI_INLINE_ROW_LIMIT_V1,
+  parseExecuteTrialBalancePipelineResultV1,
+} from "../../src/shared/contracts/tb-pipeline-run.v1";
 import { parseTrialBalanceNormalizedV1 } from "../../src/shared/contracts/trial-balance.v1";
 
 const sessionPrincipalMock = {
@@ -3502,6 +3505,249 @@ describe("CoreModuleShellPageV1", () => {
     expect(
       screen.getByRole("button", { name: "Run AI account mapping" }),
     ).toBeInTheDocument();
+  });
+
+  it("auto-runs background AI enrichment after a large degraded import", async () => {
+    let importCompleted = false;
+    let enrichmentRunCount = 0;
+    let activeMappingReadCount = 0;
+    const degradedReason =
+      "AI mapping exceeded the synchronous import budget, so an AI fallback mapping was saved for immediate review.";
+    const fallbackRowCount = TRIAL_BALANCE_IMPORT_AI_INLINE_ROW_LIMIT_V1 + 1;
+    const fallbackDecisions = Array.from({ length: fallbackRowCount }, (_, index) =>
+      createMappingDecisionV1({
+        id: `mapping-${index + 1}`,
+        sourceAccountNumber: String(1200 + index),
+        accountName: `Fallback row ${index + 1}`,
+        selectedCategory: getSilverfinTaxCategoryByCodeV1("100000"),
+        proposedCategory: getSilverfinTaxCategoryByCodeV1("100000"),
+        source: "deterministic",
+        reviewFlag: true,
+      }),
+    );
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (
+        url.includes("/v1/workspaces/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa?") &&
+        method === "GET"
+      ) {
+        return Promise.resolve(
+          mockJsonResponse({
+            status: 200,
+            body: {
+              ok: true,
+              workspace: {
+                id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                tenantId: sessionPrincipalMock.tenantId,
+                companyId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                fiscalYearStart: "2025-01-01",
+                fiscalYearEnd: "2025-12-31",
+                status: "draft",
+                createdAt: "2026-03-01T10:00:00.000Z",
+                updatedAt: new Date().toISOString(),
+              },
+            },
+          }),
+        );
+      }
+
+      if (url.includes("/annual-report-extractions/active?")) {
+        return Promise.resolve(mockNotFoundResponse("ANNUAL_REPORT_NOT_FOUND"));
+      }
+
+      if (url.includes("/annual-report-tax-analysis/active?")) {
+        return Promise.resolve(mockNotFoundResponse("TAX_ANALYSIS_NOT_FOUND"));
+      }
+
+      if (url.includes("/mapping-decisions/active?")) {
+        if (!importCompleted) {
+          return Promise.resolve(mockNotFoundResponse("MAPPING_NOT_FOUND"));
+        }
+
+        activeMappingReadCount += 1;
+        const backgroundRefreshDone = activeMappingReadCount >= 2;
+
+        return Promise.resolve(
+          mockJsonResponse({
+            status: 200,
+            body: backgroundRefreshDone
+              ? {
+                  ...createActiveMappingBodyWithExecutionMetadataV1({
+                    decisions: fallbackDecisions.map((decision) => ({
+                      ...decision,
+                      source: "ai" as const,
+                      aiTrace: {
+                        rationale:
+                          "Annual report context indicates a replaceable AI mapping.",
+                        annualReportContextReferences: [],
+                      },
+                    })),
+                    actualStrategy: "ai",
+                    active: {
+                      artifactId: "mapping-artifact-2",
+                      version: 2,
+                      schemaVersion: "mapping_decisions_v2",
+                    },
+                  }),
+                }
+              : {
+                  ...createActiveMappingBodyWithExecutionMetadataV1({
+                    decisions: fallbackDecisions,
+                    actualStrategy: "deterministic",
+                    degraded: true,
+                    degradedReason,
+                    active: {
+                      artifactId: "mapping-artifact-1",
+                      version: 1,
+                      schemaVersion: "mapping_decisions_v2",
+                    },
+                  }),
+                },
+          }),
+        );
+      }
+
+      if (
+        url.includes("/mapping-decisions/ai-enrichment") &&
+        method === "POST"
+      ) {
+        enrichmentRunCount += 1;
+        return Promise.resolve(
+          mockJsonResponse({
+            status: 202,
+            body: createMappingAiEnrichmentSuccessBodyV1({
+              status: "accepted",
+              activeBefore: {
+                artifactId: "mapping-artifact-1",
+                version: 1,
+              },
+              activeAfter: {
+                artifactId: "mapping-artifact-1",
+                version: 1,
+              },
+              message:
+                "AI account mapping started in the background. This page will refresh automatically when the latest mapping is ready.",
+            }),
+          }),
+        );
+      }
+
+      if (url.includes("/tb-pipeline-runs") && method === "POST") {
+        importCompleted = true;
+        return Promise.resolve(
+          mockJsonResponse({
+            status: 200,
+            body: createTrialBalancePipelineBodyV1({
+              decisions: fallbackDecisions,
+              actualStrategy: "deterministic",
+              degraded: true,
+              degradedReason,
+            }),
+          }),
+        );
+      }
+
+      if (url.includes("/tax-adjustments/active?")) {
+        return Promise.resolve(mockNotFoundResponse("ADJUSTMENTS_NOT_FOUND"));
+      }
+
+      if (url.includes("/tax-summary/active?")) {
+        return Promise.resolve(mockNotFoundResponse("TAX_SUMMARY_NOT_FOUND"));
+      }
+
+      if (url.includes("/ink2-form/active?")) {
+        return Promise.resolve(mockNotFoundResponse("INK2_FORM_NOT_FOUND"));
+      }
+
+      if (url.includes("/comments?")) {
+        return Promise.resolve(
+          mockJsonResponse({
+            status: 200,
+            body: { ok: true, comments: [] },
+          }),
+        );
+      }
+
+      if (url.includes("/tasks?")) {
+        return Promise.resolve(
+          mockJsonResponse({
+            status: 200,
+            body: { ok: true, tasks: [] },
+          }),
+        );
+      }
+
+      return Promise.resolve(
+        mockJsonResponse({
+          status: 500,
+          body: {
+            ok: false,
+            error: {
+              code: "UNEXPECTED",
+              message: "Unexpected call",
+              user_message: "Unexpected call",
+              context: {},
+            },
+          },
+        }),
+      );
+    });
+
+    render(
+      <AppProviders>
+        <MemoryRouter
+          initialEntries={[
+            "/app/workspaces/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/account-mapping",
+          ]}
+        >
+          <Routes>
+            <Route
+              path="/app/workspaces/:workspaceId/:coreModule"
+              element={<CoreModuleShellPageV1 />}
+            />
+          </Routes>
+        </MemoryRouter>
+      </AppProviders>,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Choose trial balance" }),
+      ).toBeInTheDocument();
+    });
+
+    const fileInput = document.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement | null;
+    expect(fileInput).not.toBeNull();
+    fireEvent.change(fileInput!, {
+      target: {
+        files: [
+          new File(["trial balance"], "trial-balance.xlsx", {
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          }),
+        ],
+      },
+    });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Import trial balance" }),
+    );
+
+    await waitFor(() => {
+      expect(enrichmentRunCount).toBe(1);
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "AI account mapping started in the background. This page will refresh automatically when the latest mapping is ready.",
+        ),
+      ).toBeInTheDocument();
+    });
   });
 
   it("runs AI account mapping manually after import and refreshes the mapping", async () => {

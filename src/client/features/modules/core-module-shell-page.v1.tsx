@@ -42,6 +42,10 @@ import {
   toUserFacingErrorMessage,
 } from "../../lib/http/api-client";
 import {
+  TRIAL_BALANCE_IMPORT_AI_INLINE_ROW_LIMIT_V1,
+  TRIAL_BALANCE_IMPORT_DETERMINISTIC_FALLBACK_REASON_V1,
+} from "../../../shared/contracts/tb-pipeline-run.v1";
+import {
   applyInk2OverridesV1,
   clearTrialBalancePipelineDataV1,
   getActiveAnnualReportExtractionV1,
@@ -2179,6 +2183,22 @@ export function CoreModuleShellPageV1() {
       setTrialBalanceFile(null);
       setMappingAiEnrichmentMonitor(null);
       setMappingAiEnrichmentFeedback(null);
+
+      const importedMapping = response.pipeline.mapping;
+      const importedExecutionMetadata = importedMapping.executionMetadata;
+      if (
+        importedExecutionMetadata?.degraded &&
+        importedExecutionMetadata.actualStrategy === "deterministic" &&
+        importedMapping.summary.totalRows >
+          TRIAL_BALANCE_IMPORT_AI_INLINE_ROW_LIMIT_V1
+      ) {
+        mappingAiEnrichmentMutation.mutate({
+          expectedActiveMapping: {
+            artifactId: response.pipeline.artifacts.mapping.artifactId,
+            version: response.pipeline.artifacts.mapping.version,
+          },
+        });
+      }
     },
   });
 
@@ -2675,7 +2695,7 @@ export function CoreModuleShellPageV1() {
     latestTrialBalanceImportExecutionMetadata?.degraded ?? false;
   const latestTrialBalanceImportDegradedReason =
     latestTrialBalanceImportExecutionMetadata?.degradedReason ??
-    "AI mapping exceeded the synchronous import budget, so an AI fallback mapping was saved for immediate review.";
+    TRIAL_BALANCE_IMPORT_DETERMINISTIC_FALLBACK_REASON_V1;
   const mappingAiEnrichmentStatus =
     mappingAiEnrichmentMonitor !== null
       ? "accepted"

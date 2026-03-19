@@ -6,6 +6,7 @@ import { hashTokenWithHmacV1 } from "../src/server/workflow/auth-magic-link.v1";
 import type { Env } from "../src/shared/types/env";
 import worker from "../src/worker";
 import { applyWorkspaceAuditSchemaForTests } from "./db/test-schema";
+import { ACCOUNT_MAPPER_REFERENCE_TRIAL_BALANCE_BASE64 } from "./fixtures/account-mapper-reference-trial-balance.fixture";
 
 const APP_BASE_URL = "https://app.dink.test";
 const AUTH_TOKEN_HMAC_SECRET = "test-auth-token-secret";
@@ -276,6 +277,54 @@ describe("worker TB pipeline route v1", () => {
 
     expect(versionsCount?.count).toBe(3);
     expect(activeCount?.count).toBe(3);
+  });
+
+  it("POST /v1/workspaces/:id/tb-pipeline-runs returns a parseable degraded success for large workbooks", async () => {
+    const response = await worker.fetch(
+      buildJsonRequest({
+        method: "POST",
+        url: `${APP_BASE_URL}/v1/workspaces/${WORKSPACE_ID}/tb-pipeline-runs`,
+        cookie: buildSessionCookie(SESSION_TOKEN),
+        body: {
+          tenantId: TENANT_ID,
+          fileName: "mock_trial_balance_sek_random.xlsx",
+          fileBytesBase64: ACCOUNT_MAPPER_REFERENCE_TRIAL_BALANCE_BASE64,
+          policyVersion: "mapping-ai.v1",
+        },
+      }),
+      buildWorkerEnv(),
+    );
+    const payload = (await response.json()) as {
+      ok: true;
+      pipeline: {
+        mapping: {
+          decisions: Array<{
+            selectedCategory: { code: string };
+            source: string;
+          }>;
+          executionMetadata: {
+            actualStrategy: "deterministic";
+            degraded: true;
+            degradedReason: string;
+            requestedStrategy: "ai_primary";
+          };
+          summary: { totalRows: number };
+        };
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(payload.pipeline.mapping.summary.totalRows).toBe(201);
+    expect(payload.pipeline.mapping.decisions).toHaveLength(201);
+    expect(payload.pipeline.mapping.executionMetadata).toMatchObject({
+      requestedStrategy: "ai_primary",
+      actualStrategy: "deterministic",
+      degraded: true,
+    });
+    expect(payload.pipeline.mapping.executionMetadata.degradedReason).toContain(
+      "synchronous import budget",
+    );
   });
 
   it("POST /v1/workspaces/:id/tb-pipeline-runs keeps balance-sheet rows in balance-sheet fallback categories", async () => {

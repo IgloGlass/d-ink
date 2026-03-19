@@ -39,8 +39,13 @@ import {
   type SilverfinTaxCategoryCodeV1,
   parseMappingDecisionSetArtifactV1,
   parseMappingExecutionMetadataV1,
+  stampMappingExecutionMetadataV1,
   resolveConfirmedAnnualReportMappingContextForRequestV1,
 } from "../../shared/contracts/mapping.v1";
+import {
+  TRIAL_BALANCE_IMPORT_AI_INLINE_ROW_LIMIT_V1,
+  TRIAL_BALANCE_IMPORT_DETERMINISTIC_FALLBACK_REASON_V1,
+} from "../../shared/contracts/tb-pipeline-run.v1";
 import type { ReconciliationResultPayloadV1 } from "../../shared/contracts/reconciliation.v1";
 import type { TaxAdjustmentAiProposalDecisionV1 } from "../../shared/contracts/tax-adjustment-ai.v1";
 import {
@@ -71,6 +76,7 @@ import {
 import { loadAnnualReportTaxAnalysisModuleConfigV1 } from "../ai/modules/annual-report-tax-analysis/loader.v1";
 import { executeMappingDecisionsModelV1 } from "../ai/modules/mapping-decisions/executor.v1";
 import { loadMappingDecisionsModuleConfigV1 } from "../ai/modules/mapping-decisions/loader.v1";
+import { generateDeterministicMappingDecisionsV1 } from "../mapping/deterministic-mapping.v1";
 import { executeMappingReviewModelV1 } from "../ai/modules/mapping-review/executor.v1";
 import { loadMappingReviewModuleConfigV1 } from "../ai/modules/mapping-review/loader.v1";
 import { loadTaxAdjustmentsDepreciationDifferencesBasicModuleConfigV1 } from "../ai/modules/tax-adjustments-depreciation-differences-basic/loader.v1";
@@ -4687,9 +4693,9 @@ export function createCompanyLifecycleDepsV1(env: Env): CompanyLifecycleDepsV1 {
 export function createTrialBalancePipelineRunDepsV1(
   env: Env,
 ): TrialBalancePipelineRunDepsV1 {
-  // Budget accounts for: initial fast-model pass + thinking-model escalation
-  // pass, both running in parallel. Thinking model (qwen-max) can take up to
-  // 90s per request; 300s gives two full retry cycles with headroom.
+  // Small imports still use AI-primary mapping inline; larger trial balances
+  // fall back to deterministic import mapping so the request stays fast and
+  // the UI can trigger background AI enrichment separately.
   const trialBalanceImportAiExecutionBudgetMs = 300_000;
 
   return {
@@ -4709,6 +4715,37 @@ export function createTrialBalancePipelineRunDepsV1(
           reconciliation: input.reconciliation,
           workspaceArtifactRepository,
         });
+
+      if (
+        mappingRequest.trialBalance.rows.length >
+        TRIAL_BALANCE_IMPORT_AI_INLINE_ROW_LIMIT_V1
+      ) {
+        const deterministicResult = generateDeterministicMappingDecisionsV1(
+          mappingRequest,
+        );
+        if (!deterministicResult.ok) {
+          return deterministicResult;
+        }
+
+        return {
+          ok: true as const,
+          mapping: stampMappingExecutionMetadataV1({
+            executionMetadata: parseMappingExecutionMetadataV1({
+              requestedStrategy: "ai_primary",
+              actualStrategy: "deterministic",
+              degraded: true,
+              degradedReason:
+                TRIAL_BALANCE_IMPORT_DETERMINISTIC_FALLBACK_REASON_V1,
+              annualReportContextAvailable:
+                resolveConfirmedAnnualReportMappingContextForRequestV1(
+                  mappingRequest,
+                ) !== undefined,
+              usedAiRunFallback: false,
+            }),
+            mapping: deterministicResult.mapping,
+          }),
+        };
+      }
 
       return generateMappingDecisionsWithPrimaryAiV1({
         executionBudgetMs: trialBalanceImportAiExecutionBudgetMs,

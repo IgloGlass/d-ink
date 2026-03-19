@@ -10,7 +10,8 @@ $config = [PSCustomObject]@{
     CleanupTimeoutSec       = 15
     HealthTimeoutSec        = 75
     BootstrapTimeoutSec     = 8
-    MigrateTimeoutSec       = 45
+    # Local D1 migrations can be slow on a fresh or recently-reset database.
+    MigrateTimeoutSec       = 120
     ProbeIntervalMs         = 700
     StableProbeCount        = 3
     ApiProbeTimeoutSec      = 2
@@ -576,7 +577,13 @@ function Ensure-LocalDatabaseReady {
     $proc.StandardInput.Close()
 
     if (-not $proc.WaitForExit($TimeoutSec * 1000)) {
+        $stdout = ""
+        $stderr = ""
+        try { $stdout = $proc.StandardOutput.ReadToEnd() } catch {}
+        try { $stderr = $proc.StandardError.ReadToEnd() } catch {}
         [void](Stop-ProcessTree -ProcessId $proc.Id -Quiet)
+        if (-not [string]::IsNullOrWhiteSpace($stdout)) { Write-Host ($stdout.TrimEnd()) }
+        if (-not [string]::IsNullOrWhiteSpace($stderr)) { Write-Host ($stderr.TrimEnd()) }
         Fail-Launcher -ExitCode 30 -Message "Database migration step timed out."
     }
 

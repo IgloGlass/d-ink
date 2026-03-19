@@ -66,6 +66,20 @@ export type ExecuteTrialBalancePipelineRequestV1 = z.infer<
 >;
 
 /**
+ * Inline AI mapping stays below this row limit so the import request can
+ * remain fast. Larger trial balances use the deterministic import path and
+ * then continue through background AI enrichment.
+ */
+export const TRIAL_BALANCE_IMPORT_AI_INLINE_ROW_LIMIT_V1 = 24;
+
+/**
+ * Default review text for deterministic trial-balance imports that had to
+ * bypass inline AI mapping.
+ */
+export const TRIAL_BALANCE_IMPORT_DETERMINISTIC_FALLBACK_REASON_V1 =
+  "AI mapping exceeded the synchronous import budget, so an AI fallback mapping was saved for immediate review.";
+
+/**
  * TB pipeline success payload.
  */
 export const TrialBalancePipelineRunPayloadV1Schema = z
